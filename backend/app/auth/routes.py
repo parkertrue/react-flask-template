@@ -62,7 +62,23 @@ def _login_email_key():
     except ValueError:
         # The login itself will answer 422; any key will do
         email = email.strip()
+    return account_key(email)
+
+
+def account_key(email: str) -> str:
+    """Rate-limit key for one account, named by its email"""
     return 'email:' + _email_digest(email)
+
+
+def account_password_limit(key_func, deduct_when):
+    """Wrong passwords for one account, wherever they are typed: login and
+    account deletion share one budget, so guesses spread over both add up.
+
+    key_func names the account with account_key; deduct_when tells a wrong
+    password from any other answer.
+    """
+    return limiter.shared_limit(
+        '100 per hour', scope='account-password', key_func=key_func, deduct_when=deduct_when)
 
 
 def _login_email_and_ip_key():
@@ -206,7 +222,7 @@ def register():
 # many addresses.
 @limiter.limit('20 per minute')
 @limiter.limit('5 per minute', key_func=_login_email_and_ip_key, deduct_when=_login_failed)
-@limiter.limit('100 per hour', key_func=_login_email_key, deduct_when=_login_failed)
+@account_password_limit(key_func=_login_email_key, deduct_when=_login_failed)
 def login():
     payload = LoginRequest.model_validate(request.get_json())
 

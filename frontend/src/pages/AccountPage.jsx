@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
@@ -7,7 +7,7 @@ import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
-import { validatePasswordCharacters, PASSWORD_MAX_LENGTH } from '@/utils/validation'
+import { validatePassword, PASSWORD_MAX_LENGTH } from '@/utils/validation'
 
 export default function AccountPage() {
   const { email, logout } = useAuth()
@@ -17,6 +17,7 @@ export default function AccountPage() {
   const [account, setAccount] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const deletion = useFormFields({ 'delete-password': '' })
+  const deletionForm = useRef(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
@@ -54,9 +55,8 @@ export default function AccountPage() {
   const handleDeleteSubmit = (e) => {
     e.preventDefault()
     if (deleting) return
-    const password = deletion.values['delete-password']
     const valid = deletion.validate(e.currentTarget, {
-      'delete-password': password ? validatePasswordCharacters(password) : 'Password is required',
+      'delete-password': validatePassword(deletion.values['delete-password']),
     })
     if (valid) setConfirmingDelete(true)
   }
@@ -71,8 +71,13 @@ export default function AccountPage() {
       // Nothing was deleted: a wrong password, or the server could not end
       // the account's sessions. A session that has ended takes the user to
       // the login page on its own.
-      setDeleteError(getErrorMessage(err))
       setDeleting(false)
+      if (err.response?.data?.error?.code === 'WRONG_PASSWORD') {
+        // The field's own message, focused, like a failed submit's
+        deletion.validate(deletionForm.current, { 'delete-password': getErrorMessage(err) })
+      } else {
+        setDeleteError(getErrorMessage(err))
+      }
       return
     }
     // Home first, as for logging out, then the login page, which says the
@@ -118,7 +123,12 @@ export default function AccountPage() {
       <section aria-labelledby="delete-heading">
         <h2 id="delete-heading">Delete account</h2>
         <p>Delete this account and everything in it. This cannot be undone.</p>
-        <form onSubmit={handleDeleteSubmit} noValidate aria-labelledby="delete-heading">
+        <form
+          ref={deletionForm}
+          onSubmit={handleDeleteSubmit}
+          noValidate
+          aria-labelledby="delete-heading"
+        >
           <FormField
             id="delete-password"
             label="Password"

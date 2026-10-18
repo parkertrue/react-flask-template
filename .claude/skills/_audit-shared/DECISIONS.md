@@ -147,12 +147,16 @@ notice. MIT-0 drops that condition, so README's step 6 can tell a new app to
 replace `LICENSE` outright (LEGAL-19). *Revisit when:* the owner wants
 attribution from derived apps.
 
-**Password composition rules and no spaces.** Registration requires upper
-and lower case and a digit, and both register and login refuse spaces. That
-gives up ASVS 6.2.5 ("passwords of any composition") and NIST's advice to
-allow spaces, in exchange for the current, simpler rule set (the user's
-choice). *Revisit when:* a common or breached-password check is added, which
-makes composition rules redundant.
+**Password composition rules and no spaces.** Every password the app
+accepts (register, login, account deletion) must hold upper and lower case
+and a digit, and no spaces. That gives up ASVS 6.2.5 ("passwords of any
+composition") and NIST's advice to allow spaces, in exchange for the current,
+simpler rule set (the user's choice). Login and account deletion apply the
+same rules as registration, so no password registration refuses is ever
+checked; nothing was deployed, so no account predates them. *Revisit when:* a
+common or breached-password check is added, which makes composition rules
+redundant; loosen a rule everywhere at once, since the schemas share one
+`Password` type.
 
 **scrypt at Werkzeug's default cost.** Password hashes use `scrypt:32768:8:1`
 (N=2^15), below OWASP's N=2^17. Raising it costs about 4× the CPU and memory

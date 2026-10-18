@@ -353,7 +353,7 @@ class TestLoginEndpoint:
         """Password should be case-sensitive."""
         payload = {
             'email': 'test@example.com',
-            'password': 'testpassword123'  # Wrong case
+            'password': 'tESTpASSWORD123'  # Wrong case, but within the rules
         }
 
         response = client.post(

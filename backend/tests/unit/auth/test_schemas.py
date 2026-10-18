@@ -272,12 +272,6 @@ class TestLoginRequest:
         with pytest.raises(ValidationError):
             LoginRequest(email='test@example.com', password='')
 
-    def test_short_password_accepted(self):
-        """Passwords set under an older, looser policy must still log in"""
-        request = LoginRequest(email='test@example.com', password='short')
-
-        assert request.password == 'short'
-
     def test_password_max_length(self):
         """Schema should enforce maximum password length."""
         long_password = 'a' * 129
@@ -287,16 +281,6 @@ class TestLoginRequest:
                 email='test@example.com',
                 password=long_password
             )
-
-    @pytest.mark.parametrize('password', [
-        'alllowercase12345',  # No uppercase (but 8+ chars)
-        'ALLUPPERCASE12345',  # No lowercase (but 8+ chars)
-        'NoNumbersButLongEnough',  # No numbers (but 8+ chars)
-    ])
-    def test_login_no_password_validation(self, password):
-        """Login checks length and characters, but not strength."""
-        request = LoginRequest(email='test@example.com', password=password)
-        assert request.password == password
 
     def test_extra_fields_forbidden(self):
         """Schema should reject extra fields."""
@@ -342,6 +326,19 @@ class TestSchemaConsistency:
 
         assert register.email == login.email
         assert register.password == login.password
+
+    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
+    @pytest.mark.parametrize(('password', 'message'), [
+        ('Pass123', 'at least 8 characters'),
+        ('testpassword123', 'must contain uppercase letter'),
+        ('TESTPASSWORD123', 'must contain lowercase letter'),
+        ('TestPassword', 'must contain number'),
+    ])
+    def test_both_apply_the_strength_rules(self, schema, password, message):
+        """Login refuses what registration would, so no password registration
+        refuses is ever checked against an account"""
+        with pytest.raises(ValidationError, match=message):
+            schema(email='test@example.com', password=password)
 
     def test_password_length_consistency(self):
         """Both schemas should have same password length requirements."""

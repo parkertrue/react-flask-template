@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from app import db, limiter
 from app.account.schemas import AccountDeleteRequest, AccountResponse
 from app.auth.models import User
+from app.auth.routes import account_key, account_password_limit
 from app.utils.errors import error_response, service_unavailable
 from app.utils.log import security_event
 from app.utils.redis_service import get_redis_service
@@ -38,6 +39,16 @@ def _access_user_id():
     return claims.get('sub') if claims.get('type') == 'access' else None
 
 
+def _account_key():
+    """The account a valid access token belongs to, keyed as login keys it,
+    so the two share a budget of wrong passwords"""
+    user_id = _access_user_id()
+    user = db.session.get(User, int(user_id)) if user_id else None
+    # A request without a valid token is turned away with a 401 and never
+    # counts, so any key will do
+    return account_key(user.email) if user else 'email:none'
+
+
 def _wrong_password(response):
     return response.status_code == 403
 
@@ -50,6 +61,7 @@ def _wrong_password(response):
     '5 per minute',
     key_func=lambda: f'delete-account:user:{_access_user_id()}',
     deduct_when=_wrong_password)
+@account_password_limit(key_func=_account_key, deduct_when=_wrong_password)
 @jwt_required()
 def delete_account():
     """Delete the signed-in user's account and everything it owns.
@@ -61,6 +73,7 @@ def delete_account():
     """
     payload = AccountDeleteRequest.model_validate(request.get_json())
     if not current_user.check_password(payload.password):
+        security_event('wrong_password', user_id=current_user.id)
         return error_response(
             code='WRONG_PASSWORD',
             message='The password is incorrect',

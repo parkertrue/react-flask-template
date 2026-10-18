@@ -138,6 +138,11 @@ class TestDeleteAccount:
         {},
         {'password': ''},
         {'password': 'Test Password123'},
+        # The rules registration applies: no password it refuses is checked
+        {'password': 'Pass123'},
+        {'password': 'testpassword123'},
+        {'password': 'TESTPASSWORD123'},
+        {'password': 'TestPassword'},
         {'password': 123},
         {'password': PASSWORD, 'extra': 1},
     ])
@@ -187,11 +192,18 @@ class TestDeleteAccount:
         for secret in (PASSWORD, email, auth_headers['Authorization'].removeprefix('Bearer ')):
             assert secret not in text
 
-    def test_a_wrong_password_is_not_an_event(
-            self, client, sample_user, auth_headers, security_events):
+    def test_a_wrong_password_is_a_security_event(
+            self, client, sample_user, auth_headers, security_events, logged):
+        """Guessing behind a stolen session shows in the log"""
+        user_id, email = sample_user.id, sample_user.email
+
         delete_account(client, auth_headers, password='WrongPassword123')
 
-        assert security_events() == []
+        assert security_events() == [
+            {'message': 'wrong_password', 'ip': '127.0.0.1', 'user_id': user_id}]
+        text = json.dumps(logged())
+        for secret in ('WrongPassword123', email):
+            assert secret not in text
 
 
 class TestAccessUserId:

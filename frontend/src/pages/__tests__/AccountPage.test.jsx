@@ -183,6 +183,11 @@ describe('AccountPage', () => {
     it.each([
       ['an empty password', '', 'Password is required'],
       ['a password with a space', 'My Password123', 'Password must not contain spaces'],
+      // The rules registration applies: no password it refuses is checked
+      ['a short password', 'MyPass1', 'Password must be at least 8 characters'],
+      ['a password without an uppercase letter', 'mypassword123',
+        'Password must contain at least one uppercase letter'],
+      ['a password without a number', 'MyPassword', 'Password must contain at least one number'],
     ])('refuses %s before asking', async (_, password, message) => {
       const { user } = renderPage()
 
@@ -195,9 +200,26 @@ describe('AccountPage', () => {
     })
 
     // Nothing was deleted, so the session stays for another try
+    it('keeps the session and marks the field when the password is wrong', async () => {
+      deleteAccount.mockRejectedValue(
+        httpError(403, 'WRONG_PASSWORD', 'The password is incorrect'))
+      const { user, router } = renderPage()
+      await askToDelete(user)
+
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+
+      await waitFor(() => expect(passwordField()).toHaveFocus())
+      expect(passwordField()).toHaveAttribute('aria-invalid', 'true')
+      expect(passwordField()).toHaveAccessibleDescription(
+        expect.stringContaining('The password is incorrect'))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/account')
+      expect(storage.getAccessToken()).toBe('access-token')
+      expect(deleteButton()).toHaveAttribute('aria-disabled', 'false')
+      expect(passwordField()).not.toHaveAttribute('readonly')
+    })
+
     it.each([
-      ['the password is wrong', httpError(403, 'WRONG_PASSWORD', 'The password is incorrect'),
-        'The password is incorrect'],
       ['the server fails', httpError(503, 'SERVICE_UNAVAILABLE', 'Could not delete the account'),
         'Could not delete the account'],
       ['the network fails', new Error('Network Error'), 'Network error'],
@@ -218,7 +240,7 @@ describe('AccountPage', () => {
     it('clears an earlier error when trying again', async () => {
       let finish
       deleteAccount
-        .mockRejectedValueOnce(httpError(403, 'WRONG_PASSWORD', 'The password is incorrect'))
+        .mockRejectedValueOnce(httpError(503, 'SERVICE_UNAVAILABLE', 'Could not delete the account'))
         .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
       const { user } = renderPage()
       await askToDelete(user)

@@ -46,8 +46,6 @@ def _normalize_password(value):
 
 
 def _check_password_characters(value: str) -> str:
-    # Checked at login too, so no password that registration refuses can be
-    # tried at all
     if any(c.isspace() for c in value):
         raise ValueError('Password must not contain spaces')
     if not is_plain_text(value):
@@ -55,45 +53,45 @@ def _check_password_characters(value: str) -> str:
     return value
 
 
+def _check_strength(value: str) -> str:
+    if not re.search(r'[A-Z]', value):
+        raise ValueError('Password must contain uppercase letter')
+    if not re.search(r'[a-z]', value):
+        raise ValueError('Password must contain lowercase letter')
+    if not re.search(r'[0-9]', value):
+        raise ValueError('Password must contain number')
+    return value
+
+
+# Every password the app accepts, at registration, login and before a change
+# only the owner may make. One set of rules, so a rule loosened in one place
+# is loosened in all of them, and no password registration refuses can be
+# tried anywhere.
+Password = Annotated[
+    str,
+    # Before the validator, so pydantic counts characters (its message says
+    # so); the validator still runs first
+    Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
+    BeforeValidator(_normalize_password),
+    AfterValidator(_check_password_characters),
+    AfterValidator(_check_strength),
+]
+
+
 class RegisterRequest(BaseModel):
     email: str
-    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+    password: Password
     # The version of the terms the user saw and accepted
     terms_version: int = Field(strict=True)
 
     model_config = ConfigDict(extra='forbid')
 
     check_email = field_validator('email')(normalize_email)
-    normalize_password = field_validator('password', mode='before')(_normalize_password)
-    check_password_characters = field_validator('password')(_check_password_characters)
-
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v):
-        if not re.search(r'[A-Z]', v):
-            raise ValueError('Password must contain uppercase letter')
-        if not re.search(r'[a-z]', v):
-            raise ValueError('Password must contain lowercase letter')
-        if not re.search(r'[0-9]', v):
-            raise ValueError('Password must contain number')
-        return v
-
-
-# A password checked against the account's, at login or before a change only
-# the owner may make: normalized and limited to the same characters as
-# RegisterRequest's, but no strength rules, since tightening RegisterRequest's
-# must not lock out users whose existing passwords predate the change.
-CurrentPassword = Annotated[
-    str,
-    BeforeValidator(_normalize_password),
-    Field(min_length=1, max_length=PASSWORD_MAX_LENGTH),
-    AfterValidator(_check_password_characters),
-]
 
 
 class LoginRequest(BaseModel):
     email: str
-    password: CurrentPassword
+    password: Password
 
     model_config = ConfigDict(extra='forbid')
 

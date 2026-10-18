@@ -8,7 +8,7 @@ import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
 import {
   validateEmail,
-  validatePasswordCharacters,
+  validatePassword,
   PASSWORD_MAX_LENGTH,
   EMAIL_MAX_LENGTH
 } from '@/utils/validation'
@@ -41,11 +41,7 @@ export default function LoginPage() {
 
     const valid = validate(e.currentTarget, {
       email: validateEmail(values.email),
-      // The allowed characters apply here too, but only registration enforces
-      // the strength rules, so changing them never locks out existing users
-      password: values.password
-        ? validatePasswordCharacters(values.password)
-        : 'Password is required',
+      password: validatePassword(values.password),
     })
     if (!valid) return
 

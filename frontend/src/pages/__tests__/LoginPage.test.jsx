@@ -74,7 +74,15 @@ describe('LoginPage', () => {
     it.each([
       ['a malformed email', { email: 'not-an-email' }, 'email', 'Please enter a valid email address'],
       ['an empty password', { password: '' }, 'password', 'Password is required'],
-      // The characters registration allows apply here too
+      // Every rule registration applies, so no password it refuses is checked
+      ['a short password', { password: 'Pass123' }, 'password',
+        'Password must be at least 8 characters'],
+      ['a password without an uppercase letter', { password: 'password123' }, 'password',
+        'Password must contain at least one uppercase letter'],
+      ['a password without a lowercase letter', { password: 'PASSWORD123' }, 'password',
+        'Password must contain at least one lowercase letter'],
+      ['a password without a number', { password: 'Password' }, 'password',
+        'Password must contain at least one number'],
       ['a password with a space', { password: 'Pass word123' }, 'password',
         'Password must not contain spaces'],
       ['a password with an emoji', { password: 'Password123😀' }, 'password',
@@ -91,18 +99,6 @@ describe('LoginPage', () => {
       expect(field[name]()).toHaveAccessibleDescription(message)
       expect(field[name]()).toHaveFocus()
       expect(loginUser).not.toHaveBeenCalled()
-    })
-
-    it('does not apply the registration password strength rules', async () => {
-      // Tightening them must never lock out passwords that predate the change
-      loginUser.mockResolvedValue(tokens())
-      const { user } = renderPage()
-      await fill(user, { password: 'weak' })
-
-      await user.click(submitButton())
-
-      expect(loginUser).toHaveBeenCalledWith('user@example.com', 'weak')
-      await screen.findByText('After-login page')
     })
 
     it('clears a field\'s message once it is edited', async () => {
