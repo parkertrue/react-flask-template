@@ -175,13 +175,31 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
     })
 
+    // ConfirmDialog, the app's one dialog component, checked here so that
+    // no feature's spec has to keep it
     test('deleting the account, asking, busy and then failed, has no violations', async ({ page }) => {
       await page.goto('/account')
       await expect(memberSince(page)).toBeVisible()
 
-      const dialog = await askToDeleteAccount(page)
+      let dialog = await askToDeleteAccount(page)
       await expectNoViolations(page)
+      await expectReflow(page)
+      await expectTargetSize(page)
+      // Centered, not pinned to a corner by the CSS reset's margin: 0
+      const box = await dialog.boundingBox()
+      expect(Math.abs(box.x + box.width / 2 - page.viewportSize().width / 2)).toBeLessThan(2)
+      // Its border is transparent until forced colors drop the background
+      await page.emulateMedia({ forcedColors: 'active' })
+      await expect(dialog).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
+      await expect(dialog).toHaveCSS('border-top-width', '1px')
+      await page.emulateMedia({ forcedColors: 'none' })
 
+      // Escape keeps the account, and focus goes back to the button that asked
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Delete account' })).toBeFocused()
+
+      dialog = await askToDeleteAccount(page)
       const release = await holdRequests(page, 'POST', '**/api/account/delete', serviceUnavailable)
       await dialog.getByRole('button', { name: 'Delete account' }).click()
       // The dialog hands focus back to the button, now busy
@@ -191,6 +209,24 @@ test.describe('Accessibility', () => {
       release()
       await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
       await expectNoViolations(page)
+    })
+
+    // A page that crashes after the app has shown: the router's error page
+    // takes focus. Nothing the API can answer crashes a shared page, so the
+    // date formatting it calls throws instead
+    test('the error page has no violations, and takes focus', async ({ page }) => {
+      await page.goto('/')
+      await page.evaluate(() => {
+        Date.prototype.toLocaleDateString = () => { throw new Error('Planted crash') }
+      })
+      await page.getByRole('link', { name: /\(account\)$/ }).click()
+
+      await expect(page.getByRole('heading', { level: 1, name: 'Something went wrong' }))
+        .toBeFocused()
+      await expectNoViolations(page)
+      await expectReflow(page)
+      await expectVisibleFocus(page)
+      await expectTargetSize(page)
     })
 
     test('the login page after deleting the account has no violations', async ({ page }) => {

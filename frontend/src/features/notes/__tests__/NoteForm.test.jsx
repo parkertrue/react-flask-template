@@ -78,7 +78,7 @@ describe('NoteForm', () => {
       ['a note with an emoji', 'Launch 🚀', 'Note must not contain emoji or other symbols like © or °'],
     ])('refuses %s, explains why, and focuses the field', async (_, text, message) => {
       const { onSubmit, user } = renderForm()
-      if (text) setValue(text)
+      setValue(text)
 
       await user.click(button())
 

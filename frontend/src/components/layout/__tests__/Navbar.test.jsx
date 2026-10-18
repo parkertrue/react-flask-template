@@ -37,13 +37,20 @@ describe('Navbar', () => {
   })
 
   it.each([
-    ['/', false, ['Home']],
-    ['/login', false, ['Log in']],
-    ['/register', false, ['Register']],
-    ['/notes', true, ['My notes']],
-    ['/account', true, ['user@example.com']],
-  ])('marks the link to %s as the current page', (path, signedIn, expected) => {
-    if (signedIn) signIn('user@example.com')
+    ['/', ['Home']],
+    ['/login', ['Log in']],
+    ['/register', ['Register']],
+  ])('marks the link to %s as the current page', (path, expected) => {
+    renderNavbar(path)
+
+    expect(current()).toEqual(expected)
+  })
+
+  it.each([
+    ['/notes', ['My notes']],
+    ['/account', ['user@example.com']],
+  ])('marks the link to %s as the current page when signed in', (path, expected) => {
+    signIn('user@example.com')
     renderNavbar(path)
 
     expect(current()).toEqual(expected)

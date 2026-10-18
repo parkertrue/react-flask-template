@@ -180,8 +180,17 @@ describe('AccountPage', () => {
       expect(storage.getSessionEnded()).toBe(false)
     })
 
+    it('refuses an empty password before asking', async () => {
+      const { user } = renderPage()
+
+      await user.click(deleteButton())
+
+      expect(passwordField()).toHaveAccessibleDescription(expect.stringContaining('Password is required'))
+      expect(passwordField()).toHaveFocus()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
     it.each([
-      ['an empty password', '', 'Password is required'],
       ['a password with a space', 'My Password123', 'Password must not contain spaces'],
       // The rules registration applies: no password it refuses is checked
       ['a short password', 'MyPass1', 'Password must be at least 8 characters'],
@@ -191,7 +200,7 @@ describe('AccountPage', () => {
     ])('refuses %s before asking', async (_, password, message) => {
       const { user } = renderPage()
 
-      if (password) await user.type(passwordField(), password)
+      await user.type(passwordField(), password)
       await user.click(deleteButton())
 
       expect(passwordField()).toHaveAccessibleDescription(expect.stringContaining(message))

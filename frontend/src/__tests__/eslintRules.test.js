@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import { ESLint } from 'eslint'
 
 // The lint rules are config, and config fails silently: a later block
@@ -7,6 +7,10 @@ import { ESLint } from 'eslint'
 // it with the real eslint.config.js, as tests/unit/test_import_rules.py and
 // test_assertions.py do for the backend.
 const eslint = new ESLint()
+
+// The first lint loads every plugin, which on a busy machine takes longer
+// than a test's 5 s, so it happens here, with time to spare
+beforeAll(() => eslint.lintText('\n', { filePath: 'src/x.js' }), 60_000)
 
 const ruleIds = async (filePath, code) => {
   const [result] = await eslint.lintText(`${code}\n`, { filePath })
@@ -94,6 +98,7 @@ describe('test rules', () => {
     // Unit tests, named .test or .spec, as Vitest runs both
     ['src/x/__tests__/a.test.jsx', "it('a', () => { if (x) expect(x).toBe(1) })", 'vitest/no-conditional-expect'],
     ['src/x/__tests__/a.spec.jsx', "it('a', () => { if (x) expect(x).toBe(1) })", 'vitest/no-conditional-expect'],
+    ['src/x/__tests__/a.test.js', "it('a', () => { if (x) run(); expect(y).toBe(1) })", 'vitest/no-conditional-in-test'],
     ['src/x/__tests__/a.test.js', "it('a', () => { run() })", 'vitest/expect-expect'],
     ['src/x/__tests__/a.test.js', "it.skip('a', () => { expect(x).toBe(1) })", 'vitest/no-disabled-tests'],
     ['src/x/__tests__/a.test.js', "it.only('a', () => { expect(x).toBe(1) })", 'vitest/no-focused-tests'],
@@ -105,6 +110,10 @@ describe('test rules', () => {
     ['src/x/__tests__/a.test.js', "it('a', () => { expect([400, 422]).toContain(x) })", 'no-restricted-syntax'],
     ['src/x/__tests__/a.test.js', "it('a', () => { expect(x === 1 || x === 2).toBe(true) })", 'no-restricted-syntax'],
     ['src/components/forms/__tests__/a.test.js', "it('a', () => { expect([1, 2]).toContainEqual(x) })", 'no-restricted-syntax'],
+    // Shared helpers that assert
+    ['src/test/x.js', 'export const check = x => expect([400, 422]).toContain(x)', 'no-restricted-syntax'],
+    ['src/test/x.js', 'export const check = x => expect(x.a || x.b).toBe(true)', 'no-restricted-syntax'],
+    ['e2e/helpers.js', 'export const check = x => expect([400, 422]).toContain(x)', 'no-restricted-syntax'],
     // End-to-end tests
     ['e2e/x.spec.js', "test('a', async ({ page }) => { await page.goto('/') })", 'playwright/expect-expect'],
     ['e2e/x.spec.js', "test('a', async ({ page }) => { if (x) await expect(page).toHaveURL('/') })", 'playwright/no-conditional-in-test'],

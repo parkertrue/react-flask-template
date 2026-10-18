@@ -58,16 +58,6 @@ test.describe('Notes CRUD Operations', () => {
     const deleteButton = row.getByRole('button', { name: /^Delete note #/ })
     const dialog = page.getByRole('dialog', { name: 'Delete this note?' })
 
-    // Escape keeps the note, and focus goes back to the button that asked
-    await deleteButton.click()
-    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
-    // Centered, not pinned to a corner by the CSS reset's margin: 0
-    const box = await dialog.boundingBox()
-    expect(Math.abs(box.x + box.width / 2 - page.viewportSize().width / 2)).toBeLessThan(2)
-    await page.keyboard.press('Escape')
-    await expect(dialog).toBeHidden()
-    await expect(deleteButton).toBeFocused()
-
     await deleteButton.click()
     await dialog.getByRole('button', { name: 'Delete' }).click()
 
@@ -164,20 +154,12 @@ test.describe('Notes accessibility', () => {
     await expectTargetSize(page)
   })
 
-  test('the delete confirmation has no violations, and an edge in forced-colors mode', async ({ page }) => {
+  test('the delete confirmation has no violations', async ({ page }) => {
     await addNote(page, 'A note to delete')
     await page.getByRole('button', { name: /^Delete note #/ }).click()
 
-    const dialog = page.getByRole('dialog', { name: 'Delete this note?' })
-    await expect(dialog).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Delete this note?' })).toBeVisible()
     await expectNoViolations(page)
-    await expectReflow(page)
-    await expectTargetSize(page)
-
-    // Its border is transparent until forced colors drop the background
-    await page.emulateMedia({ forcedColors: 'active' })
-    await expect(dialog).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)')
-    await expect(dialog).toHaveCSS('border-top-width', '1px')
   })
 
   test('the notes page reflows, shows focus and has large enough targets', async ({ page }) => {
@@ -270,18 +252,5 @@ test.describe('Notes accessibility, with the list answered by the test', () => {
     await expect(page.getByRole('button', { name: 'Loading...' })).toBeFocused()
     await expectNoViolations(page)
     release()
-  })
-
-  // A page that crashes after it has shown: the error page takes focus
-  test('the error page has no violations, and takes focus', async ({ page }) => {
-    await page.goto('/')
-    await page.route('**/api/notes', route => route.fulfill({ json: { notes: 'oops' } }))
-    await page.getByRole('link', { name: 'My notes', exact: true }).click()
-
-    await expect(page.getByRole('heading', { level: 1, name: 'Something went wrong' }))
-      .toBeFocused()
-    await expectNoViolations(page)
-    await expectReflow(page)
-    await expectTargetSize(page)
   })
 })

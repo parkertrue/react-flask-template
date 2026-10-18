@@ -457,7 +457,7 @@ No analytics, no third-party requests, no email and no processors. The cookie an
 1. Fill in `legal.js`, then write the three pages for your app from the table above and your own features.
 2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped. Decide the MySQL binary log together with backups: keep it for point-in-time recovery, or turn it off.
 3. Name every provider that processes personal data for you (the host, a log service, a CDN, an email service) in the privacy notice, and sign each one's data processing agreement.
-4. Set `security.txt`'s `Contact` to the email in `legal.js` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year.
+4. Set `security.txt`'s `Contact` to the email in `legal.js` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year (the same test fails from 30 days before it lapses).
 5. Ask the lawyer whether your markets need a checkbox or whether a sentence beside the button would do, and whether a German audience needs the contact page labelled "Impressum" with more details on it.
 6. Check whether the European Accessibility Act covers your service (e-commerce, banking and a few other sectors; microenterprises are exempt).
 7. When the terms change, raise `TERMS_VERSION` in both `legal.js` and `backend/app/auth/models.py`. Asking existing users to accept the new terms is your app's job.
