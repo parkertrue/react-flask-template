@@ -195,6 +195,12 @@ export default defineConfig([
     },
   },
   {
+    // Shared test helpers assert too, so they take the same hedge rules as
+    // the tests that call them (e2e/helpers.js below)
+    files: ['src/test/**'],
+    rules: restrictSyntax(FORM_CONTROL, ...NO_HEDGES),
+  },
+  {
     // Every assertion must be able to fail: none behind an if or in a catch,
     // none that almost any value passes, and no test without one, skipped
     // or focused (backend: tests/unit/test_assertions.py). The presets ship
@@ -211,6 +217,8 @@ export default defineConfig([
         'not.toBeUndefined': 'Assert the value itself.',
         toBeOneOf: 'Pin the one answer the code gives.',
       }],
+      // A run checks one branch only, even when the assert comes after it
+      'vitest/no-conditional-in-test': 'error',
     },
   },
   {
@@ -219,12 +227,17 @@ export default defineConfig([
     rules: restrictSyntax(...NO_HEDGES),
   },
   {
+    files: ['e2e/**'],
+    rules: {
+      'no-restricted-syntax': ['error', ...NO_HEDGES],
+    },
+  },
+  {
     files: ['e2e/**/*.spec.js'],
     extends: [playwright.configs['flat/recommended']],
     rules: {
       // e2e/helpers.js's expect* helpers (expectNoViolations, ...) assert too
       'playwright/expect-expect': ['error', { assertFunctionPatterns: ['^expect[A-Z]'] }],
-      'no-restricted-syntax': ['error', ...NO_HEDGES],
     },
   },
 ])

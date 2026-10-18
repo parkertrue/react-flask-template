@@ -18,10 +18,13 @@ describe('legal details', () => {
     expect(field('Contact')).toBe(`mailto:${OPERATOR.email}`)
   })
 
-  // A future date would fail the template's own CI once it passed; README
-  // tells each app to renew it yearly
-  it('give security.txt an expiry date', () => {
+  // RFC 9116 wants Expires less than a year away, and a lapsed file is one
+  // reporters should ignore. This starts failing 30 days before it lapses,
+  // the template's own CI included, so someone renews it in time
+  it('give security.txt an expiry date, at least 30 days and at most a year away', () => {
     expect(field('Expires')).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
-    expect(Number.isNaN(Date.parse(field('Expires')))).toBe(false)
+    const daysLeft = (Date.parse(field('Expires')) - Date.now()) / 86_400_000
+    expect(daysLeft).toBeGreaterThan(30)
+    expect(daysLeft).toBeLessThanOrEqual(366)
   })
 })

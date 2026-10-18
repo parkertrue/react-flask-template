@@ -59,7 +59,7 @@ EDITS = {
     'frontend/src/components/layout/__tests__/Navbar.test.jsx': [
         ("expect(links()).toEqual({ Home: '/', 'My notes': '/notes' })",
          "expect(links()).toEqual({ Home: '/' })"),
-        ("    ['/notes', true, ['My notes']],\n", ''),
+        ("    ['/notes', ['My notes']],\n", ''),
     ],
     'frontend/src/pages/HomePage.jsx': [
         ("import ApiStatus from '@/features/health/ApiStatus'\n", ''),

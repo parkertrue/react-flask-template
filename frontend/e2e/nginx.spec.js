@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { test, expect } from '@playwright/test'
+import { SERVICE_UNAVAILABLE_MESSAGE } from './helpers'
 
 // What nginx itself promises (nginx/templates/default.conf.template), checked
 // over the wire. The app works the same without any of these, so only this
@@ -41,11 +41,6 @@ function backendAddress() {
     'inspect', '--format', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}', id,
   ], { encoding: 'utf8' }).trim()
 }
-
-// What every outage answers with, nginx's 502/504 as much as the backend's 503
-const SERVICE_UNAVAILABLE_MESSAGE = readFileSync(
-  path.join(REPO_ROOT, 'backend/app/utils/errors.py'), 'utf8',
-).match(/^SERVICE_UNAVAILABLE_MESSAGE = '(.+)'$/m)[1]
 
 // Whether the backend answers its health check from inside its own container,
 // bypassing nginx

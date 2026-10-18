@@ -132,15 +132,15 @@ export async function expectNoViolations(page) {
   expect(violations.map(v => ({ rule: v.id, nodes: v.nodes.map(n => n.html) }))).toEqual([])
 }
 
-/** The backend's answer while MySQL or Redis is down */
+/** What every outage answers with, nginx's 502/504 as much as the backend's 503 */
+export const SERVICE_UNAVAILABLE_MESSAGE = readFileSync(
+  path.join(import.meta.dirname, '..', '..', 'backend/app/utils/errors.py'), 'utf8',
+).match(/^SERVICE_UNAVAILABLE_MESSAGE = '(.+)'$/m)[1]
+
+/** The backend's answer while MySQL or Redis is down, word for word */
 export const serviceUnavailable = {
   status: 503,
-  json: {
-    error: {
-      code: 'SERVICE_UNAVAILABLE',
-      message: 'The service is temporarily unavailable. Please try again.',
-    },
-  },
+  json: { error: { code: 'SERVICE_UNAVAILABLE', message: SERVICE_UNAVAILABLE_MESSAGE } },
 }
 
 /**
@@ -200,13 +200,21 @@ export async function expectReflow(page) {
  * focus outline and is not hidden under anything (the navbar, a dialog).
  */
 export async function expectVisibleFocus(page) {
-  await page.evaluate(() => document.activeElement?.blur())
+  // Stops are told apart by element, not by name: two links with the same
+  // text (the navbar's and the footer's) are both checked
+  await page.evaluate(() => {
+    document.activeElement?.blur()
+    window.focusStops = new WeakSet()
+  })
   const seen = []
-  for (;;) {
+  let roundTrip = false
+  for (let press = 0; press < 200 && !roundTrip; press++) {
     await page.keyboard.press('Tab')
     const stop = await page.evaluate(() => {
       const el = document.activeElement
-      if (!el || el === document.body) return null
+      // Out of the page, or round to a stop already checked
+      if (!el || el === document.body || window.focusStops.has(el)) return null
+      window.focusStops.add(el)
       const { outlineStyle, outlineWidth } = getComputedStyle(el)
       const box = el.getBoundingClientRect()
       const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
@@ -216,11 +224,14 @@ export async function expectVisibleFocus(page) {
         uncovered: el === hit || el.contains(hit),
       }
     })
-    if (stop === null || seen.includes(stop.name)) break
-    seen.push(stop.name)
-    expect(stop, `focus on ${stop.name}`).toEqual({ ...stop, outlined: true, uncovered: true })
+    roundTrip = stop === null
+    if (!roundTrip) {
+      seen.push(stop.name)
+      expect(stop, `focus on ${stop.name}`).toEqual({ ...stop, outlined: true, uncovered: true })
+    }
   }
   expect(seen.length, 'Tab reached the page\'s controls').toBeGreaterThan(0)
+  expect(roundTrip, 'Tab went round the page within 200 stops').toBe(true)
 }
 
 /**

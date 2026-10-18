@@ -1,7 +1,8 @@
 """Every assertion must be able to fail (CLAUDE.md, Test Architecture).
 
-Scans every test module for the hedges that let a test pass whatever the
-code does: an assert that may not run (behind an `if`, `match` or `while`, or
+Scans every test module, and the conftest files whose fixtures and helpers
+assert for the tests, for the hedges that let a test pass whatever the code
+does: an assert that may not run (behind an `if`, `match` or `while`, or
 inside a `try` or `suppress`), an assert that accepts several answers
 (`a or b`, `x in (400, 422)`, `x if c else True`), a test that asserts nothing
 at all, and a test whose every assert is one any value passes (`is not None`,
@@ -115,6 +116,9 @@ def _violations(path, root=TESTS):
     name = path.relative_to(root)
     for line, problem in _hedges(tree):
         yield f'{name}:{line}: {problem}'
+    # A conftest holds fixtures and helpers, not tests: only its asserts count
+    if path.name == 'conftest.py':
+        return
     for test in filter(_is_test, ast.walk(tree)):
         if test.name not in FAIL_BY_RAISING and not _checks_something(test):
             yield f'{name}:{test.lineno}: {test.name} never asserts'
@@ -125,7 +129,8 @@ def _violations(path, root=TESTS):
 
 
 def test_no_test_hedges_its_assertions():
-    violations = [v for path in sorted(TESTS.rglob('test_*.py')) for v in _violations(path)]
+    paths = sorted([*TESTS.rglob('test_*.py'), *TESTS.rglob('conftest.py')])
+    violations = [v for path in paths for v in _violations(path)]
 
     assert violations == []
 
@@ -158,6 +163,26 @@ def test_each_rule_catches_a_hedge(tmp_path, source, expected):
     path.write_text(source, encoding='utf-8')
 
     assert expected in ' '.join(_violations(path, tmp_path))
+
+
+@pytest.mark.parametrize('source, expected', [
+    ('def helper(r):\n    if r.ok:\n        assert r.data == 1\n', 'may not run'),
+    ('def helper(r):\n    assert r.status in (400, 422)\n', 'accepts several answers'),
+])
+def test_conftest_asserts_are_checked(tmp_path, source, expected):
+    """A shared helper's hedge hides in every test that calls it"""
+    path = tmp_path / 'conftest.py'
+    path.write_text(source, encoding='utf-8')
+
+    assert expected in ' '.join(_violations(path, tmp_path))
+
+
+def test_conftest_fixtures_are_not_tests(tmp_path):
+    """A fixture named test_* asserts nothing, and need not"""
+    path = tmp_path / 'conftest.py'
+    path.write_text('@pytest.fixture\ndef test_user(app):\n    return app.user\n', encoding='utf-8')
+
+    assert list(_violations(path, tmp_path)) == []
 
 
 @pytest.mark.parametrize('source', [
