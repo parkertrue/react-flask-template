@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 
-from app.auth.schemas import CurrentPassword
+from app.auth.schemas import Password
 from app.utils.schemas import UtcDatetime
 
 
@@ -14,6 +14,6 @@ class AccountResponse(BaseModel):
 
 class AccountDeleteRequest(BaseModel):
     """POST /api/account/delete: the account's password, typed again"""
-    password: CurrentPassword
+    password: Password
 
     model_config = ConfigDict(extra='forbid')

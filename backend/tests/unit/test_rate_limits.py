@@ -1,5 +1,6 @@
 import hashlib
 import time
+from types import SimpleNamespace
 
 import pytest
 import redis
@@ -303,7 +304,23 @@ class TestRefreshLimit:
 
 class TestDeleteAccountLimit:
     """Deleting an account asks for the password, so it is limited like a
-    login: per user, counting wrong passwords only"""
+    login: per user, counting wrong passwords only, and hourly per account in
+    the same budget as login's"""
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        """The limiter's clock, moved by hand, so requests can be spread over
+        an hour without waiting. Tokens keep the real clock."""
+        now = [time.time()]
+        monkeypatch.setattr('limits.storage.memory.time', SimpleNamespace(time=lambda: now[0]))
+        return now
+
+    @pytest.fixture
+    def fast_hashing(self, monkeypatch):
+        """Every password is wrong, at once; the limits don't care how long a
+        hash takes"""
+        monkeypatch.setattr('app.auth.models.verify_password', lambda stored, given: False)
+        monkeypatch.setattr('app.auth.routes.verify_password', lambda stored, given: False)
 
     def headers(self, app, email, ip='203.0.113.7'):
         with app.app_context():
@@ -353,6 +370,33 @@ class TestDeleteAccountLimit:
                     for _ in range(10)}
 
         assert statuses == {401}
+
+    @pytest.mark.usefixtures('fast_hashing')
+    def test_wrong_passwords_spread_over_an_hour_hit_the_account_limit(self, owner_app, clock):
+        """Four a minute stays under the per-minute limit, not the hourly one"""
+        client = owner_app.test_client()
+        headers = self.headers(owner_app, 'owner@example.com')
+        statuses = []
+        for _ in range(101):
+            statuses.append(self.delete(client, headers).status_code)
+            clock[0] += 15
+
+        assert statuses == [403] * 100 + [429]
+
+    @pytest.mark.usefixtures('fast_hashing')
+    def test_login_and_deletion_share_the_account_budget(self, owner_app, clock):
+        """Guessing behind a session adds to guessing at the login form"""
+        client = owner_app.test_client()
+        headers = self.headers(owner_app, 'owner@example.com')
+        statuses = []
+        for i in range(50):
+            statuses.append(self.delete(client, headers).status_code)
+            statuses.append(login(client, f'10.0.0.{i}', email='owner@example.com').status_code)
+            clock[0] += 15
+
+        assert statuses == [403, 401] * 50
+        assert self.delete(client, headers).status_code == 429
+        assert login(client, '10.0.1.1', email='owner@example.com').status_code == 429
 
 
 def test_unlimited_routes_have_no_per_ip_quota(limited_app):

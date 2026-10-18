@@ -85,7 +85,11 @@ test.describe('Critical User Journey', () => {
     const dialog = await askToDeleteAccount(page, 'WrongPassword123')
     await dialog.getByRole('button', { name: 'Delete account' }).click()
 
-    await expect(page.getByRole('alert')).toHaveText('The password is incorrect')
+    // The field's own message, focused, like a failed submit's
+    const password = page.getByLabel('Password', { exact: true })
+    await expect(password).toBeFocused()
+    await expect(password).toHaveAttribute('aria-invalid', 'true')
+    await expect(password).toHaveAccessibleDescription(/The password is incorrect/)
     await expect(page).toHaveURL(/\/account$/)
     await page.reload()
     await expect(memberSince(page)).toBeVisible()
