@@ -382,7 +382,9 @@ Every container logs to stdout, which Docker keeps, rotated at three files of 10
 docker compose --env-file .env.prod logs -f nginx backend
 ```
 
-The backend's lines (the app's, gunicorn's and the start-up wait's) and nginx's access log are one JSON object per line. nginx's error log (rate-limit refusals, an unreachable backend) and the one-shot `migrate` service's output are plain text.
+The backend's lines (the app's, gunicorn's, the start-up wait's and the one-shot `migrate` service's) and nginx's access log are one JSON object per line. nginx's error log (an unreachable backend, an oversized body) is plain text.
+
+nginx logs one request in 100 that it refuses for a client's rate (a 429), and every other request. A client flooding the API writes a few sampled lines a second instead of thousands, which would push every earlier line out of Docker's 30 MB in seconds; multiply the sampled lines by 100 for the flood's size. A single 429 a real user got is likely not in the log.
 
 nginx's access log is the one record of each request: the client's address, the request's path, its status and how long it took. The path is logged without its query string, where a link's token would sit, and cut at 512 characters; the User-Agent and Referer are cut at 256. Each line has a `request_id`, which nginx also hands the backend: every backend line written during that request carries the same one, which joins the two.
 

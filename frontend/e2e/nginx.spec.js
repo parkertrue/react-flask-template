@@ -139,10 +139,14 @@ test.describe('nginx', () => {
       { error: { code: 'NOT_FOUND', message: 'Resource not found' } })
   })
 
-  test('a burst past the rate limit is refused in the API\'s error shape', async ({ request }) => {
+  test('a burst past the rate limit is refused in the API\'s error shape, and barely logged', async ({ request }) => {
+    // The user agent finds this burst's access lines; the query string must
+    // reach no line at all, error log included
+    const userAgent = `burst-${Date.now()}`
+    const secret = `secret-${Date.now()}`
     // 30 r/s with a burst of 20 (nginx/Dockerfile): 60 at once overflows it
-    const responses = await Promise.all(
-      Array.from({ length: 60 }, () => request.get('/api/account')))
+    const responses = await Promise.all(Array.from({ length: 60 }, () =>
+      request.get(`/api/account?token=${secret}`, { headers: { 'User-Agent': userAgent } })))
     const limited = responses.filter(response => response.status() === 429)
 
     // The first requests reach Flask, which refuses them for want of a token
@@ -152,6 +156,14 @@ test.describe('nginx', () => {
         error: { code: 'RATE_LIMITED', message: 'Too many requests, please try again later' },
       })
     }
+
+    // Every request served is logged; of the refused, one in 100 (nginx.conf),
+    // so 10 of about 40 would take odds of 1 in 10^11
+    const served = responses.length - limited.length
+    const burstLines = () => logLines('nginx').filter(l => l.includes(userAgent)).map(l => JSON.parse(l))
+    await expect.poll(() => burstLines().filter(line => line.status === 401).length).toBe(served)
+    expect(burstLines().filter(line => line.status === 429).length).toBeLessThan(10)
+    expect(logLines('nginx').filter(l => l.includes(secret))).toEqual([])
 
     // Let the bucket refill, so the tests after this one are not limited
     await expect.poll(async () => (await request.get('/api/account')).status()).toBe(401)
