@@ -298,11 +298,30 @@ written and keeps it for a set period. The template builds no log shipping of
 its own, which would tie it to the self-hosted Docker path. On the bundled
 Compose deployment, Docker's 3 × 10 MB per container is all there is: it caps
 by size, not age, and enough traffic can push older lines out. nginx cuts the
-client's text in each access line short and rate-limits the page as well as
-the API per address, which makes that slow for one client (about ten minutes
-for 30 MB, where an 8 KB User-Agent did it in seconds) but not impossible for
-many. *Revisit when:* the bundled Compose deployment runs on a real server
-(then ship its logs off the host, or raise the cap with a stated retention).
+client's text in each access line short, rate-limits the page as well as the
+API per address, and logs only a sample of what it refuses (below), which
+makes that slow for one client but not impossible for many. Measured on
+2026-10-18: one client sending ~4200 requests a second with 4 KB headers
+wrote 51 KB for 4000 requests, where it wrote 11.2 MB (an access line and an
+error-log line per refusal) before the sampling. Its served lines and the
+sampled refusals, about 770 bytes each, roll 30 MB over in about 13 minutes
+on one zone, and (by the same numbers) about 8 if it floods the page and the API together.
+*Revisit when:* the bundled Compose deployment runs on a real server (then
+ship its logs off the host, or raise the cap with a stated retention).
+
+**nginx logs a 1-in-100 sample of refused requests.** A client over a rate
+limit gets its 429, and nginx writes an access line for one refusal in 100,
+picked by `request_id` (`split_clients` in `nginx.conf`); refusals leave the
+error log entirely (`limit_req_log_level info`). Logging every refusal let one
+client roll Docker's 30 MB over in about 4 seconds, erasing everything older,
+the flood's own start and other users' requests included; the error-log
+lines also kept the query string and Referer, which the access log drops.
+Logging none was rejected too: nginx's 429s never reach Flask, so no
+`rate_limited` event would show that a flood happened or where it came from.
+The sample keeps the flood's address, timing and paths (multiply by 100 for
+its size). The cost: exact counts are lost, and a single 429 a real user got
+is likely not logged. `nginx.spec.js` checks both halves. *Revisit when:* logs
+are shipped off the host (then log every refusal).
 
 **One backend container, at a fixed address.** nginx connects to the
 backend's fixed address on the edge network, not to its name, so a recreated

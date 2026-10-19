@@ -78,8 +78,9 @@ server {
 
     # The page and the files in public/. A load fetches the page and the icon,
     # and the app's own navigation fetches nothing more, so the rate is for a
-    # client looping on it: each request is a line in the access log, and
-    # enough of them would roll the log over (nginx.conf, the log's fields).
+    # client looping on it: each request it serves is a line in the access
+    # log, and enough of them would roll the log over (nginx.conf, the log's
+    # fields; refusals are only sampled there).
     location / {
         limit_req zone=page burst=20 nodelay;
 
