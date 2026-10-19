@@ -9,8 +9,9 @@ from alembic import context
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-fileConfig(config.config_file_name)
+# Interpret the config file for Python logging. Leave loggers that already
+# exist alone: tests run migrations in-process, beside the app's own loggers.
+fileConfig(config.config_file_name, disable_existing_loggers=False)
 logger = logging.getLogger('alembic.env')
 
 
