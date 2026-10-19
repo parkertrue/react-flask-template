@@ -21,6 +21,9 @@ from app.utils.log import JsonFormatter
 # JSON on stdout, like every other line the backend image writes
 log = logging.getLogger('restrict_db_user')
 log.setLevel(logging.INFO)
+# Its own handler only: a root handler (the migrations' fileConfig, run
+# in-process by the tests) would print each line twice
+log.propagate = False
 
 DATA_PRIVILEGES = 'SELECT, INSERT, UPDATE, DELETE'
 # Every other database-level privilege that the image's GRANT ALL included
