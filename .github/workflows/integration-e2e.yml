@@ -93,19 +93,28 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      # Pulls and builds take most of webServer's 120s timeout on a cold
+      # runner, so they happen here and webServer's --build is all cache hits
+      - name: Build the E2E stack
+        run: |
+          docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e build --pull
+          docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e pull db redis
+
       # playwright.config.js brings the e2e compose profile up itself via its
       # webServer block, and does not reuse an existing server when CI is set.
       - name: Run E2E tests
         working-directory: frontend
         run: npm run test:e2e
 
-      # Every line the backend container wrote, gunicorn's own included, must
-      # be JSON: a log shipper drops a line it cannot parse
+      # Every line the backend image wrote, gunicorn's and the migrations'
+      # included, must be JSON: a log shipper drops a line it cannot parse
       - name: Backend log is JSON
-        run: >-
-          docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e
-          logs --no-log-prefix --no-color backend
-          | python3 .github/scripts/check_json_logs.py
+        run: |
+          for service in migrate backend; do
+            docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e \
+              logs --no-log-prefix --no-color "$service" \
+              | python3 .github/scripts/check_json_logs.py
+          done
 
       - name: Upload Playwright report
         if: failure()
