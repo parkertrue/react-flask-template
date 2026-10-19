@@ -137,6 +137,11 @@ jobs:
           docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e config --quiet
           docker compose --env-file .env.prod.example config --quiet
 
+      # The test stack copies production's hardening and all three copy the
+      # Redis ACL; this fails when a copy drifts
+      - name: Copies agree
+        run: python3 .github/scripts/check_compose.py
+
   workflows:
     name: Workflows
     runs-on: ubuntu-latest

@@ -3,6 +3,7 @@
 The suite's own DB_USER keeps its privileges: integration fixtures create
 and drop tables with it.
 """
+import json
 import os
 
 import pymysql
@@ -115,9 +116,14 @@ def test_running_twice_is_harmless(probe_user):
     assert 'CREATE' not in grants and 'DROP' not in grants
 
 
-def test_rejects_an_unsafe_database_name(monkeypatch):
+def test_rejects_an_unsafe_database_name(monkeypatch, capsys):
     monkeypatch.setenv('DB_NAME', 'app`; DROP DATABASE x; --')
     monkeypatch.setenv('APP_DB_USER', PROBE_USER)
 
     with pytest.raises(SystemExit):
         restrict_db_user.main()
+
+    # One JSON line, like every line the backend image writes
+    line = json.loads(capsys.readouterr().out)
+    assert (line['level'], line['message']) == (
+        'ERROR', "Refusing unexpected database name: 'app`; DROP DATABASE x; --'")

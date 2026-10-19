@@ -9,11 +9,18 @@ Safe to run on every deploy.
 Reads DB_HOST/PORT/NAME and the admin DB_USER/DB_PASSWORD like
 app/config.py; APP_DB_USER names the user to restrict.
 """
+import logging
 import os
 import re
 import sys
 
 import pymysql
+
+from app.utils.log import JsonFormatter
+
+# JSON on stdout, like every other line the backend image writes
+log = logging.getLogger('restrict_db_user')
+log.setLevel(logging.INFO)
 
 DATA_PRIVILEGES = 'SELECT, INSERT, UPDATE, DELETE'
 # Every other database-level privilege that the image's GRANT ALL included
@@ -25,11 +32,16 @@ SCHEMA_PRIVILEGES = (
 
 
 def main():
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter())
+    log.handlers = [handler]
+
     database = os.environ['DB_NAME']
     # Identifiers cannot be passed as query parameters, so only allow names
     # that are safe to put between backticks
     if not re.fullmatch(r'\w+', database):
-        sys.exit(f'Refusing unexpected database name: {database!r}')
+        log.error(f'Refusing unexpected database name: {database!r}')
+        sys.exit(1)
     app_user = os.environ['APP_DB_USER']
     # In GRANT and REVOKE, `_` in a database name is a wildcard. The MySQL
     # image escapes it when it grants ALL, so the grant row to narrow is
@@ -51,7 +63,7 @@ def main():
         cursor.execute(
             f"REVOKE IF EXISTS {SCHEMA_PRIVILEGES} ON `{escaped}`.* FROM %s@'%%'",
             (app_user,))
-    print(f'{app_user} restricted to {DATA_PRIVILEGES} on {database}')
+    log.info(f'{app_user} restricted to {DATA_PRIVILEGES} on {database}')
 
 
 if __name__ == '__main__':

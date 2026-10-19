@@ -9,6 +9,10 @@ x-backend-address: &backend-address "${EDGE_SUBNET_PREFIX:-10.217.1}.10"
 services:
   db:
     image: mysql:8.4.11
+    # Production's hardening, so E2E catches an image that breaks under it
+    # (.github/scripts/check_compose.py compares the two)
+    security_opt:
+      - no-new-privileges:true
     # Only the variables MySQL needs, interpolated from the --env-file passed
     # to docker compose, so SECRET_KEY and the Redis password stay out. The
     # keys are the MySQL image's own names; the app reads DB_* everywhere.
@@ -46,6 +50,8 @@ services:
 
   redis:
     image: redis:8.10-alpine
+    security_opt:  # as db
+      - no-new-privileges:true
     environment:
       REDISCLI_AUTH: ${REDIS_PASSWORD}  # lets the healthcheck authenticate
     # noeviction and the ACL user: see docker-compose.yml

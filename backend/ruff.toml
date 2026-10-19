@@ -16,7 +16,6 @@ select = ["E4", "E7", "E9", "F", "Q", "T20", "ERA", "FIX", "TID251", "TID252", "
 
 # Command-line scripts whose output is their job
 [lint.per-file-ignores]
-"restrict_db_user.py" = ["T20"]
 "wait_for_services.py" = ["T20"]
 
 [lint.flake8-quotes]
