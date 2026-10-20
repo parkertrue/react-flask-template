@@ -9,10 +9,10 @@
 #   (tests/unit/test_import_rules.py), which reads only absolute ones, sees
 #   every import. TID251 bans the calls listed below.
 # - DTZ refuses naive datetimes: every timestamp is UTC.
-# - S102 and S307 refuse exec and eval.
+# - S102 and S307 refuse exec and eval; S608 refuses SQL built from strings.
 # - RUF100 refuses a noqa that suppresses nothing.
 [lint]
-select = ["E4", "E7", "E9", "F", "Q", "T20", "ERA", "FIX", "TID251", "TID252", "DTZ", "S102", "S307", "RUF100"]
+select = ["E4", "E7", "E9", "F", "Q", "T20", "ERA", "FIX", "TID251", "TID252", "DTZ", "S102", "S307", "S608", "RUF100"]
 
 # Command-line scripts whose output is their job
 [lint.per-file-ignores]

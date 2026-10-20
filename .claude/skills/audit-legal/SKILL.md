@@ -132,9 +132,9 @@ as RULES.md.
   a checkbox), rather than a link in a footer (browsewrap, often
   unenforceable)? Is acceptance recorded (which version, when)?
 - **Dark patterns** (FTC Act section 5, CPRA's consent rules, DSA Art. 25):
-  is ending things as easy as starting them? Signing out everywhere, and
-  later deleting an account or a subscription, should take no more steps
-  than signing up.
+  is ending things as easy as starting them? Signing out everywhere,
+  deleting the account, and later cancelling a subscription should take no
+  more steps than signing up.
 - **Email** (CAN-SPAM, CASL, PECR): when the app sends email (verification
   and password reset are planned), what each kind requires (transactional vs
   marketing, unsubscribe, sender identity). A low finding until email exists.

@@ -10,7 +10,8 @@ context: fork
 First read `.claude/skills/_audit-shared/RULES.md` and follow it throughout
 (especially the worktree notes under **Environment**). Then read `CLAUDE.md`,
 `README.md`'s "Starting a New App" section, and `DECISIONS.md` from the
-same folder as RULES.md.
+same folder as RULES.md. This check runs Docker: record all four Timings
+(RULES.md, Report).
 
 The template's promise is that a new app starts by renaming notes into its
 first feature (or deleting it) and renaming a few things. This check acts it out. Everything happens in a
@@ -57,8 +58,15 @@ use the name it was started under. Afterward, reset the database
 (`down -v` and up again) before the integration suite, since `flask db
 migrate` leaves tables and `alembic_version` behind.
 
-Skip step 6 (rewriting docs); just note which sections of README and
-CLAUDE.md would need rewriting, as a measure of how much is notes-specific.
+Steps 6 and 7 are part mechanical, part writing. Act out every file change
+they ask for: in step 6, replace `LICENSE` and `frontend/package.json`'s
+`license` with a stand-in license (MIT, held by a made-up name) and delete
+`.claude/skills/audit-scaffold/` in the worktree; in step 7, fill in
+`OPERATOR` in `frontend/src/legal.js` and `frontend/public/.well-known/security.txt`
+with made-up values, as its "Before launch" list says. Skip only the
+writing: rewriting README and `CLAUDE.md` (just note which of their sections
+would need it, as a measure of how much is notes-specific) and the legal
+pages' text.
 
 ## 3. Verify
 

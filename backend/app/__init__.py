@@ -22,10 +22,10 @@ from app.utils.redis_service import (
 jwt = JWTManager()
 db = SQLAlchemy()
 migrate = Migrate()
-# No default limits: only the routes that need one (login, register,
-# refresh) declare it. nginx caps every client's request rate, and a per-IP
-# daily quota on the whole API would lock out everyone sharing an address
-# (an office, a campus, a mobile carrier's NAT) once a few of them hit it.
+# No default limits: only the routes that need one declare it. nginx caps
+# every client's request rate, and a per-IP daily quota on the whole API
+# would lock out everyone sharing an address (an office, a campus, a mobile
+# carrier's NAT) once a few of them hit it.
 limiter = Limiter(key_func=get_remote_address)
 
 # The code and message for each HTTP error the API expects; any other status

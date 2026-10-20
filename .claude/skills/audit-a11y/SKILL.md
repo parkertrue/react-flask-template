@@ -10,7 +10,8 @@ context: fork
 First read `.claude/skills/_audit-shared/RULES.md` and follow it throughout.
 Then read `CLAUDE.md` (its **Accessibility (WCAG 2.2 AA)** paragraph is the
 spec), plus `SOURCES.md` (React / frontend, Accessibility) and `DECISIONS.md`
-from the same folder as RULES.md.
+from the same folder as RULES.md. This check runs Docker: record all four
+Timings (RULES.md, Report).
 
 axe already runs on every shared page in `frontend/e2e/accessibility.spec.js`,
 and each feature's spec runs it on its own pages, but axe covers only about a
@@ -77,8 +78,10 @@ Check on every page, logged out and logged in:
   they run axe on most states (form errors, busy and failed actions, a
   failed load, the error page, a session that ended, edit mode, the open
   delete dialog). Run axe (`@axe-core/playwright`, as they do) on any state
-  they miss, and check the delete `ConfirmDialog`'s initial focus and the
-  focus returned after Cancel and after confirming.
+  they miss. Check every `ConfirmDialog` (deleting a note, deleting the
+  account): its initial focus, the focus returned after Cancel, and the
+  focus after confirming (for the account, the login page's `h1`, with the
+  message that the account is gone).
 - **Accessibility tree:** take `page.locator('body').ariaSnapshot()` for
   each page and check names, roles and states read sensibly.
 

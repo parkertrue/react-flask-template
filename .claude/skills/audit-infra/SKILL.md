@@ -10,7 +10,8 @@ context: fork
 
 First read `.claude/skills/_audit-shared/RULES.md` and follow it throughout.
 Then read `CLAUDE.md`, plus `SOURCES.md` and `DECISIONS.md` from the same
-folder as RULES.md.
+folder as RULES.md. This check runs Docker: record all four Timings
+(RULES.md, Report).
 
 **Scope:** `$ARGUMENTS`. If empty, cover every layer below. If it names
 layers, cover only those.
@@ -64,8 +65,10 @@ Files: `nginx/` (Dockerfile, `nginx.conf`, `proxy_params.conf`,
   directly or through `resource_headers.conf`?
 - Body cap, rate and connection limits, and JSON error bodies: consistent with
   Flask's limits and the API's error shape?
-- Catch-all server, HTTP→HTTPS redirect, upstream re-resolution, timeouts and
-  keepalive in line with gunicorn's settings?
+- Catch-all server, HTTP→HTTPS redirect, the upstream at the backend's fixed
+  address with no DNS (`00-upstream.conf.template` against the compose
+  files' `EDGE_SUBNET_PREFIX`), timeouts and keepalive in line with
+  gunicorn's settings?
 
 ### docker: images and Compose
 Files: `backend/Dockerfile`, `backend/entrypoint.sh`, `nginx/Dockerfile`,

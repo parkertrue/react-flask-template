@@ -81,15 +81,21 @@ worktree as RULES.md describes (unlink `node_modules` first).
 
 ## 4. Coverage gaps (behavior, not files)
 
-Build an inventory of the behaviors the app promises: every route and its
-documented status codes, every error code in `backend/app` (the frontend
-`errorBody` list must match), every config guard, every CLAUDE.md claim about
-failure handling (Redis down, DB dropped, refresh race, rate limit hit), and
-every user journey (register, login, logout, logout-all, clear-cookies,
-refresh, the 7-day idle timeout and the 30-day cap across refreshes, the
-account page and `GET /api/account`, notes create, paginate, edit, and delete
-(confirm and cancel), the notes cap, another user's note as a 404, the
-protected route redirect, the 404 and error pages).
+Build an inventory of the behaviors the app promises. Take the routes from
+the code, not from this list: every API route from `flask routes` (in
+`backend/`, `APP_ENV=unit SECRET_KEY=<any 32+ characters> .venv/Scripts/flask --app wsgi routes`,
+which needs no services) with its documented status codes, and every page
+in `frontend/src/routes.jsx`. Add every error code in `backend/app` (the
+frontend `errorBody` list must match), every config guard, every CLAUDE.md
+claim about failure handling (Redis down, DB dropped, refresh race, rate
+limit hit), and every user journey. Journeys include, for example: register
+(with the terms checkbox, and `TERMS_OUTDATED` for a stale terms version),
+login, logout, logout-all, clear-cookies, refresh, the 7-day idle timeout
+and the 30-day cap across refreshes, the account page and
+`GET /api/account`, account deletion (wrong password, cancel, confirm, then
+the login page), the legal pages signed in and out, notes create, paginate,
+edit, and delete (confirm and cancel), the notes cap, another user's note as
+a 404, the protected route redirect, the 404 and error pages.
 
 For each behavior, name the test that pins it, at the right level:
 - **unit** for logic and route behavior,
