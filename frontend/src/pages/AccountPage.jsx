@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
+import { useLogout } from '@/auth/useLogout'
 import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
 import { getErrorMessage } from '@/api/errors'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
@@ -10,7 +11,8 @@ import PageTitle from '@/components/layout/PageTitle'
 import { validatePassword, PASSWORD_MAX_LENGTH } from '@/utils/validation'
 
 export default function AccountPage() {
-  const { email, logout } = useAuth()
+  const { email } = useAuth()
+  const logOut = useLogout()
   const navigate = useNavigate()
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -45,10 +47,7 @@ export default function AccountPage() {
       }
       await clearAuthCookies()
     }
-    // Home first, rendered at once, or ProtectedRoute sends this page to
-    // /login (LogoutButton explains)
-    await navigate('/', { flushSync: true })
-    logout()
+    await logOut()
   }
 
   // The password is checked here first, then the dialog asks once more
@@ -80,15 +79,14 @@ export default function AccountPage() {
       }
       return
     }
-    // Home first, as for logging out, then the login page, which says the
-    // account is gone; a signed-in user would be sent on from there
-    await navigate('/', { flushSync: true })
-    logout()
+    // Then the login page, which says the account is gone; a signed-in user
+    // would be sent on from there
+    await logOut()
     await navigate('/login', { replace: true, state: { accountDeleted: true } })
   }
 
   return (
-    <div className="account-page">
+    <div className="account-page page-column">
       <PageTitle>Account</PageTitle>
       <h1>Account</h1>
       <p className="account-email">Signed in as <strong>{email}</strong></p>

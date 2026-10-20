@@ -59,7 +59,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="centered-page">
       <PageTitle>Log in</PageTitle>
       <div className="auth-container">
         <div className="auth-card">
@@ -110,7 +110,7 @@ export default function LoginPage() {
 
           <p className="auth-footer">
             Don't have an account?{' '}
-            <Link to="/register" className="auth-link">Register</Link>
+            <Link to="/register" className="text-link">Register</Link>
           </p>
         </div>
       </div>

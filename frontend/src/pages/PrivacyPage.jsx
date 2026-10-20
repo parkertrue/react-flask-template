@@ -8,7 +8,7 @@ import PlaceholderNotice from './PlaceholderNotice'
 // bracketed passage is for the app's developer to replace.
 export default function PrivacyPage() {
   return (
-    <div className="legal-page">
+    <div className="legal-page page-column">
       <PageTitle>Privacy notice</PageTitle>
       <h1>Privacy notice</h1>
       <PlaceholderNotice />
@@ -16,8 +16,9 @@ export default function PrivacyPage() {
       <h2>Who we are</h2>
       <p>
         {OPERATOR.name} runs this service and decides how your personal data
-        is used. You can reach us at <a href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a>,
-        or by the other ways on the <Link to="/contact">contact page</Link>.
+        is used. You can reach us at <a href={`mailto:${OPERATOR.email}`} className="text-link">{OPERATOR.email}</a>,
+        or by the other ways on the <Link to="/contact" className="text-link">contact page</Link>.
+        [Your data protection officer or EU/UK representative, if you need one.]
       </p>
 
       <h2>What we collect</h2>
@@ -28,13 +29,19 @@ export default function PrivacyPage() {
         <li>Security records: your IP address, browser, the pages and requests you make, and sign-in events such as failed logins, kept to protect your account and the service.</li>
         <li>In your browser: a sign-in cookie and a few values in local storage that keep you signed in. They are strictly necessary for the service you asked for, so we do not ask for consent to them, and we use no analytics or advertising cookies.</li>
       </ul>
+      <p>
+        You need to give your email address and a password to register;
+        without them we cannot create an account. [If the CCPA applies: the
+        categories of sources of this data.]
+      </p>
 
       <h2>Why, and on what legal basis</h2>
       <p>
         We use your account and content to provide the service you signed up
         for (performance of a contract). We keep security records because we
         have a legitimate interest in protecting accounts and the service.
-        [Check these bases, and add any other purpose your app has.]
+        [No decision about you is made by automated means alone.] [Check
+        these bases, and add any other purpose your app has.]
       </p>
 
       <h2>How long we keep it</h2>
@@ -54,10 +61,13 @@ export default function PrivacyPage() {
       <h2>Your rights</h2>
       <p>
         You can delete your account, and everything in it, on your Account
-        page. You can also ask us for a copy of your data, to correct it, or
-        to restrict or object to how we use it. Write to us
-        at <a href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a> from the
-        email address of your account. We answer within one month.
+        page. You can also ask us for a copy of your data, in a
+        machine-readable form you can take elsewhere (portability); to
+        correct it; or to restrict or object to how we use it. Write to us
+        at <a href={`mailto:${OPERATOR.email}`} className="text-link">{OPERATOR.email}</a> from the
+        email address of your account. We answer within one month. [If the
+        CCPA applies: we will not discriminate against you for using your
+        rights.]
       </p>
 
       <h2>Complaints</h2>

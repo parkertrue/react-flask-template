@@ -1,9 +1,4 @@
 /* The privacy notice, the terms and the contact page: long text */
-.legal-page {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
 .legal-page h2 {
   font-size: 1.25rem;
   margin-top: 2rem;
@@ -22,11 +17,4 @@
 .legal-page address {
   font-style: normal;
   margin-bottom: 1rem;
-}
-
-/* Underlined, since color alone must not set a link apart from its text */
-.legal-page a {
-  color: var(--color-primary);
-  text-decoration: underline;
-  overflow-wrap: anywhere;
 }

@@ -55,33 +55,6 @@ class TestNoteModel:
         # SQLite returns DATETIME naive, and the column holds UTC
         assert before <= note.created_at.replace(tzinfo=timezone.utc) <= after
 
-    def test_note_user_relationship(self, db, sample_user):
-        """Note should have relationship with User."""
-        note = Note(
-            user_id=sample_user.id,
-            content='Relationship test'
-        )
-        db.session.add(note)
-        db.session.commit()
-        db.session.refresh(note)
-
-        assert note.user is not None
-        assert note.user.id == sample_user.id
-        assert note.user.email == sample_user.email
-
-    def test_user_notes_backref(self, db, sample_user):
-        """User should have backref to access their notes."""
-        note1 = Note(user_id=sample_user.id, content='Note 1')
-        note2 = Note(user_id=sample_user.id, content='Note 2')
-
-        db.session.add_all([note1, note2])
-        db.session.commit()
-        db.session.refresh(sample_user)
-
-        assert len(sample_user.notes) == 2
-        assert note1 in sample_user.notes
-        assert note2 in sample_user.notes
-
     def test_note_foreign_key_constraint(self, db):
         """Note should not allow invalid user_id."""
         note = Note(
@@ -149,7 +122,8 @@ class TestNoteModel:
         assert remaining == ['Not mine']
 
     def test_deleting_a_user_does_not_load_their_notes(self, db, sample_user, sample_notes):
-        """passive_deletes: one DELETE on users, nothing per note"""
+        """One DELETE on users, nothing per note: the database cascades, so
+        nothing on User may make the ORM load a user's rows to delete them"""
         db.session.expire_all()
         user = db.session.get(User, sample_user.id)
         statements = []
@@ -195,19 +169,3 @@ class TestNoteModel:
         db.session.add(note)
         db.session.commit()
         assert note.content == ''
-
-
-class TestUserNotesRelationship:
-    """The notes backref the Note model adds to User."""
-
-    def test_user_deletion_cascade(self, db, sample_user):
-        """Deleting a user deletes their notes (cascade="all, delete-orphan")."""
-        note = Note(user_id=sample_user.id, content='Test note')
-        db.session.add(note)
-        db.session.commit()
-        note_id = note.id
-
-        db.session.delete(sample_user)
-        db.session.commit()
-
-        assert db.session.get(Note, note_id) is None

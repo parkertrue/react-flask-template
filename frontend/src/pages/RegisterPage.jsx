@@ -58,7 +58,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="centered-page">
       <PageTitle>Register</PageTitle>
       <div className="auth-container">
         <div className="auth-card">
@@ -113,8 +113,8 @@ export default function RegisterPage() {
               id="acceptTerms"
               type="checkbox"
               label={<>
-                I accept the <Link to="/terms" target="_blank" className="auth-link">Terms</Link> and
-                the <Link to="/privacy" target="_blank" className="auth-link">Privacy notice</Link>
+                I accept the <Link to="/terms" target="_blank" className="text-link">Terms</Link> and
+                the <Link to="/privacy" target="_blank" className="text-link">Privacy notice</Link>
               </>}
               hint="Both open in a new tab."
               checked={values.acceptTerms}
@@ -132,7 +132,7 @@ export default function RegisterPage() {
 
           <p className="auth-footer">
             Already have an account?{' '}
-            <Link to="/login" className="auth-link">Log in</Link>
+            <Link to="/login" className="text-link">Log in</Link>
           </p>
         </div>
       </div>

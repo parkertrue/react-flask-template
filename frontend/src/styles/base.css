@@ -24,6 +24,29 @@ h1:focus {
   outline: none;
 }
 
+/* Underlined, since color alone must not set a link apart from its text */
+.text-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+/* A page of text or a list, in one readable column */
+.page-column {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* A page with little on it (home, log in, register), centered in the
+   space between the navbar and the footer */
+.centered-page {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Read by screen readers, not shown: a status line whose news the page
    already shows another way */
 .visually-hidden {

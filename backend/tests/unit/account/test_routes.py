@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
+import jwt
 import pytest
 from flask_jwt_extended import create_refresh_token
 from sqlalchemy import select
@@ -226,6 +227,13 @@ class TestAccessUserId:
 
     def test_an_expired_token(self, app, expired_token):
         assert self.user_id(app, {'Authorization': f'Bearer {expired_token}'}) is None
+
+    def test_a_signed_token_without_a_user(self, app):
+        """Signed with the app's key, so PyJWT accepts it, but
+        flask-jwt-extended refuses a token that names no user"""
+        token = jwt.encode(
+            {'type': 'access', 'jti': 'x'}, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+        assert self.user_id(app, {'Authorization': f'Bearer {token}'}) is None
 
     def test_a_refresh_token(self, app, sample_user):
         with app.app_context():

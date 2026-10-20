@@ -4,8 +4,12 @@
   flex-direction: column;
 }
 
+/* A column, so a page can fill the height between the navbar and the
+   footer (centered-page) */
 .main-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   /* 1rem on a phone, growing to 2rem on wider screens */
   padding: clamp(1rem, 4vw, 2rem);
   max-width: 1200px;
@@ -28,11 +32,8 @@
   margin: 0 auto;
 }
 
-/* Underlined, since color alone must not set a link apart; padded to a
-   24px target */
+/* A text-link, padded to a 24px target */
 .footer-link {
-  color: var(--color-primary);
-  text-decoration: underline;
   padding: 0.25rem 0.5rem;
 }
 
