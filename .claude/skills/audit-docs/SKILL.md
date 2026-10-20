@@ -48,7 +48,10 @@ production. Note every step that is missing, out of order, or that only works
 with knowledge the document doesn't give. Do the same for an operator: deploy,
 renew certificates, back up, upgrade, roll back, rotate secrets, read logs.
 Gaps that DECISIONS.md lists as known (no backups yet) are mentioned only if
-the README fails to say they are not provided. Also flag any instruction that
+the README fails to say they are not provided. The operator steps (the
+runbook, certificate renewal, what production lacks) wait for the first
+server (Known gaps, "README's production section"): report them only where
+README gives a step that is wrong, not where one is missing. Also flag any instruction that
 has the reader edit a tracked file that CI, tests or another stack also use
 (a change for production that breaks the test stack).
 

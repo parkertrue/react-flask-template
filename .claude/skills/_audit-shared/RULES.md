@@ -58,8 +58,10 @@ Audits are **read-only** with respect to the repository:
   - A **production-config stack** for checks that need production behavior
     (persistent volumes, restart policies): `docker-compose.yml` with
     `-p app_audit`, an env file written to the scratch directory with fresh
-    random secrets (`python -c "import secrets; print(secrets.token_urlsafe(48))"`)
-    and `SERVER_NAME=localhost`, plus a scratch override file that rebinds
+    random secrets (`python -c "import secrets; print(secrets.token_urlsafe(48))"`),
+    `SERVER_NAME=localhost` and `EDGE_SUBNET_PREFIX=10.217.9` (the default
+    `10.217.0` clashes with a local production stack's edge network, and
+    the test stack uses `10.217.1`), plus a scratch override file that rebinds
     nginx to `127.0.0.1` (`ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]`),
     so nothing listens on the network. Never use the bare project name `app`.
   - Project names here (`app_test`, `app_dev`, `app_audit`) are the
@@ -182,6 +184,7 @@ Commit: <git rev-parse --short HEAD> (<branch>), working tree clean|dirty
 Scope: <what was covered; arguments passed, if any>
 Verdict: PASS | FINDINGS | BLOCKED   (BLOCKED if any blocker)
 Counts: blocker N, high N, medium N, low N, nit N
+Timings: start HH:MM, first container HH:MM, last teardown HH:MM, end HH:MM
 
 ## Findings
 
@@ -204,6 +207,12 @@ Short bullets of important claims you checked and found true (one line each).
 ## Unverified / Skipped
 What you could not check, and why (no deployment, Docker unavailable, ...).
 ```
+
+**Timings:** run `date +%H:%M` when you start, just before your first
+container starts, just after your last teardown, and when you finish, and
+write the four times on the Timings line. A check that starts no containers
+gives `start` and `end` only. The times show how much of each check's run
+uses Docker, which decides whether Docker checks could overlap.
 
 Write the report with the Write tool, not a shell heredoc (backticks and pipes
 in the tables break shell quoting). When citing line numbers, read each file

@@ -15,7 +15,8 @@ table's `/audit-recovery` row, and the Redis, MySQL, architecture and ops
 sections it points to) and `DECISIONS.md` from the same folder as RULES.md.
 
 This check takes about 30 minutes. Give long commands explicit timeouts, and
-wait with until-loops that have deadlines (RULES.md).
+wait with until-loops that have deadlines (RULES.md). It runs Docker: record
+all four Timings (RULES.md, Report).
 
 **Scope:** `$ARGUMENTS`. If empty, run both parts.
 
@@ -50,7 +51,7 @@ retries will create duplicates.
 |---|---|
 | Backend crash | Crash the process from inside, since Docker treats `docker kill` as a manual stop and `unless-stopped` then never restarts it: `docker exec <backend> python -c "import os,signal; os.kill(1, signal.SIGQUIT)"` (the image has no `kill` or `ps`). Not `SIGKILL`: the kernel ignores it when sent to PID 1 from inside its own namespace, so nothing happens; gunicorn exits at once on `SIGQUIT`. Does the restart policy bring it back, and how fast? Separately, swap it several times (`up -d --force-recreate --no-deps --wait backend`) with health probed every 0.2 s: does the first 200 come as soon as `--wait` returns, at the same address (nginx connects to the backend's fixed address, `nginx/templates/00-upstream.conf.template`, with no DNS)? The credential-change row's `REDIS_PASSWORD` rotation, which recreates redis and the backend together, is the same check under a full `up -d`. |
 | Backend hang | `docker pause` the backend for 60s. What do clients see, and how fast (nginx timeouts)? Unpause and recheck. |
-| Redis down | `docker stop` redis for 60s. Per CLAUDE.md: login answers 503 (the token can't be recorded) and refresh fails closed with 503 `SERVICE_UNAVAILABLE`, not a revocation; both must answer **promptly**, within the Redis client timeouts. Time them. Existing access tokens keep working; rate limits fall back to memory, per gunicorn worker: 5 wrong passwords answer 429 on the worker that counted them, while a request landing on the other worker still gets 401. Record the user-visible effect of each answer (does the frontend end the session?). Start it again; does the app reconnect without a restart? Are sessions intact (AOF)? |
+| Redis down | `docker stop` redis for 60s. Per CLAUDE.md: login answers 503 (the token can't be recorded) and refresh fails closed with 503 `SERVICE_UNAVAILABLE`, not a revocation; both must answer **promptly**, within the Redis client timeouts. Time them. With a throwaway account: logout-all answers 503 (revoking the sessions is its whole effect), and account deletion answers 503 with nothing deleted (once Redis is back, the account still logs in). Existing access tokens keep working; rate limits fall back to memory, per gunicorn worker: 5 wrong passwords answer 429 on the worker that counted them, while a request landing on the other worker still gets 401. Record the user-visible effect of each answer (does the frontend end the session?). Start it again; does the app reconnect without a restart? Are sessions intact (AOF)? |
 | Redis restart | `docker restart` redis. Do refresh tokens survive (persistence)? |
 | Redis crash | `docker kill` redis (no clean shutdown). With AOF `everysec`, up to a second of writes may be lost: does a session created just before survive? |
 | Redis full | The `default` user is off, and the app's user can't run `ACL` or `INFO` (both `@dangerous`), so you can't read memory use. Fill under the app's own key pattern: `docker exec` into redis and use `redis-cli --user app` (password in your scratch env file) to write large values to `refresh_tokens:audit-fill-*` until **several writes in a row** are refused (memory hovers at the limit). Fill through one long-lived connection (pipe a stream of `SET`s into a single `redis-cli`): each short-lived `redis-cli` frees its client buffers on exit, which lets the app's small writes slip through. Large values alone stop just under the limit, so top up with shrinking ones (10 KB down to 10 B) on a second long-lived connection until login is refused. Before filling, log in and keep that refresh token, since rotation still works under OOM (its script deletes first). Probe login, refresh with the saved token, and logout. Avoid logout-all, which wipes the test sessions. Delete the fill keys and confirm login works again. |
@@ -84,8 +85,10 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   tokens; DB and Redis passwords; TLS key)? Is there a way to revoke every
   session at once?
 - **Operator documentation:** does README tell an operator how to restart,
-  roll back a bad deploy, rotate secrets, and read logs? Missing runbook steps
-  are findings.
+  roll back a bad deploy, rotate secrets, and read logs? The runbook waits
+  for the first server (DECISIONS.md, Known gaps, "README's production
+  section"), so a missing runbook step is a finding only where README
+  presents the step as covered, or gives one that is wrong.
 
 ## Out of scope
 Fixing anything. Live production drills: there is no deployment, and drills

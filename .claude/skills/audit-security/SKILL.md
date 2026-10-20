@@ -12,6 +12,7 @@ First read `.claude/skills/_audit-shared/RULES.md` and follow it throughout.
 Then read `CLAUDE.md`, plus `SOURCES.md` (Cross-cutting: security, and each
 layer's section) and `DECISIONS.md` from the same folder as RULES.md.
 DECISIONS.md's accepted trade-offs matter most here: do not re-report them.
+This check runs Docker: record all four Timings (RULES.md, Report).
 
 **Scope:** `$ARGUMENTS`. If empty, run all three parts.
 
@@ -35,10 +36,13 @@ this app and record what each one turns up:
   and scopes queries to `current_user` (try reading or paginating another
   user's notes via the cursor, and `PUT`/`DELETE /api/notes/<id>` on another
   user's note: both must answer 404 exactly like a missing id). Lint refuses
-  `get_jwt_identity()` (ruff `TID251`).
+  `get_jwt_identity()` (ruff `TID251`). Account deletion
+  (`POST /api/account/delete`): a wrong password answers 403
+  `WRONG_PASSWORD` and logs `wrong_password`; it revokes every session before
+  deleting, and answers 503 with nothing deleted when Redis cannot revoke them.
 - **Input and output:** every request body and query passes through a Pydantic
-  schema; size limits at nginx and Flask; email and password normalization;
-  no raw SQL with interpolation (lint already refuses `dangerouslySetInnerHTML`,
+  schema; size limits at nginx and Flask; email and password normalization
+  (lint already refuses SQL built from strings, `dangerouslySetInnerHTML`,
   `eval`, `subprocess` and `os.system`); error responses leak no stack
   traces, SQL, or internal hostnames.
 - **Secrets:** nothing secret in git history
@@ -123,8 +127,10 @@ describes. Nothing else.
 - **Hand probes** the scanners can't do, on the test stack: replay a rotated
   refresh token, send a refresh without the CSRF header, read another user's
   notes via the cursor, edit and delete another user's note by id, send a
-  17 KB body, send malformed JSON, and log in
-  with a password that differs only by Unicode normalization.
+  17 KB body, send malformed JSON, log in
+  with a password that differs only by Unicode normalization, and delete an
+  account with a wrong password, then with the right one (every session of
+  that account must then be refused).
 
 Tear the test stack down. Then, **for the rate-limit probes only**, bring up
 the production-config stack (RULES.md): the test stack runs `IntegrationConfig`,
@@ -135,7 +141,11 @@ address (a stranger's guesses lock out only the stranger); 100 failures an
 hour for one account from rotating addresses answer 429 from any address;
 successful logins count toward neither; different spellings of the same
 email share one counter; and a forged `X-Forwarded-For` cannot change the
-address the limits key on. Tear it down.
+address the limits key on. Then account deletion's: 5 wrong passwords a
+minute for one user answer 429, and its wrong passwords count toward the
+same hourly per-account budget as failed logins (`account_password_limit`),
+so failed logins plus wrong deletion passwords reaching 100 answer 429 on
+both routes. Tear it down.
 
 **Skipped until deployed** (list under *Skipped*): Observatory and SSL Labs
 against the real domain, Docker Bench and CIS on the host, SSH, firewall and

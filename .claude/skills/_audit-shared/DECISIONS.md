@@ -37,8 +37,8 @@ sessions. Revoking on reuse would also log out a second tab that lost the
 rotation race. *Revisit when:* the app holds data that justifies logging users
 out on a false positive.
 
-**No per-IP quota on the whole API.** Only login, register and refresh have
-Flask limits; users sharing an address (offices, carrier NAT) would lock each
+**No per-IP quota on the whole API.** Only login, register, refresh and
+account deletion have Flask limits; users sharing an address (offices, carrier NAT) would lock each
 other out. nginx's per-IP `limit_req`/`limit_conn` on `/api` is the coarse
 backstop.
 
@@ -95,14 +95,18 @@ healthcheck would do nothing. *Revisit when:* a monitor or orchestrator acts
 on container health.
 
 **Unreachable CVEs in base-image OS packages are low.** A scanner flagging an
-Alpine library in the nginx or backend image (e.g. libexpat, libtiff, pcre2
-in `nginx:*-alpine`) is a finding only if this configuration can reach it:
+Alpine library in the nginx or backend image (e.g. libexpat or libtiff in
+`nginx:*-alpine`) is a finding only if this configuration can reach it:
 a loaded module uses it, or visitor input reaches it. Unreachable ones are
 fixed by the upstream image's regular rebuilds, picked up with
 `docker compose build --pull`, not by `apk upgrade` in the Dockerfile, which
-makes builds unrepeatable and fails hadolint (DL3017). *Revisit when:* an
-nginx module that uses one is enabled (XSLT, image filter), or the CVE is in
-a library the app does use (OpenSSL, musl, zlib).
+makes builds unrepeatable and fails hadolint (DL3017). The libraries the
+stack does use (OpenSSL, musl, zlib, and pcre2, which nginx's log maps and
+`location` regexes run on every request) are judged per CVE: a bug in
+compiling a pattern only reaches the patterns in the config, while a bug in
+matching one reaches visitor input. *Revisit when:* an nginx module that
+uses one is enabled (XSLT, image filter), or the CVE is reachable in a
+library the stack uses.
 
 **Unreachable CVEs in the `db` and `redis` images are low too.** The same
 rule covers them. In the MySQL image, the gosu binary (its Go stdlib), the
@@ -146,6 +150,14 @@ code, so under MIT every derived app would have to carry the template's
 notice. MIT-0 drops that condition, so README's step 6 can tell a new app to
 replace `LICENSE` outright (LEGAL-19). *Revisit when:* the owner wants
 attribution from derived apps.
+
+**Legal placeholders are not enforced at build.** Nothing stops a
+production image from serving the placeholder `OPERATOR` values in
+`frontend/src/legal.js`, `contact@example.com` in `security.txt`, or the
+"Placeholder" banner on the legal pages. README's "Before launch" list is
+the only safeguard: a build check would have to tell the production image
+apart from the test stack's, which serves the same placeholders on purpose
+(LEGAL-21). *Revisit when:* the first real deployment is prepared.
 
 **Password composition rules and no spaces.** Every password the app
 accepts (register, login, account deletion) must hold upper and lower case
@@ -225,6 +237,24 @@ previous token for a grace window after rotation would avoid it, but it
 weakens one-time rotation (a stolen token could be replayed inside the
 window) and complicates the Lua script. *Revisit when:* users report
 sign-outs after slow responses, or refresh moves behind a shorter timeout.
+
+Account deletion is the third case. It revokes every session before it
+deletes the `users` row, so a delete that stalls in MySQL and answers 503
+has already signed the user out everywhere, and MySQL may still commit the
+delete afterwards: the user logs in again to find the account gone, or still
+there if MySQL never committed it. Either way nothing is half deleted, since
+the row and its cascade go in one statement. The recovery audit drilled it
+(2026-10-16). *Revisit when:* deletion gains a step outside that statement
+(files in object storage, a third-party account), which then needs to run
+only after the commit.
+
+**The requirements check stays a test, not deptry.**
+`tests/unit/test_requirements.py` checks that `requirements.in` lists every
+package the backend imports. deptry (0.25.1) would do the same and also
+find listed packages nothing imports, but it needs a `pyproject.toml`
+section the backend doesn't otherwise have. *Revisit when:* an unused
+package slips into `requirements.in`, or the backend gets a
+`pyproject.toml`.
 
 **Python import contracts stay a custom test, not import-linter.**
 `tests/unit/test_import_rules.py` does what import-linter's `layers` (with

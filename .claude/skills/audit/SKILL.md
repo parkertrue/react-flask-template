@@ -90,6 +90,12 @@ Collected from every check, for the user to accept or reject.
 
 ## Skipped
 What no check could cover in this run, and why.
+
+## Timings
+| Check | Start | First container | Last teardown | End | Minutes using Docker | Minutes in all |
+|---|---|---|---|---|---|---|
+(one row per check, from its report's Timings line; for a no-Docker check,
+leave the container columns empty)
 ```
 
 The verdict is BLOCKED if any check found a blocker, or any check could not

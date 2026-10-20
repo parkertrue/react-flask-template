@@ -46,7 +46,7 @@ cd backend
 ./run_tests.sh combined          # All tests with merged coverage report
 ./run_tests.sh unit --verbose    # Verbose output
 ./run_tests.sh unit --no-coverage
-ruff check .                     # Lint (errors, quote style, no print, commented-out code or TODO, no naive datetimes, eval or subprocess, no get_jwt_identity or skipped tests, no unused noqa; CI fails on any finding)
+ruff check .                     # Lint (errors, quote style, no print, commented-out code or TODO, no naive datetimes, eval, subprocess or SQL built from strings, no get_jwt_identity or skipped tests, no unused noqa; CI fails on any finding)
 ```
 
 ### Frontend
