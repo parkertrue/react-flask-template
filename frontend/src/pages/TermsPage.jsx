@@ -8,7 +8,7 @@ import PlaceholderNotice from './PlaceholderNotice'
 // backend) whenever the terms change.
 export default function TermsPage() {
   return (
-    <div className="legal-page">
+    <div className="legal-page page-column">
       <PageTitle>Terms of service</PageTitle>
       <h1>Terms of service</h1>
       <PlaceholderNotice />
@@ -18,7 +18,7 @@ export default function TermsPage() {
       <p>
         {OPERATOR.name} provides this service. By registering, you agree to
         these terms. How we handle your personal data is explained in
-        the <Link to="/privacy">privacy notice</Link>.
+        the <Link to="/privacy" className="text-link">privacy notice</Link>.
       </p>
 
       <h2>Who may use it</h2>
@@ -42,14 +42,14 @@ export default function TermsPage() {
       <h2>Reporting illegal content</h2>
       <p>
         To report content you believe is illegal, write
-        to <a href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a> with
+        to <a href={`mailto:${OPERATOR.email}`} className="text-link">{OPERATOR.email}</a> with
         where it is and why you believe it is illegal.
       </p>
 
       <h2>Ending your account</h2>
       <p>
-        You can stop using the service at any time, and ask us to delete your
-        account. We may end accounts that break these terms.
+        You can delete your account, and everything in it, at any time on
+        your Account page. We may end accounts that break these terms.
       </p>
 
       <h2>Liability</h2>

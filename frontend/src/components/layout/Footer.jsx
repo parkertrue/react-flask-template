@@ -6,9 +6,9 @@ export default function Footer() {
   return (
     <footer className="footer">
       <nav aria-label="Legal" className="footer-links">
-        <NavLink to="/privacy" className="footer-link">Privacy</NavLink>
-        <NavLink to="/terms" className="footer-link">Terms</NavLink>
-        <NavLink to="/contact" className="footer-link">Contact</NavLink>
+        <NavLink to="/privacy" className="text-link footer-link">Privacy</NavLink>
+        <NavLink to="/terms" className="text-link footer-link">Terms</NavLink>
+        <NavLink to="/contact" className="text-link footer-link">Contact</NavLink>
       </nav>
     </footer>
   )

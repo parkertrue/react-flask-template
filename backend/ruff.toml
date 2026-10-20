@@ -14,10 +14,6 @@
 [lint]
 select = ["E4", "E7", "E9", "F", "Q", "T20", "ERA", "FIX", "TID251", "TID252", "DTZ", "S102", "S307", "S608", "RUF100"]
 
-# Command-line scripts whose output is their job
-[lint.per-file-ignores]
-"wait_for_services.py" = ["T20"]
-
 [lint.flake8-quotes]
 inline-quotes = "single"
 

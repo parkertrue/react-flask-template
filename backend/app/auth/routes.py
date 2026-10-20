@@ -92,22 +92,25 @@ def _login_failed(response):
     return response.status_code == 401
 
 
-def _refresh_user_id():
-    """The user a valid refresh cookie belongs to, or None.
+def token_user_id(token, kind):
+    """The user a valid token of this kind ('access' or 'refresh') belongs
+    to, or None.
 
-    Limits are checked before @jwt_required runs, so the cookie is decoded
-    here; decode_token checks the signature and expiry.
+    A per-user rate limit is checked before @jwt_required runs, so its key
+    decodes the token itself; decode_token checks the signature and expiry.
     """
+    try:
+        claims = decode_token(token)
+    except (PyJWTError, JWTExtendedException):
+        return None
+    return claims.get('sub') if claims.get('type') == kind else None
+
+
+def _refresh_user_id():
+    """The user a valid refresh cookie belongs to, or None"""
     if 'refresh_user_id' not in g:
-        g.refresh_user_id = None
-        token = request.cookies.get(current_app.config['JWT_REFRESH_COOKIE_NAME'])
-        if token:
-            try:
-                claims = decode_token(token)
-            except (PyJWTError, JWTExtendedException):
-                claims = {}
-            if claims.get('type') == 'refresh':
-                g.refresh_user_id = claims.get('sub')
+        g.refresh_user_id = token_user_id(
+            request.cookies.get(current_app.config['JWT_REFRESH_COOKIE_NAME']), 'refresh')
     return g.refresh_user_id
 
 

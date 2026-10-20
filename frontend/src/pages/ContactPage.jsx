@@ -6,10 +6,10 @@ import PlaceholderNotice from './PlaceholderNotice'
 // imprint, where the law asks for one), the users' point of contact, and
 // where to report an accessibility barrier or a security problem
 export default function ContactPage() {
-  const email = <a href={`mailto:${OPERATOR.email}`}>{OPERATOR.email}</a>
+  const email = <a href={`mailto:${OPERATOR.email}`} className="text-link">{OPERATOR.email}</a>
 
   return (
-    <div className="legal-page">
+    <div className="legal-page page-column">
       <PageTitle>Contact</PageTitle>
       <h1>Contact</h1>
       <PlaceholderNotice />
@@ -37,7 +37,7 @@ export default function ContactPage() {
       <h2>Security</h2>
       <p>
         To report a security problem, see
-        our <a href="/.well-known/security.txt">security.txt</a>, or write
+        our <a href="/.well-known/security.txt" className="text-link">security.txt</a>, or write
         to {email}.
       </p>
     </div>

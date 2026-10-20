@@ -38,7 +38,7 @@ export default function NotesPage() {
   }, [loadingMore])
 
   return (
-    <div className="notes-page">
+    <div className="notes-page page-column">
       <PageTitle>My notes</PageTitle>
       <h1 ref={headingRef} tabIndex={-1}>My notes</h1>
 

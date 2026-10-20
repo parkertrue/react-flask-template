@@ -1,13 +1,11 @@
 from flask import Blueprint, jsonify, make_response, request
-from flask_jwt_extended import current_user, decode_token, jwt_required, unset_jwt_cookies
-from flask_jwt_extended.exceptions import JWTExtendedException
-from jwt.exceptions import PyJWTError
+from flask_jwt_extended import current_user, jwt_required, unset_jwt_cookies
 from sqlalchemy import delete
 
 from app import db, limiter
 from app.account.schemas import AccountDeleteRequest, AccountResponse
 from app.auth.models import User
-from app.auth.routes import account_key, account_password_limit
+from app.auth.routes import account_key, account_password_limit, token_user_id
 from app.utils.errors import error_response, service_unavailable
 from app.utils.log import security_event
 from app.utils.redis_service import get_redis_service
@@ -24,19 +22,11 @@ def get_account():
 
 
 def _access_user_id():
-    """The user a valid access token belongs to, or None.
-
-    Limits are checked before @jwt_required runs, so the token is decoded
-    here; decode_token checks the signature and expiry.
-    """
+    """The user a valid access token belongs to, or None"""
     header = request.headers.get('Authorization', '')
     if not header.startswith('Bearer '):
         return None
-    try:
-        claims = decode_token(header.removeprefix('Bearer '))
-    except (PyJWTError, JWTExtendedException):
-        return None
-    return claims.get('sub') if claims.get('type') == 'access' else None
+    return token_user_id(header.removeprefix('Bearer '), 'access')
 
 
 def _account_key():

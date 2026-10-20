@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from './useAuth'
+import { useLogout } from './useLogout'
 import { logoutUser, clearAuthCookies } from './authService'
 
 export default function LogoutButton() {
-  const { logout } = useAuth()
-  const navigate = useNavigate()
+  const logOut = useLogout()
   const [submitting, setSubmitting] = useState(false)
 
   // This device's session ends even if the server cannot be reached. Either
@@ -18,11 +16,7 @@ export default function LogoutButton() {
     } catch {
       await clearAuthCookies()
     }
-    // Render home before the session ends, or a protected page still on screen
-    // sends its ProtectedRoute to /login. A plain navigate is a transition,
-    // which logout()'s re-render would overtake; flushSync renders it now.
-    await navigate('/', { flushSync: true })
-    logout()
+    await logOut()
   }
 
   return (

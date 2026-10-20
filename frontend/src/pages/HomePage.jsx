@@ -8,7 +8,7 @@ export default function HomePage() {
   const { isAuthenticated } = useAuth()
 
   return (
-    <div className="home-page">
+    <div className="centered-page">
       <PageTitle />
       <div className="home-content">
         <h1>Welcome to {APP_NAME}</h1>
