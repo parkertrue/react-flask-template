@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 # No .pyc files (the code is read-only at runtime), and unbuffered output,
 # so log lines reach docker logs at once
