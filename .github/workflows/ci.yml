@@ -164,6 +164,11 @@ jobs:
       - name: License
         run: test -s LICENSE || { echo '::error::LICENSE is missing or empty'; exit 1; }
 
+      # README's list of status checks to require on main must name every
+      # job of both workflows, and nothing else
+      - name: Required checks listed
+        run: python3 .github/scripts/check_required_checks.py
+
       # .editorconfig's rules for every tracked text file. Markdown may keep
       # trailing spaces, which are a line break there.
       - name: Whitespace

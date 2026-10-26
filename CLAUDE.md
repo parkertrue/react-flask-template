@@ -61,7 +61,7 @@ npm run test:e2e:ui
 npm run test:e2e:debug
 ```
 
-CI also fails on trailing whitespace outside `*.md` and on a file without a final newline (`.editorconfig`; the Workflows job in `ci.yml`).
+CI also fails on trailing whitespace outside `*.md` and on a file without a final newline (`.editorconfig`; the Workflows job in `ci.yml`), and when README's list of status checks to require on `main` differs from the two workflows' job names (`.github/scripts/check_required_checks.py`, same job): add a new job to that sentence.
 
 ### Running a single backend test
 ```bash
