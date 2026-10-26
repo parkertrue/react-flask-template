@@ -20,4 +20,5 @@ SQLAlchemy
 redis
 pydantic
 email-validator
+# The driver DATABASE_URL names (mysql+pymysql://), loaded by SQLAlchemy
 PyMySQL

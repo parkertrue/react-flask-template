@@ -54,7 +54,8 @@ this app and record what each one turns up:
   permissions and content-type headers; HTTP→HTTPS; the catch-all host.
 - **Containers and Redis:** non-root users, capabilities, read-only roots,
   networks (can nginx reach MySQL? should it?), exposed ports, the Redis ACL,
-  and the MySQL privileges left after `restrict_db_user.py`.
+  and the MySQL privileges of the app's and the migration user
+  (`db/init/01-app-user.sh`), checked live.
 - **Denial of service:** body limits, connection limits, hashing slots, slow
   clients, unbounded queries or lists, Redis memory growth.
 - **What is missing:** ASVS 5.0 L2 requirements the app neither meets nor has

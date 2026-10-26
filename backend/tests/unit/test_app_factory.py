@@ -70,10 +70,10 @@ class TestRedisReconnect:
         clock = [1000.0]
         monkeypatch.setattr(redis_service.time, 'monotonic', lambda: clock[0])
         with patch('app.utils.redis_service.redis.Redis') as redis_class:
-            redis_class.return_value.ping.side_effect = redis.ConnectionError
+            redis_class.from_url.return_value.ping.side_effect = redis.ConnectionError
             app = build_app(
-                monkeypatch, USES_SERVICES=True, REDIS_HOST='localhost',
-                REDIS_DB=0, REDIS_USERNAME='app', REDIS_PASSWORD='redispass')
+                monkeypatch, USES_SERVICES=True,
+                REDIS_URL='redis://app:redispass@localhost:6379/0')
             yield app, redis_class, clock
 
     def test_boot_failure_leaves_no_service(self, redis_down_at_boot):
@@ -83,7 +83,7 @@ class TestRedisReconnect:
 
     def test_retries_after_interval(self, redis_down_at_boot):
         app, redis_class, clock = redis_down_at_boot
-        redis_class.return_value.ping.side_effect = None
+        redis_class.from_url.return_value.ping.side_effect = None
         clock[0] += redis_service.RECONNECT_INTERVAL_SECONDS
 
         with app.app_context():
@@ -94,12 +94,12 @@ class TestRedisReconnect:
 
     def test_backs_off_between_attempts(self, redis_down_at_boot):
         app, redis_class, clock = redis_down_at_boot
-        redis_class.return_value.ping.side_effect = None
+        redis_class.from_url.return_value.ping.side_effect = None
         clock[0] += redis_service.RECONNECT_INTERVAL_SECONDS - 1
 
         with app.app_context():
             assert get_redis_service() is None
-        assert redis_class.call_count == 1  # only the boot attempt
+        assert redis_class.from_url.call_count == 1  # only the boot attempt
 
     def test_refresh_fails_closed_while_down(self, redis_down_at_boot):
         app, _, _ = redis_down_at_boot

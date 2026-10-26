@@ -100,7 +100,8 @@ def integration_app():
 
     Uses IntegrationConfig which:
     - Reads MySQL/Redis connection details from environment
-    - Connects to test services on ports 3307 (MySQL) and 6380 (Redis)
+    - Connects to test services on ports 3307 (MySQL) and 6380 (Redis), to
+      MySQL as the migration user, since integration_db creates the tables
     - Disables rate limiting (test_rate_limits_redis.py turns it back on)
 
     Environment variables are loaded by run_tests.sh from .env.test. If running
@@ -108,7 +109,7 @@ def integration_app():
     """
     os.environ['APP_ENV'] = 'integration'
 
-    required_vars = ['DB_NAME', 'DB_HOST', 'REDIS_HOST']
+    required_vars = ['MIGRATION_DATABASE_URL', 'DATABASE_URL', 'REDIS_URL']
     missing = [v for v in required_vars if v not in os.environ]
     if missing:
         raise RuntimeError(

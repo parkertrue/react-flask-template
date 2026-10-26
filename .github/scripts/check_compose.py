@@ -2,12 +2,17 @@
 
 CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
-stacks copy the Redis ACL; nothing else compares the copies. Each file is
+stacks copy the Redis ACL and mount the database's init scripts, which create
+the app's data-only user; nothing else compares the copies. Each file is
 read as `docker compose config` resolves it, anchors and merges applied.
 """
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+# db/init, where every stack's db service must find its init scripts
+INIT_SCRIPTS = Path(__file__).resolve().parents[2] / 'db' / 'init'
 
 # The hardening each test service must share with its production namesake
 HARDENING = ('security_opt', 'cap_drop', 'cap_add', 'read_only', 'pids')
@@ -42,6 +47,13 @@ def acl(redis):
     return ['>password' if arg.startswith('>') else arg for arg in command[start:end]]
 
 
+def init_mounts(db):
+    """What the db service mounts as the MySQL image's init scripts"""
+    return [(Path(volume['source']), volume.get('read_only', False))
+            for volume in db.get('volumes', [])
+            if volume['target'] == '/docker-entrypoint-initdb.d']
+
+
 def problems(prod, test, dev):
     for name, service in prod.items():
         if name not in test:
@@ -54,6 +66,9 @@ def problems(prod, test, dev):
     for stack, services in (('test', test), ('dev', dev)):
         if acl(services['redis']) != acl(prod['redis']):
             yield f'redis: the ACL in {stack} differs from production\'s'
+    for stack, services in (('production', prod), ('test', test), ('dev', dev)):
+        if init_mounts(services['db']) != [(INIT_SCRIPTS, True)]:
+            yield f'db: {stack} does not mount db/init read-only as its init scripts'
 
 
 def main():
@@ -64,7 +79,7 @@ def main():
     sys.stdout.write(''.join(f'{p}\n' for p in found))
     if found:
         sys.exit(f'{len(found)} compose setting(s) differ')
-    sys.stdout.write(f'{len(prod)} services and the Redis ACL match\n')
+    sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match\n')
 
 
 if __name__ == '__main__':

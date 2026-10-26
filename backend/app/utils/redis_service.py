@@ -59,13 +59,8 @@ def connect_redis(app: Flask) -> 'RedisService | None':
 
     try:
         service = RedisService(
-            host=app.config['REDIS_HOST'],
-            port=app.config['REDIS_PORT'],
-            db=app.config['REDIS_DB'],
-            username=app.config['REDIS_USERNAME'],
-            password=app.config['REDIS_PASSWORD'],
-            max_connections=app.config['REDIS_MAX_CONNECTIONS']
-        )
+            app.config['REDIS_URL'],
+            max_connections=app.config['REDIS_MAX_CONNECTIONS'])
     except Exception:
         app.logger.exception(
             'Redis connection failed; retrying in %ss', RECONNECT_INTERVAL_SECONDS)
@@ -132,15 +127,11 @@ class RedisService:
     few requests can't tie up every worker thread.
     """
 
-    def __init__(self, host: str, port: int, db: int, username: str, password: str,
-                 max_connections: int):
-        # A failed ping raises; connect_redis logs it and retries later
-        self._client = redis.Redis(
-            host=host,
-            port=port,
-            db=db,
-            username=username,
-            password=password,
+    def __init__(self, url: str, max_connections: int):
+        # A failed ping raises; connect_redis logs it and retries later.
+        # rediss:// in the URL turns on TLS.
+        self._client = redis.Redis.from_url(
+            url,
             decode_responses=True,
             # Ping a connection idle for over 30s before reusing it, so one
             # that Redis or a NAT dropped is replaced instead of failing a request

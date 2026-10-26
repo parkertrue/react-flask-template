@@ -7,6 +7,8 @@ import redis
 from app.utils import redis_service
 from app.utils.redis_service import RedisService
 
+URL = 'redis://app:testpass@localhost:6379/0'
+
 
 class TestRedisServiceInitialization:
     """Test RedisService initialization"""
@@ -15,79 +17,58 @@ class TestRedisServiceInitialization:
         """Redis should initialize successfully with valid config"""
         with patch('app.utils.redis_service.redis.Redis') as mock_redis_class:
             mock_client = MagicMock()
-            mock_redis_class.return_value = mock_client
+            mock_redis_class.from_url.return_value = mock_client
             mock_client.ping.return_value = True
 
-            service = RedisService(
-                host='localhost',
-                port=6379,
-                db=0,
-                username='app',
-                password='testpass',
-                max_connections=50
-            )
+            service = RedisService(URL, max_connections=50)
 
             assert service._client is not None
             mock_client.ping.assert_called_once()
 
-    def test_init_with_all_parameters(self):
-        """Redis should accept all initialization parameters"""
+    def test_connects_with_the_url(self):
+        """Host, port, user, password, database and TLS all come from the URL"""
         with patch('app.utils.redis_service.redis.Redis') as mock_redis_class:
-            mock_client = MagicMock()
-            mock_redis_class.return_value = mock_client
-            mock_client.ping.return_value = True
+            RedisService('rediss://app:pw@cache.example.com:6380/2', max_connections=100)
 
-            RedisService(
-                host='redishost',
-                port=6380,
-                db=2,
-                username='app',
-                password='mypassword',
-                max_connections=100
-            )
+            mock_redis_class.from_url.assert_called_once()
+            args, kwargs = mock_redis_class.from_url.call_args
+            assert args == ('rediss://app:pw@cache.example.com:6380/2',)
+            assert kwargs['max_connections'] == 100
+            assert kwargs['decode_responses'] is True
 
-            mock_redis_class.assert_called_once()
-            call_kwargs = mock_redis_class.call_args[1]
-            assert call_kwargs['host'] == 'redishost'
-            assert call_kwargs['port'] == 6380
-            assert call_kwargs['db'] == 2
-            assert call_kwargs['username'] == 'app'
-            assert call_kwargs['password'] == 'mypassword'
-            assert call_kwargs['max_connections'] == 100
+    def test_the_url_reaches_the_connection(self):
+        """Without a mock: what redis-py makes of a real URL"""
+        with patch('redis.Redis.ping'):
+            client = RedisService(
+                'rediss://app:p%40ss@cache.example.com:6380/2', max_connections=7)._client
+
+        pool = client.connection_pool
+        assert {key: pool.connection_kwargs[key] for key in
+                ('host', 'port', 'db', 'username', 'password')} == {
+            'host': 'cache.example.com', 'port': 6380, 'db': 2,
+            'username': 'app', 'password': 'p@ss'}
+        assert pool.connection_class is redis.SSLConnection
+        assert pool.max_connections == 7
 
     def test_init_connection_failure(self):
         """A failed ping propagates; connect_redis logs it and retries later"""
         with patch('app.utils.redis_service.redis.Redis') as mock_redis_class:
             mock_client = MagicMock()
-            mock_redis_class.return_value = mock_client
+            mock_redis_class.from_url.return_value = mock_client
             mock_client.ping.side_effect = redis.RedisError(
                 'Connection failed')
 
             with pytest.raises(redis.RedisError, match='Connection failed'):
-                RedisService(
-                    host='localhost',
-                    port=6379,
-                    db=0,
-                    username='app',
-                    password='testpass',
-                    max_connections=50
-                )
+                RedisService(URL, max_connections=50)
 
     def test_get_client(self):
         """get_client should return the Redis client"""
         with patch('app.utils.redis_service.redis.Redis') as mock_redis_class:
             mock_client = MagicMock()
-            mock_redis_class.return_value = mock_client
+            mock_redis_class.from_url.return_value = mock_client
             mock_client.ping.return_value = True
 
-            service = RedisService(
-                host='localhost',
-                port=6379,
-                db=0,
-                username='app',
-                password='testpass',
-                max_connections=50
-            )
+            service = RedisService(URL, max_connections=50)
             client = service.get_client()
 
             assert client is mock_client
@@ -104,17 +85,10 @@ class TestTokenManagement:
         """
         with patch('app.utils.redis_service.redis.Redis') as mock_redis_class:
             mock_client = MagicMock()
-            mock_redis_class.return_value = mock_client
+            mock_redis_class.from_url.return_value = mock_client
             mock_client.ping.return_value = True
 
-            service = RedisService(
-                host='localhost',
-                port=6379,
-                db=0,
-                username='app',
-                password='testpass',
-                max_connections=50
-            )
+            service = RedisService(URL, max_connections=50)
             return service
 
     # What the script does inside Redis is tested against a real one in
@@ -224,8 +198,7 @@ class TestSkipRedisAfterConnectionFailure:
     @pytest.fixture
     def service(self, app, clock):
         with patch('app.utils.redis_service.redis.Redis'):
-            return RedisService(host='localhost', port=6379, db=0, username='app',
-                                password='x', max_connections=5)
+            return RedisService(URL, max_connections=5)
 
     # Every public method, with what it returns on a failure
     CALLS = {
@@ -306,8 +279,7 @@ class TestFailFastWhenRedisIsDown:
 
     def test_app_client_retries_once(self):
         def make():
-            return RedisService(host='localhost', port=6379, db=0, username='app',
-                                password='x', max_connections=5)._client
+            return RedisService(URL, max_connections=5)._client
 
         assert self.count_connection_attempts(make) == 2
 
@@ -315,11 +287,10 @@ class TestFailFastWhenRedisIsDown:
         """Flask-Limiter hands RATELIMIT_STORAGE_OPTIONS to redis.from_url"""
         from app.config import DevelopmentConfig
         monkeypatch.setenv('SECRET_KEY', 'x' * 32)
-        for name, value in {'DB_USER': 'u', 'DB_PASSWORD': 'p',
-                            'DB_HOST': 'h', 'DB_NAME': 'd',
-                            'REDIS_HOST': 'localhost', 'REDIS_USERNAME': 'app',
-                            'REDIS_PASSWORD': 'p'}.items():
-            monkeypatch.setenv(name, value)
+        monkeypatch.delenv('REDIS_PASSWORD', raising=False)
+        monkeypatch.delenv('MIGRATION_DATABASE_URL', raising=False)
+        monkeypatch.setenv('DATABASE_URL', 'mysql+pymysql://u:p@h/d')
+        monkeypatch.setenv('REDIS_URL', URL)
         config = DevelopmentConfig()
 
         def make():

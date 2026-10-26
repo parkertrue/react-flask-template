@@ -1,17 +1,80 @@
 import os
 from datetime import timedelta
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlsplit
 
-from sqlalchemy import URL
+from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import ArgumentError
 
 from app.utils.redis_service import RATELIMIT_REDIS_OPTIONS
 
 MIN_SECRET_KEY_LENGTH = 32
 PLACEHOLDER_SECRET_KEYS = {'your_secret_key_here'}
-# .env.prod.example's values, which must never reach a deployment. The
-# root password is among them: the migrate service connects as root.
+# .env.prod.example's values, which must never reach a deployment. The root
+# password's never reaches the app: db/init/01-app-user.sh refuses it.
 PLACEHOLDER_PASSWORDS = {
-    'your_db_password_here', 'your_redis_password_here', 'your_root_password_here'}
+    'your_db_password_here', 'your_migration_password_here', 'your_redis_password_here'}
+
+# The connect args below are PyMySQL's, so no other driver will do
+DATABASE_DRIVER = 'mysql+pymysql'
+
+
+def database_url() -> URL | None:
+    """The database to connect to, or None if no URL is set.
+
+    The migration user's when MIGRATION_DATABASE_URL is set (only the
+    migrate job and the integration suite, which builds its own tables, get
+    it), else the app's. Each URL's password may come from a variable of its
+    own instead, so a secrets store can supply the password alone. A URL
+    object, not a string: it prints its password as ***.
+    """
+    for url_var, password_var in (
+            ('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD'),
+            ('DATABASE_URL', 'DATABASE_PASSWORD')):
+        value = os.getenv(url_var)
+        if not value:
+            continue
+        try:
+            url = make_url(value)
+        except ArgumentError:
+            # Not the value itself: it holds the password
+            raise ValueError(f'{url_var} is not a valid URL') from None
+        if os.getenv(password_var):
+            url = url.set(password=os.getenv(password_var))
+        if url.drivername != DATABASE_DRIVER:
+            raise ValueError(f'{url_var} must start with {DATABASE_DRIVER}://')
+        if not all([url.username, url.password, url.host, url.database]):
+            raise ValueError(
+                f'{url_var} must name a user, password, host and database '
+                f'(the password may be in {password_var})')
+        return url
+    return None
+
+
+def redis_url() -> str | None:
+    """REDIS_URL, with REDIS_PASSWORD as its password if set; None if unset.
+
+    A string, since Flask-Limiter takes nothing else, so unlike the database
+    password this one is readable in app.config. The user is required: the
+    compose files' Redis disables the all-powerful "default" user.
+    """
+    value = os.getenv('REDIS_URL')
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        parts.port  # raises on a port that isn't a number
+    except ValueError:
+        raise ValueError('REDIS_URL is not a valid URL') from None
+    if parts.scheme not in ('redis', 'rediss'):
+        raise ValueError('REDIS_URL must start with redis:// or rediss:// (TLS)')
+    password = os.getenv('REDIS_PASSWORD') or unquote(parts.password or '')
+    if not (parts.username and password and parts.hostname):
+        raise ValueError(
+            'REDIS_URL must name a user, password and host '
+            '(the password may be in REDIS_PASSWORD)')
+    host = parts.netloc.rpartition('@')[2]
+    return parts._replace(
+        netloc=f"{parts.username}:{quote(password, safe='')}@{host}").geturl()
 
 
 class Config:
@@ -39,29 +102,9 @@ class Config:
         self.PASSWORD_HASH_CONCURRENCY = 2
         self.PASSWORD_HASH_WAIT_SECONDS = 5
 
-        # Database configuration. Locals, not settings: the URL is the one
-        # place they live, so the password never sits in app.config unmasked
-        db_user = os.getenv('DB_USER')
-        db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')
-        db_name = os.getenv('DB_NAME')
-
-        self.SQLALCHEMY_DATABASE_URI = None
-        if all([db_user, db_password, db_host, db_name]):
-            # A URL object, not a string: it escapes a password containing
-            # @ / : or #, and prints it as *** wherever the URL is logged
-            self.SQLALCHEMY_DATABASE_URI = URL.create(
-                'mysql+pymysql',
-                username=db_user,
-                password=db_password,
-                host=db_host,
-                port=int(os.getenv('DB_PORT', '3306')),
-                database=db_name,
-            )
-        elif self.USES_SERVICES:
-            raise ValueError(
-                'Missing required database environment variables: '
-                'DB_HOST, DB_NAME, DB_USER, DB_PASSWORD')
+        self.SQLALCHEMY_DATABASE_URI = database_url()
+        if self.SQLALCHEMY_DATABASE_URI is None and self.USES_SERVICES:
+            raise ValueError('Missing required environment variable: DATABASE_URL')
 
         connect_args = {
             # Every timestamp is UTC, and the API says so. NOW() and
@@ -93,31 +136,15 @@ class Config:
         }
 
         # Redis configuration
-        self.REDIS_HOST = os.getenv('REDIS_HOST')
-        self.REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
-        self.REDIS_DB = int(os.getenv('REDIS_DB', '0'))
-        # No default: the compose files' Redis disables the all-powerful
-        # "default" user and gives the app its own ACL user, "app"
-        self.REDIS_USERNAME = os.getenv('REDIS_USERNAME')
-        self.REDIS_PASSWORD = os.getenv('REDIS_PASSWORD')
+        self.REDIS_URL = redis_url()
+        if self.REDIS_URL is None and self.USES_SERVICES:
+            raise ValueError('Missing required environment variable: REDIS_URL')
         # Per worker: well above its 4 threads, so no request waits on the pool
         self.REDIS_MAX_CONNECTIONS = 50
 
-        self.REDIS_URI = None
-        if all([self.REDIS_HOST, self.REDIS_USERNAME, self.REDIS_PASSWORD]):
-            self.REDIS_URI = (
-                f"redis://{quote(self.REDIS_USERNAME, safe='')}:"
-                f"{quote(self.REDIS_PASSWORD, safe='')}@"
-                f"{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-            )
-        elif self.USES_SERVICES:
-            raise ValueError(
-                'Missing required Redis environment variables: '
-                'REDIS_HOST, REDIS_USERNAME, REDIS_PASSWORD')
-
         # Rate Limiter configuration
         self.RATELIMIT_ENABLED = True
-        self.RATELIMIT_STORAGE_URI = self.REDIS_URI
+        self.RATELIMIT_STORAGE_URI = self.REDIS_URL
         self.RATELIMIT_STORAGE_OPTIONS = RATELIMIT_REDIS_OPTIONS
         # If Redis is unreachable, count in each worker's memory until it is
         # back, rather than failing every rate-limited request with a 500.
@@ -207,10 +234,13 @@ class ProductionConfig(Config):
                 f'SECRET_KEY must be a random value of at least '
                 f'{MIN_SECRET_KEY_LENGTH} characters in production')
 
-        for name in ('DB_PASSWORD', 'REDIS_PASSWORD'):
-            if os.getenv(name) in PLACEHOLDER_PASSWORDS:
-                raise ValueError(
-                    f'{name} is still the .env.prod.example placeholder')
+        passwords = {
+            'The database password': self.SQLALCHEMY_DATABASE_URI.password,
+            'The Redis password': unquote(urlsplit(self.REDIS_URL).password),
+        }
+        for name, password in passwords.items():
+            if password in PLACEHOLDER_PASSWORDS:
+                raise ValueError(f'{name} is still the .env.prod.example placeholder')
 
 
 def get_config():

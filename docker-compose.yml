@@ -30,17 +30,13 @@ x-backend-hardening: &backend-hardening
 # .env.prod if 10.217.0.0/24 is already in use on the host.
 x-backend-address: &backend-address "${EDGE_SUBNET_PREFIX:-10.217.0}.10"
 
-# What the app reads, interpolated from --env-file .env.prod, so
-# DB_ROOT_PASSWORD stays out. Hosts and APP_ENV are fixed by this file.
+# What the app reads, interpolated from --env-file .env.prod, so the root
+# and migration passwords stay out. The URLs are built from .env.prod's
+# parts unless it sets the URL itself. APP_ENV is fixed by this file.
 x-backend-env: &backend-env
   APP_ENV: production
-  DB_HOST: db
-  DB_NAME: ${DB_NAME}
-  DB_USER: ${DB_USER}
-  DB_PASSWORD: ${DB_PASSWORD}
-  REDIS_HOST: redis
-  REDIS_USERNAME: app
-  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}}
+  REDIS_URL: ${REDIS_URL:-redis://app:${REDIS_PASSWORD}@redis:6379/0}
   SECRET_KEY: ${SECRET_KEY}
 
 services:
@@ -55,14 +51,18 @@ services:
     command: ["--innodb-buffer-pool-size=512M"]
     # Only the variables MySQL needs, interpolated from the --env-file passed
     # to docker compose, so SECRET_KEY and the Redis password stay out. The
-    # keys are the MySQL image's own names; the app reads DB_* everywhere.
+    # image makes MYSQL_USER, the migration user, owner of MYSQL_DATABASE;
+    # db/init/01-app-user.sh adds the app's DB_USER, with data rights only.
     environment:
       MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_USER: ${DB_MIGRATION_USER}
+      MYSQL_PASSWORD: ${DB_MIGRATION_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # ping exits 0 whenever the server is up, even if auth fails, so no
       # credentials need to appear in the process list
@@ -154,19 +154,17 @@ services:
           cpus: "0.25"
           memory: 128m
 
-  # One-shot: applies migrations as root, then leaves DB_USER with data
-  # rights only (backend/restrict_db_user.py), and exits. The backend starts
-  # once it succeeds, holding credentials that cannot change the schema.
+  # One-shot: applies migrations as the migration user, which owns the
+  # schema, and exits. The backend starts once it succeeds, holding only the
+  # app user's credentials, which cannot change the schema.
   migrate:
     logging: *logging
     <<: [*security, *backend-hardening]
     build: ./backend
-    command: ["sh", "-c", "flask db upgrade && python restrict_db_user.py"]
+    command: ["flask", "db", "upgrade"]
     environment:
       <<: *backend-env
-      DB_USER: root
-      DB_PASSWORD: ${DB_ROOT_PASSWORD}
-      APP_DB_USER: ${DB_USER}
+      MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-mysql+pymysql://${DB_MIGRATION_USER}:${DB_MIGRATION_PASSWORD}@db:3306/${DB_NAME}}
       DB_QUERY_TIMEOUT: "0"  # a migration may outlast the app's 15s limit
     depends_on:
       db:

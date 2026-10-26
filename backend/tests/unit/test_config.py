@@ -1,6 +1,9 @@
 import pytest
 from datetime import timedelta
 
+from redis.connection import parse_url
+from sqlalchemy.engine import make_url
+
 from app.config import (
     Config,
     DevelopmentConfig,
@@ -13,14 +16,14 @@ from app.config import (
 STRONG_SECRET = 'x' * 32
 
 SERVICE_ENV = {
-    'DB_USER': 'user',
-    'DB_PASSWORD': 'pass',
-    'DB_HOST': 'dbhost',
-    'DB_NAME': 'db',
-    'REDIS_HOST': 'redishost',
-    'REDIS_USERNAME': 'app',
-    'REDIS_PASSWORD': 'redispass',
+    'DATABASE_URL': 'mysql+pymysql://user:dbpass@dbhost:3306/db',
+    'REDIS_URL': 'redis://app:redispass@redishost:6379/0',
 }
+
+# Read by app/config.py, but not set by SERVICE_ENV
+OPTIONAL_VARS = (
+    'MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD', 'MIGRATION_DATABASE_PASSWORD',
+    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE')
 
 
 @pytest.fixture(autouse=True)
@@ -28,43 +31,37 @@ def isolate_config_tests(monkeypatch):
     """Give every test the same environment, whatever the shell has loaded.
 
     Optional vars are cleared so tests see the documented defaults, and the
-    database/Redis vars the service-backed configs require are set to placeholders.
+    URLs the service-backed configs require are set to placeholders.
     Tests that need other values set or delete them with monkeypatch.
     """
-    for var in ('DB_PORT', 'REDIS_PORT', 'REDIS_DB',
-                'FLASK_DEBUG', 'E2E_MODE'):
+    for var in OPTIONAL_VARS:
         monkeypatch.delenv(var, raising=False)
     for var, value in SERVICE_ENV.items():
         monkeypatch.setenv(var, value)
+    monkeypatch.setenv('SECRET_KEY', 'testsecret')
 
 
 class TestConfigClasses:
     """Test Config class attributes"""
 
-    def test_config_class_reads_env_vars(self, monkeypatch):
-        """Config class should read environment variables"""
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
-
+    def test_config_class_reads_env_vars(self):
         config = Config()
 
         url = config.SQLALCHEMY_DATABASE_URI
-        assert (url.username, url.password, url.host, url.database) == ('test', 'test', 'localhost', 'test')
-        # Only inside the URL, which masks it when printed
-        assert 'DB_PASSWORD' not in vars(config)
-        assert config.REDIS_HOST == 'localhost'
-        assert config.REDIS_DB == 0
-        assert config.REDIS_PASSWORD == 'redispass'
+        assert (url.username, url.password, url.host, url.port, url.database) == (
+            'user', 'dbpass', 'dbhost', 3306, 'db')
+        assert config.REDIS_URL == 'redis://app:redispass@redishost:6379/0'
+        assert config.RATELIMIT_STORAGE_URI == config.REDIS_URL
         assert config.JWT_SECRET_KEY == 'testsecret'
-        assert config.SQLALCHEMY_DATABASE_URI.render_as_string(hide_password=False) == 'mysql+pymysql://test:test@localhost:3306/test'
-        assert config.REDIS_URI == 'redis://app:redispass@localhost:6379/0'
-        assert config.RATELIMIT_STORAGE_URI == 'redis://app:redispass@localhost:6379/0'
+
+    def test_passwords_sit_only_inside_the_urls(self):
+        """The database URL masks its password when printed; Flask-Limiter
+        takes only a string, so the Redis password is readable in its URLs"""
+        config = Config()
+
+        holding = {name: value for name, value in vars(config).items()
+                   if 'dbpass' in str(value) or 'redispass' in str(value)}
+        assert sorted(holding) == ['RATELIMIT_STORAGE_URI', 'REDIS_URL']
 
     def test_development_config_attributes(self):
         """DevelopmentConfig should have correct attributes"""
@@ -88,9 +85,8 @@ class TestConfigClasses:
         assert config.USES_SERVICES is True
         assert config.RATELIMIT_ENABLED is False
 
-    def test_integration_config_without_e2e_mode(self, monkeypatch):
+    def test_integration_config_without_e2e_mode(self):
         """Without E2E_MODE, CSRF is off for API tests"""
-        monkeypatch.delenv('E2E_MODE', raising=False)
         config = IntegrationConfig()
 
         assert config.JWT_COOKIE_CSRF_PROTECT is False
@@ -129,26 +125,16 @@ class TestGetConfigFactory:
     def test_get_config_development(self, monkeypatch):
         """get_config should return DevelopmentConfig for dev env"""
         monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'testuser')
-        monkeypatch.setenv('DB_PASSWORD', 'testpass')
-        monkeypatch.setenv('DB_HOST', 'testhost')
-        monkeypatch.setenv('DB_NAME', 'testdb')
-        monkeypatch.setenv('REDIS_HOST', 'redishost')
-        monkeypatch.setenv('REDIS_DB', '1')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
 
         config = get_config()
 
         assert type(config) is DevelopmentConfig
-        assert config.SQLALCHEMY_DATABASE_URI.render_as_string(hide_password=False) == 'mysql+pymysql://testuser:testpass@testhost:3306/testdb'
-        assert config.REDIS_URI == 'redis://app:redispass@redishost:6379/1'
-        assert config.RATELIMIT_STORAGE_URI == 'redis://app:redispass@redishost:6379/1'
+        assert config.SQLALCHEMY_DATABASE_URI.render_as_string(hide_password=False) == SERVICE_ENV['DATABASE_URL']
+        assert config.REDIS_URL == SERVICE_ENV['REDIS_URL']
 
     def test_get_config_unit(self, monkeypatch):
         """get_config should return UnitTestConfig for unit tests"""
         monkeypatch.setenv('APP_ENV', 'unit')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
 
         config = get_config()
 
@@ -161,13 +147,6 @@ class TestGetConfigFactory:
         """E2E_MODE must not swap ProductionConfig for a weaker config"""
         monkeypatch.setenv('APP_ENV', 'production')
         monkeypatch.setenv('E2E_MODE', 'true')
-        monkeypatch.setenv('DB_USER', 'produser')
-        monkeypatch.setenv('DB_PASSWORD', 'prodpass')
-        monkeypatch.setenv('DB_HOST', 'prodhost')
-        monkeypatch.setenv('DB_NAME', 'proddb')
-        monkeypatch.setenv('REDIS_HOST', 'prodredis')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'prodredispass')
         monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
 
         config = get_config()
@@ -180,21 +159,13 @@ class TestGetConfigFactory:
     def test_get_config_production(self, monkeypatch):
         """get_config should return ProductionConfig for prod env"""
         monkeypatch.setenv('APP_ENV', 'production')
-        monkeypatch.setenv('DB_USER', 'produser')
-        monkeypatch.setenv('DB_PASSWORD', 'prodpass')
-        monkeypatch.setenv('DB_HOST', 'prodhost')
-        monkeypatch.setenv('DB_NAME', 'proddb')
-        monkeypatch.setenv('REDIS_HOST', 'prodredis')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'prodredispass')
         monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
 
         config = get_config()
 
         assert type(config) is ProductionConfig
-        assert config.SQLALCHEMY_DATABASE_URI.render_as_string(hide_password=False) == 'mysql+pymysql://produser:prodpass@prodhost:3306/proddb'
-        assert config.REDIS_URI == 'redis://app:prodredispass@prodredis:6379/0'
-        assert config.RATELIMIT_STORAGE_URI == 'redis://app:prodredispass@prodredis:6379/0'
+        assert config.SQLALCHEMY_DATABASE_URI.render_as_string(hide_password=False) == SERVICE_ENV['DATABASE_URL']
+        assert config.REDIS_URL == SERVICE_ENV['REDIS_URL']
 
     def test_get_config_invalid_env(self, monkeypatch):
         """get_config should raise error for invalid APP_ENV"""
@@ -209,14 +180,6 @@ class TestGetConfigFactory:
     def test_get_config_defaults_to_production(self, monkeypatch):
         """get_config should default to production if APP_ENV not set"""
         monkeypatch.delenv('APP_ENV', raising=False)
-
-        monkeypatch.setenv('DB_USER', 'produser')
-        monkeypatch.setenv('DB_PASSWORD', 'prodpass')
-        monkeypatch.setenv('DB_HOST', 'prodhost')
-        monkeypatch.setenv('DB_NAME', 'proddb')
-        monkeypatch.setenv('REDIS_HOST', 'prodredis')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'prodredispass')
         monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
 
         config = get_config()
@@ -227,73 +190,38 @@ class TestGetConfigFactory:
 class TestGetConfigValidation:
     """Test validation in get_config()"""
 
-    def test_get_config_requires_database_vars_in_dev(self, monkeypatch):
-        """get_config should raise error if DB vars missing in dev"""
+    @pytest.mark.parametrize('var', ['DATABASE_URL', 'REDIS_URL'])
+    def test_get_config_requires_service_urls_in_dev(self, monkeypatch, var):
         monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
-
-        # Missing all DB vars
-        for var in ['DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_NAME']:
-            monkeypatch.delenv(var, raising=False)
+        monkeypatch.delenv(var)
 
         with pytest.raises(ValueError) as exc_info:
             get_config()
 
-        assert 'DB_HOST' in str(exc_info.value)
-
-    def test_get_config_requires_redis_vars_in_dev(self, monkeypatch):
-        """get_config should raise error if Redis vars missing in dev"""
-        monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
-
-        # Missing Redis vars
-        for var in ['REDIS_HOST', 'REDIS_PASSWORD']:
-            monkeypatch.delenv(var, raising=False)
-
-        with pytest.raises(ValueError) as exc_info:
-            get_config()
-
-        assert 'Redis' in str(exc_info.value)
+        assert str(exc_info.value) == f'Missing required environment variable: {var}'
 
     def test_unit_test_config_needs_no_service_vars(self, monkeypatch):
         """Unit tests use SQLite with Redis off, so need no database/Redis settings"""
         monkeypatch.setenv('APP_ENV', 'unit')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
         for var in SERVICE_ENV:
             monkeypatch.delenv(var)
 
         config = get_config()
 
         assert config.SQLALCHEMY_DATABASE_URI == 'sqlite:///:memory:'
-        assert config.REDIS_URI is None
+        assert config.REDIS_URL is None
 
     @pytest.mark.parametrize('config_class', [IntegrationConfig, ProductionConfig])
     def test_service_configs_still_require_vars(self, monkeypatch, config_class):
         monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
-        monkeypatch.delenv('DB_HOST')
+        monkeypatch.delenv('DATABASE_URL')
 
-        with pytest.raises(ValueError, match='DB_HOST'):
+        with pytest.raises(ValueError, match='DATABASE_URL'):
             config_class()
 
     def test_get_config_requires_secret_key(self, monkeypatch):
         """get_config should raise error if SECRET_KEY missing"""
         monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-
-        # Remove SECRET_KEY
         monkeypatch.delenv('SECRET_KEY', raising=False)
 
         with pytest.raises(ValueError) as exc_info:
@@ -302,20 +230,156 @@ class TestGetConfigValidation:
         assert 'SECRET_KEY' in str(exc_info.value)
 
 
+class TestDatabaseUrl:
+    """Which URL the app connects with, and what it accepts"""
+
+    MIGRATION_URL = 'mysql+pymysql://owner:ownerpass@dbhost:3306/db'
+
+    def test_migration_url_wins_when_set(self, monkeypatch):
+        """Only the migrate job (and the integration suite) gets it"""
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', self.MIGRATION_URL)
+
+        url = DevelopmentConfig().SQLALCHEMY_DATABASE_URI
+
+        assert (url.username, url.password) == ('owner', 'ownerpass')
+
+    @pytest.mark.parametrize('url_var, password_var, user', [
+        ('DATABASE_URL', 'DATABASE_PASSWORD', 'user'),
+        ('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD', 'owner'),
+    ])
+    def test_a_password_variable_replaces_the_urls(self, monkeypatch, url_var, password_var, user):
+        """A secrets store can supply the password alone, beside a URL without one"""
+        monkeypatch.setenv(url_var, f'mysql+pymysql://{user}@dbhost/db')
+        monkeypatch.setenv(password_var, 'from-the-store')
+
+        url = DevelopmentConfig().SQLALCHEMY_DATABASE_URI
+
+        assert (url.username, url.password) == (user, 'from-the-store')
+
+    def test_the_app_password_never_reaches_the_migration_url(self, monkeypatch):
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', self.MIGRATION_URL)
+        monkeypatch.setenv('DATABASE_PASSWORD', 'the-apps')
+
+        assert DevelopmentConfig().SQLALCHEMY_DATABASE_URI.password == 'ownerpass'
+
+    @pytest.mark.parametrize('password', ['p@ss/w:rd#1', "it's%40\\"])
+    def test_any_password_survives_the_url(self, monkeypatch, password):
+        monkeypatch.setenv('DATABASE_PASSWORD', password)
+
+        url = DevelopmentConfig().SQLALCHEMY_DATABASE_URI
+
+        assert make_url(url.render_as_string(hide_password=False)).password == password
+
+    def test_a_percent_encoded_password_is_decoded(self, monkeypatch):
+        monkeypatch.setenv('DATABASE_URL', 'mysql+pymysql://user:p%40ss%2Fw@dbhost/db')
+
+        assert DevelopmentConfig().SQLALCHEMY_DATABASE_URI.password == 'p@ss/w'
+
+    def test_password_is_hidden_when_printed(self):
+        assert str(DevelopmentConfig().SQLALCHEMY_DATABASE_URI) == (
+            'mysql+pymysql://user:***@dbhost:3306/db')
+
+    @pytest.mark.parametrize('value', [
+        'postgresql://user:pass@dbhost/db', 'mysql://user:pass@dbhost/db'])
+    def test_refuses_another_driver(self, monkeypatch, value):
+        """The connect args are PyMySQL's"""
+        monkeypatch.setenv('DATABASE_URL', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == 'DATABASE_URL must start with mysql+pymysql://'
+
+    @pytest.mark.parametrize('value', [
+        'mysql+pymysql://dbhost/db',
+        'mysql+pymysql://user@dbhost/db',
+        'mysql+pymysql://user:pass@/db',
+        'mysql+pymysql://user:pass@dbhost',
+    ])
+    def test_refuses_an_incomplete_url(self, monkeypatch, value):
+        monkeypatch.setenv('DATABASE_URL', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == (
+            'DATABASE_URL must name a user, password, host and database '
+            '(the password may be in DATABASE_PASSWORD)')
+
+    def test_refuses_a_malformed_url_without_echoing_it(self, monkeypatch):
+        """The value holds a password, and the message reaches the logs"""
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', 'secret-pw no scheme')
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == 'MIGRATION_DATABASE_URL is not a valid URL'
+
+
+class TestRedisUrl:
+    """What REDIS_URL accepts, and how REDIS_PASSWORD joins it"""
+
+    def test_redis_password_replaces_the_urls(self, monkeypatch):
+        monkeypatch.setenv('REDIS_URL', 'redis://app@redishost:6379/0')
+        monkeypatch.setenv('REDIS_PASSWORD', 'r@dis/pw')
+
+        url = DevelopmentConfig().REDIS_URL
+
+        assert url == 'redis://app:r%40dis%2Fpw@redishost:6379/0'
+        assert parse_url(url)['password'] == 'r@dis/pw'
+
+    def test_a_percent_encoded_password_is_kept(self, monkeypatch):
+        monkeypatch.setenv('REDIS_URL', 'redis://app:r%40dis@redishost:6379/0')
+
+        assert parse_url(DevelopmentConfig().REDIS_URL)['password'] == 'r@dis'
+
+    def test_tls_and_options_are_kept(self, monkeypatch):
+        value = 'rediss://app:pw@cache.example.com:6380/2?ssl_cert_reqs=required'
+        monkeypatch.setenv('REDIS_URL', value)
+
+        assert DevelopmentConfig().REDIS_URL == value
+
+    @pytest.mark.parametrize('value', ['http://app:pw@redishost/0', 'unix:///tmp/redis.sock'])
+    def test_refuses_another_scheme(self, monkeypatch, value):
+        monkeypatch.setenv('REDIS_URL', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == 'REDIS_URL must start with redis:// or rediss:// (TLS)'
+
+    @pytest.mark.parametrize('value', [
+        # No user: the compose files disable Redis's "default" user
+        'redis://:pw@redishost:6379/0',
+        'redis://redishost:6379/0',
+        'redis://app@redishost:6379/0',
+        'redis://app:pw@:6379/0',
+    ])
+    def test_refuses_an_incomplete_url(self, monkeypatch, value):
+        monkeypatch.setenv('REDIS_URL', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == (
+            'REDIS_URL must name a user, password and host '
+            '(the password may be in REDIS_PASSWORD)')
+
+    def test_refuses_a_malformed_url_without_echoing_it(self, monkeypatch):
+        monkeypatch.setenv('REDIS_URL', 'redis://app:secret-pw@redishost:port/0')
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == 'REDIS_URL is not a valid URL'
+
+
 class TestConfigValues:
     """Test specific configuration values"""
 
     def test_jwt_token_expiration_configured(self, monkeypatch):
         """JWT token expiration should be set"""
         monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
 
         config = get_config()
 
@@ -326,38 +390,14 @@ class TestConfigValues:
     def test_jwt_cookie_settings(self, monkeypatch):
         """JWT cookie settings should be configured for security"""
         monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
 
         config = get_config()
 
         assert config.JWT_COOKIE_SAMESITE == 'Lax'
         assert config.JWT_COOKIE_CSRF_PROTECT is True
 
-    def test_redis_defaults(self, monkeypatch):
-        """Redis should have correct default values"""
-        monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.delenv('REDIS_DB', raising=False)
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
-
-        config = get_config()
-
-        assert config.REDIS_PORT == 6379
-        assert config.REDIS_DB == 0
-        assert config.REDIS_URI == 'redis://app:redispass@localhost:6379/0'
-        assert config.REDIS_MAX_CONNECTIONS == 50
+    def test_redis_pool_size(self):
+        assert DevelopmentConfig().REDIS_MAX_CONNECTIONS == 50
 
     @pytest.mark.parametrize('config_class', [DevelopmentConfig, IntegrationConfig])
     def test_pool_checks_connections_before_use(self, config_class):
@@ -404,39 +444,6 @@ class TestConfigValues:
         assert 'read_timeout' not in args and 'write_timeout' not in args
         assert args['connect_timeout'] == 5
 
-    def test_database_port_default(self, monkeypatch):
-        """Database should use default port 3306"""
-        monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'localhost')
-        monkeypatch.setenv('REDIS_DB', '0')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
-
-        config = get_config()
-
-        assert config.SQLALCHEMY_DATABASE_URI.port == 3306
-
-    def test_rate_limiter_uses_redis_uri(self, monkeypatch):
-        """Rate limiter should use Redis URI"""
-        monkeypatch.setenv('APP_ENV', 'development')
-        monkeypatch.setenv('DB_USER', 'test')
-        monkeypatch.setenv('DB_PASSWORD', 'test')
-        monkeypatch.setenv('DB_HOST', 'localhost')
-        monkeypatch.setenv('DB_NAME', 'test')
-        monkeypatch.setenv('REDIS_HOST', 'redishost')
-        monkeypatch.setenv('REDIS_DB', '2')
-        monkeypatch.setenv('REDIS_PASSWORD', 'redispass')
-        monkeypatch.setenv('SECRET_KEY', 'testsecret')
-
-        config = get_config()
-
-        assert config.RATELIMIT_STORAGE_URI == config.REDIS_URI
-        assert config.RATELIMIT_STORAGE_URI == 'redis://app:redispass@redishost:6379/2'
-
 
 class TestConfigInheritance:
     """Test that child configs inherit from base Config"""
@@ -453,10 +460,7 @@ class TestConfigInheritance:
         """DevelopmentConfig should inherit Redis settings from Config"""
         config = DevelopmentConfig()
 
-        assert hasattr(config, 'REDIS_HOST')
-        assert hasattr(config, 'REDIS_PORT')
-        assert hasattr(config, 'REDIS_DB')
-        assert hasattr(config, 'REDIS_PASSWORD')
+        assert hasattr(config, 'REDIS_URL')
         assert hasattr(config, 'REDIS_MAX_CONNECTIONS')
 
     def test_integration_inherits_from_config(self):
@@ -464,7 +468,7 @@ class TestConfigInheritance:
         config = IntegrationConfig()
 
         assert hasattr(config, 'JWT_ACCESS_TOKEN_EXPIRES')
-        assert hasattr(config, 'REDIS_HOST')
+        assert hasattr(config, 'REDIS_URL')
         assert hasattr(config, 'SQLALCHEMY_DATABASE_URI')
 
 
@@ -513,52 +517,25 @@ class TestProductionSecretKey:
 
         assert ProductionConfig().JWT_SECRET_KEY == STRONG_SECRET
 
-    @pytest.mark.parametrize('var, placeholder', [
-        ('DB_PASSWORD', 'your_db_password_here'),
-        ('REDIS_PASSWORD', 'your_redis_password_here'),
-        # The migrate service passes the root password as DB_PASSWORD
-        ('DB_PASSWORD', 'your_root_password_here'),
+    @pytest.mark.parametrize('var, value, service', [
+        ('DATABASE_URL', 'mysql+pymysql://u:your_db_password_here@h/d', 'database'),
+        ('DATABASE_PASSWORD', 'your_db_password_here', 'database'),
+        ('MIGRATION_DATABASE_URL',
+         'mysql+pymysql://u:your_migration_password_here@h/d', 'database'),
+        ('REDIS_URL', 'redis://app:your_redis_password_here@h:6379/0', 'Redis'),
+        ('REDIS_PASSWORD', 'your_redis_password_here', 'Redis'),
     ])
-    def test_rejects_placeholder_passwords(self, monkeypatch, var, placeholder):
+    def test_rejects_placeholder_passwords(self, monkeypatch, var, value, service):
         monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
-        monkeypatch.setenv(var, placeholder)
+        monkeypatch.setenv(var, value)
 
-        with pytest.raises(ValueError, match=var):
+        with pytest.raises(ValueError) as exc_info:
             ProductionConfig()
+
+        assert str(exc_info.value) == (
+            f'The {service} password is still the .env.prod.example placeholder')
 
     def test_short_secret_allowed_outside_production(self, monkeypatch):
         monkeypatch.setenv('SECRET_KEY', 'short')
 
         assert DevelopmentConfig().JWT_SECRET_KEY == 'short'
-
-
-class TestConnectionUris:
-    """Credentials must survive URI parsing whatever characters they contain"""
-
-    def test_special_characters_are_encoded(self, monkeypatch):
-        monkeypatch.setenv('DB_USER', 'app')
-        monkeypatch.setenv('DB_PASSWORD', 'p@ss/w:rd#1')
-        monkeypatch.setenv('REDIS_USERNAME', 'app:1')
-        monkeypatch.setenv('REDIS_PASSWORD', 'r@dis/pw')
-
-        config = DevelopmentConfig()
-
-        from sqlalchemy.engine import make_url
-        from redis.connection import parse_url
-        assert make_url(config.SQLALCHEMY_DATABASE_URI).password == 'p@ss/w:rd#1'
-        assert make_url(config.SQLALCHEMY_DATABASE_URI).host == SERVICE_ENV['DB_HOST']
-        assert parse_url(config.REDIS_URI)['password'] == 'r@dis/pw'
-        assert parse_url(config.REDIS_URI)['username'] == 'app:1'
-
-    def test_database_password_is_hidden_when_printed(self):
-        config = DevelopmentConfig()
-
-        assert str(config.SQLALCHEMY_DATABASE_URI) == (
-            'mysql+pymysql://user:***@dbhost:3306/db')
-
-    def test_redis_username_is_required(self, monkeypatch):
-        """No fallback to Redis's "default" user, which the compose files disable"""
-        monkeypatch.delenv('REDIS_USERNAME')
-
-        with pytest.raises(ValueError, match='REDIS_USERNAME'):
-            DevelopmentConfig()
