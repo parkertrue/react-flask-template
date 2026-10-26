@@ -6,6 +6,7 @@ from sqlalchemy.engine import make_url
 
 from app.config import (
     Config,
+    database_url,
     DevelopmentConfig,
     UnitTestConfig,
     IntegrationConfig,
@@ -15,9 +16,10 @@ from app.config import (
 
 STRONG_SECRET = 'x' * 32
 
+# The bundled services' hosts, which production reaches without TLS
 SERVICE_ENV = {
-    'DATABASE_URL': 'mysql+pymysql://user:dbpass@dbhost:3306/db',
-    'REDIS_URL': 'redis://app:redispass@redishost:6379/0',
+    'DATABASE_URL': 'mysql+pymysql://user:dbpass@db:3306/db',
+    'REDIS_URL': 'redis://app:redispass@redis:6379/0',
 }
 
 # Read by app/config.py, but not set by SERVICE_ENV
@@ -49,8 +51,8 @@ class TestConfigClasses:
 
         url = config.SQLALCHEMY_DATABASE_URI
         assert (url.username, url.password, url.host, url.port, url.database) == (
-            'user', 'dbpass', 'dbhost', 3306, 'db')
-        assert config.REDIS_URL == 'redis://app:redispass@redishost:6379/0'
+            'user', 'dbpass', 'db', 3306, 'db')
+        assert config.REDIS_URL == 'redis://app:redispass@redis:6379/0'
         assert config.RATELIMIT_STORAGE_URI == config.REDIS_URL
         assert config.JWT_SECRET_KEY == 'testsecret'
 
@@ -243,6 +245,15 @@ class TestDatabaseUrl:
 
         assert (url.username, url.password) == ('owner', 'ownerpass')
 
+    def test_the_apps_own_url_on_request(self, monkeypatch):
+        """What the production grant check reads, beside a migration URL"""
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', self.MIGRATION_URL)
+        monkeypatch.setenv('DATABASE_PASSWORD', 'the-apps')
+
+        url = database_url(migration=False)
+
+        assert (url.username, url.password) == ('user', 'the-apps')
+
     @pytest.mark.parametrize('url_var, password_var, user', [
         ('DATABASE_URL', 'DATABASE_PASSWORD', 'user'),
         ('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD', 'owner'),
@@ -277,7 +288,7 @@ class TestDatabaseUrl:
 
     def test_password_is_hidden_when_printed(self):
         assert str(DevelopmentConfig().SQLALCHEMY_DATABASE_URI) == (
-            'mysql+pymysql://user:***@dbhost:3306/db')
+            'mysql+pymysql://user:***@db:3306/db')
 
     @pytest.mark.parametrize('value', [
         'postgresql://user:pass@dbhost/db', 'mysql://user:pass@dbhost/db'])
@@ -518,11 +529,11 @@ class TestProductionSecretKey:
         assert ProductionConfig().JWT_SECRET_KEY == STRONG_SECRET
 
     @pytest.mark.parametrize('var, value, service', [
-        ('DATABASE_URL', 'mysql+pymysql://u:your_db_password_here@h/d', 'database'),
+        ('DATABASE_URL', 'mysql+pymysql://u:your_db_password_here@db/d', 'database'),
         ('DATABASE_PASSWORD', 'your_db_password_here', 'database'),
         ('MIGRATION_DATABASE_URL',
-         'mysql+pymysql://u:your_migration_password_here@h/d', 'database'),
-        ('REDIS_URL', 'redis://app:your_redis_password_here@h:6379/0', 'Redis'),
+         'mysql+pymysql://u:your_migration_password_here@db/d', 'database'),
+        ('REDIS_URL', 'redis://app:your_redis_password_here@redis:6379/0', 'Redis'),
         ('REDIS_PASSWORD', 'your_redis_password_here', 'Redis'),
     ])
     def test_rejects_placeholder_passwords(self, monkeypatch, var, value, service):
@@ -539,3 +550,79 @@ class TestProductionSecretKey:
         monkeypatch.setenv('SECRET_KEY', 'short')
 
         assert DevelopmentConfig().JWT_SECRET_KEY == 'short'
+
+
+class TestProductionTls:
+    """Production reaches a database or Redis outside the bundled services
+    only over TLS that checks the server's certificate and name"""
+
+    @pytest.fixture(autouse=True)
+    def strong_secret(self, monkeypatch):
+        monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+
+    EXTERNAL_DATABASE = 'mysql+pymysql://user:dbpass@mydb.example.com:3306/db'
+    EXTERNAL_REDIS = 'redis://app:redispass@cache.example.com:6379/0'
+
+    @pytest.mark.parametrize('var, value', [
+        ('DATABASE_URL', f'{EXTERNAL_DATABASE}?ssl_ca=/etc/ssl/certs/ca-certificates.crt'),
+        ('REDIS_URL', EXTERNAL_REDIS.replace('redis://', 'rediss://')),
+        ('REDIS_URL', EXTERNAL_REDIS.replace('redis://', 'rediss://') + '?ssl_ca_certs=/ca.pem'),
+    ])
+    def test_accepts_an_external_host_over_tls(self, monkeypatch, var, value):
+        monkeypatch.setenv(var, value)
+
+        assert ProductionConfig().RATELIMIT_ENABLED is True
+
+    def test_refuses_an_external_database_without_a_ca_bundle(self, monkeypatch):
+        monkeypatch.setenv('DATABASE_URL', f'{self.EXTERNAL_DATABASE}?charset=utf8mb4')
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to its URL')
+
+    def test_the_migration_url_is_held_to_the_same_rule(self, monkeypatch):
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', self.EXTERNAL_DATABASE)
+
+        with pytest.raises(ValueError, match='database host other than db needs TLS'):
+            ProductionConfig()
+
+    @pytest.mark.parametrize('option', [
+        'ssl_check_hostname=false', 'ssl_verify_cert=false',
+        'ssl_verify_identity=false', 'ssl_disabled=true'])
+    def test_refuses_a_database_option_that_could_skip_checks(self, monkeypatch, option):
+        monkeypatch.setenv('DATABASE_URL', f'{self.EXTERNAL_DATABASE}?ssl_ca=/ca.pem&{option}')
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            f"The database URL may not set {option.split('=')[0]}: production checks "
+            f"the server's certificate and name")
+
+    def test_refuses_an_external_redis_without_tls(self, monkeypatch):
+        monkeypatch.setenv('REDIS_URL', self.EXTERNAL_REDIS)
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            'A Redis host other than redis needs TLS: start REDIS_URL with rediss://')
+
+    def test_refuses_redis_options_that_could_skip_checks(self, monkeypatch):
+        monkeypatch.setenv('REDIS_URL', self.EXTERNAL_REDIS.replace('redis://', 'rediss://')
+                           + '?ssl_cert_reqs=none&ssl_check_hostname=false')
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            "The Redis URL may not set ssl_cert_reqs, ssl_check_hostname: production "
+            "checks the server's certificate and name")
+
+    def test_external_hosts_need_no_tls_outside_production(self, monkeypatch):
+        monkeypatch.setenv('DATABASE_URL', self.EXTERNAL_DATABASE)
+        monkeypatch.setenv('REDIS_URL', self.EXTERNAL_REDIS)
+
+        assert DevelopmentConfig().SQLALCHEMY_DATABASE_URI.host == 'mydb.example.com'

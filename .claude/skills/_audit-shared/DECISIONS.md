@@ -10,6 +10,19 @@ code changes so it no longer applies.
 
 ## Accepted trade-offs
 
+**External services: one database user is not enough, and the bundled
+services are known by name.** In production the backend refuses to start
+when `DATABASE_URL`'s user holds more than row rights (`wait_for_services.py`),
+with no opt-out, so a provider that offers a single database user is
+unsupported (user's decision, 2026-10-21). TLS is required for any host but
+`db` and `redis`, the bundled services' names, so renaming those services
+means editing `config.py` too (README, "External Database or Redis"). One gap
+stays: a `MIGRATION_DATABASE_URL` set on the backend itself wins over
+`DATABASE_URL`, and the app then runs as the schema's owner; only the
+compose file's `environment:` lists keep it on `migrate`.
+*Revisit when:* a deployment needs a provider with one user, or the backend
+is run by something other than the compose file.
+
 **Access token in localStorage.** The 15-minute access token is readable by
 any XSS; the refresh token stays in an HttpOnly cookie. Mitigated by the short
 expiry, the CSP, and React's escaping. Keeps the client simple: no cookie for
@@ -402,8 +415,7 @@ recovery check is blocked by the missing backups). They are not new findings.
   tried on a real server rather than on paper. Until then the docs and
   recovery checks don't report them.
 - **TLS between containers** is not needed while every service shares one
-  host: MySQL and Redis traffic stays on the `internal` network, and anyone
-  who can sniff that bridge already has root on the host. It becomes required
-  once the database or Redis moves off-host (a managed service, a second
-  machine); the backend's PyMySQL connection is plaintext until then.
+  host: the bundled MySQL and Redis traffic stays on the `internal` network,
+  and anyone who can sniff that bridge already has root on the host. Off-host
+  (any host but `db` or `redis`), `ProductionConfig` requires it.
 - **Encryption at rest** (MySQL volume, Redis, backups) is undecided.

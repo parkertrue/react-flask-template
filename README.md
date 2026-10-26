@@ -4,7 +4,7 @@ This repository is a ready-to-use template for a React + Flask + MySQL web appli
 
 **Features**: 
 
-* Fully Dockerized production setup behind an HTTPS Nginx reverse proxy
+* Fully Dockerized production setup behind an HTTPS Nginx reverse proxy, with MySQL and Redis bundled or external (managed services such as Amazon RDS and ElastiCache)
 * Hybrid development setup (local app + Dockerized database)
 * Flask application using the factory pattern
 * MySQL database with Alembic migrations
@@ -66,7 +66,7 @@ Dev and test work as cloned. Production is the only file to create:
 cp .env.prod.example .env.prod
 ```
 
-It holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
+It holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -74,7 +74,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its own (`10.217.0.0/24`), so a redeployed backend is reached the moment it starts. If that range is already in use on the server, add `EDGE_SUBNET_PREFIX=10.x.y` (three numbers) to `.env.prod`.
 
-**Database users.** The database has two users. The app's (`DB_USER`) may read and write rows but never change the schema, so a compromised backend cannot drop or alter a table. The migration user (`DB_MIGRATION_USER`) owns the schema, and only the one-off `migrate` service gets its password; the root password reaches only the `db` container. The bundled MySQL creates both when its volume is first created (`db/init/01-app-user.sh`), in every environment.
+**Database users.** The database has two users. The app's (`DB_USER`) may read and write rows but never change the schema, so a compromised backend cannot drop or alter a table. The migration user (`DB_MIGRATION_USER`) owns the schema, and only the one-off `migrate` service gets its password; the root password reaches only the `db` container. The bundled MySQL creates both when its volume is first created (`db/init/01-app-user.sh`), in every environment; for an external database, you create them ([External Database or Redis](#external-database-or-redis)). In production, the backend refuses to start if the app's user can do more than read and write rows.
 
 **What the app reads.** The backend reads one URL per service: `DATABASE_URL` (the app's user), `REDIS_URL`, and, for `migrate` alone, `MIGRATION_DATABASE_URL`. `docker-compose.yml` builds them from the values above, and `.env.dev` and `.env.test` spell them out. Each password may instead come from a variable of its own (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which replaces the one in its URL, so a secrets store can supply just the password. A password written inside a URL must be percent-encoded; the generator above only produces characters that need none.
 
@@ -353,12 +353,12 @@ Run your web application in a consistent, production-like environment.
 
 **Architecture (Prod)**
 
-* MySQL → Docker
-* Redis → Docker
+* MySQL → Docker, or external ([External Database or Redis](#external-database-or-redis))
+* Redis → Docker, or external
 * Flask (Gunicorn) → Docker
 * React → Built & served by Nginx
 
-Only Nginx is published (ports 80 and 443). Nginx reaches only Flask; MySQL and Redis sit on an internal network with no outbound access, reachable only from Flask. Every container runs with `no-new-privileges`, Flask on a read-only filesystem with no Linux capabilities. Redis's `default` user is disabled; the app connects as an ACL user limited to its own keys, with dangerous commands (FLUSHALL, CONFIG, KEYS, ...) refused.
+Only Nginx is published (ports 80 and 443). Nginx reaches only Flask; the bundled MySQL and Redis sit on an internal network with no outbound access, reachable only from Flask. Every container runs with `no-new-privileges`, Flask on a read-only filesystem with no Linux capabilities. Redis's `default` user is disabled; the app connects as an ACL user limited to its own keys, with dangerous commands (FLUSHALL, CONFIG, KEYS, ...) refused.
 
 ---
 
@@ -375,6 +375,57 @@ A one-shot `migrate` container applies migrations as the migration user and exit
 **When to rebuild:** frontend and backend code are both copied into their images, so rerun with `--build` after any code change.
 
 **Production URL:** `https://<SERVER_NAME>` ([https://localhost](https://localhost) when testing locally with `SERVER_NAME=localhost`).
+
+---
+
+## External Database or Redis
+
+The bundled MySQL and Redis containers are optional: production can use a MySQL 8 database and a Redis (or Valkey) server that run elsewhere, such as Amazon RDS and ElastiCache. Each one is switched on its own, with no code change:
+
+1. Remove its profile from `COMPOSE_PROFILES` in `.env.prod` (`bundled-db`, `bundled-redis`), so its container no longer runs.
+2. Set its URLs in `.env.prod`: `DATABASE_URL` and `MIGRATION_DATABASE_URL` for the database, `REDIS_URL` for Redis (the example file's last lines show their shape). They replace the URLs `docker-compose.yml` would build. The bundled values it no longer uses can stay; Compose warns about each one you remove.
+
+`migrate` and the backend reach an external service through the `edge` network, the one with a route out of the host.
+
+**TLS is required.** Production treats any host other than the bundled services' names, `db` and `redis`, as outside the server, and refuses to start unless the connection is encrypted and checks the server's certificate and name. Keep those two names if you rename the services.
+
+* The database URL needs `?ssl_ca=<path>`, a CA bundle inside the container. A database whose certificate comes from a public CA can use the image's own bundle, `/etc/ssl/certs/ca-certificates.crt`. Amazon RDS's CAs are not in it: download RDS's bundle (`https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`) and mount it, read-only since the image is, in a `docker-compose.override.yml` beside `docker-compose.yml`, which Compose reads automatically:
+
+  ```yaml
+  services:
+    migrate:
+      volumes: ["./certs/rds-global-bundle.pem:/etc/ssl/rds.pem:ro"]
+    backend:
+      volumes: ["./certs/rds-global-bundle.pem:/etc/ssl/rds.pem:ro"]
+  ```
+
+  and end both database URLs with `?ssl_ca=/etc/ssl/rds.pem`.
+* The Redis URL must start with `rediss://`. ElastiCache's certificates chain to Amazon's public roots, which the image's bundle holds, so it needs nothing more; for another CA, add `?ssl_ca_certs=<path>`.
+* Options that could switch either check off (`ssl_check_hostname`, `ssl_verify_cert`, `ssl_verify_identity` and `ssl_disabled` in the database URL; `ssl_cert_reqs` and `ssl_check_hostname` in the Redis URL) are refused.
+
+**Two database users.** Create them as the provider's admin user, as `db/init/01-app-user.sh` does for the bundled MySQL:
+
+```sql
+CREATE DATABASE appdb;
+CREATE USER 'app_migrate'@'%' IDENTIFIED BY '<migration password>' REQUIRE SSL;
+GRANT ALL PRIVILEGES ON `appdb`.* TO 'app_migrate'@'%';
+CREATE USER 'app'@'%' IDENTIFIED BY '<app password>' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE ON `appdb`.* TO 'app'@'%';
+```
+
+In a database name, `_` is a wildcard in `GRANT`: write `app\_db` for `app_db`. On start-up in production, the backend and `migrate` read the grants of `DATABASE_URL`'s user and refuse to start if it holds anything beyond `SELECT`, `INSERT`, `UPDATE` and `DELETE` on its database (`USAGE` on `*.*`, MySQL's name for none, is fine): no schema rights, no rights on every database (which would include MySQL's own grant tables), no role and no `WITH GRANT OPTION`. There is no opt-out: a provider that offers a single database user is not supported. The admin user stays with you; neither container ever gets it.
+
+**Redis settings the app cannot check.** Its ACL user may not read the server's configuration, so set these yourself:
+
+* `maxmemory-policy noeviction`. Every refresh token carries an expiry, so a policy that evicts keys with one (ElastiCache's default, `volatile-lru`) silently signs users out once memory fills. On ElastiCache, use a custom parameter group.
+* A user named in `REDIS_URL` (required), with the bundled ACL's rules: on ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~LIMITS:* +@all -@dangerous`. An AUTH token alone, on the `default` user, is refused.
+* Cluster mode disabled: the app's Redis client is not cluster-aware. That rules out ElastiCache Serverless, which is always clustered and whose eviction policy is fixed at `volatile-lru`; use a node-based cluster.
+
+**Network access.** Let only the server reach the database and Redis (security groups, a private network, or the provider's allowlist), never the internet.
+
+**Passwords in URLs** must be percent-encoded; the generator in [Environment Files](#environment-files) only produces characters that need none. A password can also come from its own variable (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which needs no encoding.
+
+The backend gives up on a DNS lookup after one try of 1 second (`dns_opt`, so a stopped bundled service fails fast). Pooled connections are reused, so an external host is looked up rarely, but a slow resolver can fail a request that needs a new connection.
 
 ---
 
@@ -423,7 +474,7 @@ docker compose --env-file .env.prod down --volumes --remove-orphans
 
 | Mode | DB | Redis | Backend | Frontend |
 |------|----|-------|---------|----------|
-| Prod | Docker | Docker | Docker | Docker (Nginx) |
+| Prod | Docker or external | Docker or external | Docker | Docker (Nginx) |
 | Dev | Docker | Docker | Local | Local |
 | Unit tests | SQLite in memory | Not used | Local | Local (jsdom) |
 | Integration tests | Docker | Docker | Local | n/a |
