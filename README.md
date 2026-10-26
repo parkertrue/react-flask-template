@@ -4,7 +4,7 @@ This repository is a ready-to-use template for a React + Flask + MySQL web appli
 
 **Features**: 
 
-* Fully Dockerized production setup behind an HTTPS Nginx reverse proxy, with MySQL and Redis bundled or external (managed services such as Amazon RDS and ElastiCache)
+* Fully Dockerized production setup behind an HTTPS Nginx reverse proxy, with MySQL and Redis bundled or external (managed services such as Amazon RDS and ElastiCache), or on a container platform such as Amazon ECS ([Deploying to a Platform](#deploying-to-a-platform))
 * Hybrid development setup (local app + Dockerized database)
 * Flask application using the factory pattern
 * MySQL database with Alembic migrations
@@ -426,6 +426,80 @@ In a database name, `_` is a wildcard in `GRANT`: write `app\_db` for `app_db`. 
 **Passwords in URLs** must be percent-encoded; the generator in [Environment Files](#environment-files) only produces characters that need none. A password can also come from its own variable (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which needs no encoding.
 
 The backend gives up on a DNS lookup after one try of 1 second (`dns_opt`, so a stopped bundled service fails fast). Pooled connections are reused, so an external host is looked up rarely, but a slow resolver can fail a request that needs a new connection.
+
+---
+
+## Deploying to a Platform
+
+The Compose stack is one way to run the app. The same two images also run on a container platform (Amazon ECS on Fargate, Kubernetes, Google Cloud Run with sidecars), with managed MySQL and Redis ([External Database or Redis](#external-database-or-redis)). Nothing in the images depends on Compose: what they read from the environment is the whole contract, and `.env.prod` is only Compose's way of supplying it.
+
+### The Contract
+
+**Images.** Build both for the platform's CPU (`--platform linux/amd64`, or `linux/arm64` for Graviton) and tag them with the commit:
+
+```bash
+docker build --platform linux/amd64 -t <registry>/app-backend:<sha> backend
+docker build --platform linux/amd64 -f nginx/Dockerfile -t <registry>/app-nginx:<sha> .
+```
+
+| | backend | nginx |
+|---|---|---|
+| Port | 5000 (gunicorn) | 80 (`behind-proxy`) |
+| Environment | `APP_ENV=production`, `SECRET_KEY`, `DATABASE_URL`, `REDIS_URL`; optionally `DATABASE_PASSWORD`, `REDIS_PASSWORD`, `WEB_CONCURRENCY` (about one per vCPU), `TRUSTED_PROXY_COUNT` | `NGINX_MODE=behind-proxy`, `NGINX_SERVER_NAME` (your domain), `NGINX_TRUSTED_PROXIES` (the load balancer's subnets), `NGINX_BACKEND_ADDRESS=127.0.0.1` |
+| Filesystem | read-only root, plus a writable `/tmp` (gunicorn's worker heartbeats) | writable: it renders its config into `/etc/nginx/conf.d` at start |
+| Health | `GET /api/health` on 5000. Allow 60 s to start: it waits up to 60 s for MySQL and Redis, then checks its database user's grants | none of its own; the load balancer checks `/api/health` through it |
+
+**Secrets.** Keep each URL without its password in plain configuration, and inject `DATABASE_PASSWORD`, `REDIS_PASSWORD` and `SECRET_KEY` from the platform's secret store. Each password variable replaces its URL's password.
+
+**Migrations** run once per deploy, before the new backend starts: the backend image with the command `flask db upgrade`, plus `MIGRATION_DATABASE_URL` (or `MIGRATION_DATABASE_PASSWORD`) and `DB_QUERY_TIMEOUT=0`. Give that job its own task or job definition, so the long-running backend never holds the migration user's credentials. Rolling deploys run old and new backends side by side for a while, so a migration must keep the old code working: add a column in one release, and drop the old one in a later release.
+
+**The client's address.** The load balancer terminates TLS and sends nginx plain HTTP with `X-Forwarded-For`. nginx trusts that header only from `NGINX_TRUSTED_PROXIES` and forwards the result to the backend, whose `TRUSTED_PROXY_COUNT` stays 1. Get the range wrong, and either every user shares the balancer's address (one rate-limit bucket, so one user can lock everyone out), or a client can choose its own address. Set `TRUSTED_PROXY_COUNT` only if you leave nginx out: 1 behind a load balancer, 2 with a CDN in front of it.
+
+**Keep nginx in front of the backend.** It's the layer the E2E suite and the audits test: security headers and CSP, the 16 KB body cap, per-IP rate limits, JSON error bodies and unknown-host refusal. It costs about 10-20 MB per task. Replacing it means rebuilding all of that in the load balancer or CDN. Its per-IP limits count per task, so three tasks give one client three times the budget. The backend's own limits (login, register, refresh, account deletion) count in Redis and stay exact. For exact limits at the edge, use the load balancer's WAF.
+
+CI's Platform smoke job runs this layout (the backend and a `behind-proxy` nginx sharing one network namespace) and checks health, headers, the body cap, the HTTPS redirect and the client's address. Only the Compose stack gets the full E2E suite.
+
+### What Replaces Each Compose Piece
+
+| Compose | On a platform |
+|---|---|
+| `.env.prod` | the task definition's environment, plus the secret store |
+| `db`, `redis` (bundled profiles) | managed MySQL and Redis: [External Database or Redis](#external-database-or-redis) |
+| `migrate` and `depends_on` | a one-off task run by the deploy before the service updates |
+| nginx in `tls` mode, `nginx/certs/` | a load balancer with a managed certificate, and nginx in `behind-proxy` mode |
+| the backend's fixed `edge` address, `dns_opt` | `127.0.0.1`: containers in one task share a network namespace. Both are Compose-only |
+| the `edge` and `internal` networks | private subnets and security groups |
+| healthchecks, `restart` | the platform's container health checks and service scheduler |
+| `deploy.resources` | the task's CPU and memory |
+| `x-logging` rotation | the platform's log service and its retention |
+| `cap_drop`, `read_only`, `no-new-privileges`, `pids_limit` | the task definition's equivalents, where the platform has them |
+
+### Example: Amazon ECS on Fargate
+
+A sketch of one working layout, not infrastructure code. Translate it into your own tooling (console, CloudFormation, Terraform, CDK).
+
+1. **Images:** push both to ECR.
+2. **Database and Redis:** RDS for MySQL 8 and ElastiCache for Redis OSS or Valkey (node-based, cluster mode off), set up as [External Database or Redis](#external-database-or-redis) describes. On Fargate there's no host to mount the RDS CA bundle from. It's public, so copy it into your app's backend image (`COPY certs/rds-global-bundle.pem /etc/ssl/rds.pem`).
+3. **Secrets:** `SECRET_KEY`, `DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD` and `REDIS_PASSWORD` in Secrets Manager, referenced from the task definitions' `secrets`.
+4. **The service's task definition** (`awsvpc`; start at 1 vCPU and 2 GB):
+   - `backend`: port 5000, `readonlyRootFilesystem: true` with a volume at `/tmp`, `linuxParameters.capabilities.drop: ["ALL"]`, and a health check running the same command as `docker-compose.yml`'s with `startPeriod: 60`.
+   - `nginx`: port 80, `dependsOn` backend `HEALTHY`, with the `behind-proxy` variables above (`NGINX_TRUSTED_PROXIES` set to the ALB's subnets). Fargate can't add capabilities, so leave nginx's default set rather than dropping them all.
+   - Both log through `awslogs` to CloudWatch Logs groups with a retention you choose ([Logs](#logs)).
+5. **Migrations:** a second task definition, the backend image only, with the command and variables from "Migrations" above. The deploy runs it (`aws ecs run-task`), waits for exit code 0, then updates the service.
+6. **Load balancer:** an ALB with an ACM certificate. The HTTPS listener forwards to the service's port 80, and the HTTP listener redirects to HTTPS. The target group's health check is `/api/health`, and the service's health-check grace period is at least 60 s.
+7. **Security groups:** the ALB accepts 80 and 443 from the internet. The tasks accept port 80 from the ALB only, never 5000 (gunicorn listens on every interface inside the task). RDS and ElastiCache accept connections from the tasks only.
+
+**Optional: the frontend on S3 and CloudFront.** Upload `frontend/dist` to a private S3 bucket behind CloudFront, and add a CloudFront behavior that sends `/api/*` to the ALB, so the browser still calls a same-origin `/api`. Set that behavior to:
+
+- no caching (`CachingDisabled`);
+- forwarding the viewer's `Host` (`AllViewer`), or nginx drops the request.
+
+Then:
+
+- Copy nginx's page headers (`nginx/app_server.conf`: the CSP, HSTS, `X-Frame-Options`, `Permissions-Policy`) into a response headers policy, and its caching too: `index.html` `no-cache`, `/assets/*` cached for a year.
+- Route unknown paths to `index.html` with a CloudFront Function on the S3 behavior, not with custom error responses: those apply to the whole distribution and would turn the API's 404s into the page.
+- Let only CloudFront reach the ALB, and add CloudFront's origin-facing ranges (AWS's `ip-ranges.json`, `CLOUDFRONT_ORIGIN_FACING`) to `NGINX_TRUSTED_PROXIES`, or every client gets a CloudFront edge's address.
+- Add AWS WAF on CloudFront for exact edge rate limits.
 
 ---
 
