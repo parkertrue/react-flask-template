@@ -27,6 +27,9 @@ def app():
 
     with app.app_context():
         yield app
+        # Close the in-memory database's connection rather than leave it to
+        # the garbage collector, which Python warns about
+        _db.engine.dispose()
 
 
 @event.listens_for(Engine, 'connect')

@@ -34,8 +34,8 @@ Make sure the following tools are installed before running the project:
   Used for MySQL, Redis, tests, and production builds.  
   [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/)
 
-* **Python 3.12+**  
-  Used for the Flask backend.  
+* **Python 3.14**  
+  Used for the Flask backend. The same version the backend image runs and the dependency locks are resolved for.  
   [https://www.python.org/downloads/](https://www.python.org/downloads/)
 
 * **Node.js 24 LTS (includes npm)**  
@@ -210,7 +210,7 @@ Migration files are named after their revision id alone (`backend/migrations/ale
 pip install -r requirements-dev.txt
 ```
 
-The script compiles inside the production base image, so the locks resolve for Linux and Python 3.12 whatever machine runs it.
+The script compiles inside the production base image, so the locks resolve for Linux and Python 3.14 whatever machine runs it.
 
 ---
 
