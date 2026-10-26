@@ -36,7 +36,7 @@ Report anything a senior engineer would flag on review.
 
 ### env: environment and config selection
 Files: `.env.dev`, `.env.test`, `.env.prod.example`, `backend/app/config.py`,
-`backend/wait_for_services.py`, `backend/restrict_db_user.py`, every
+`backend/wait_for_services.py`, `db/init/01-app-user.sh`, every
 `environment:` block in the three compose files, `.gitignore`, `.dockerignore`,
 `backend/.dockerignore`.
 - Is every variable in an env file read by something (`os.getenv`, or `${VAR}`
@@ -104,7 +104,9 @@ Files: each feature's `models.py` (`backend/app/*/models.py`), `backend/migratio
   green in CI)?
 - Least privilege, checked live on the running stack: `SHOW GRANTS` for the
   app user, then try `CREATE TABLE` and `DROP TABLE` as that user. Do not
-  trust `restrict_db_user.py`'s output or its test.
+  trust `db/init/01-app-user.sh`'s output or `test_db_users.py`. Which
+  containers hold which database password (the root's only `db`, the
+  migration user's only `db` and `migrate`)?
 - MySQL server settings worth setting explicitly (character set, SQL mode)?
   Startup warnings from the `db` logs.
 

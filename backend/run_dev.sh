@@ -37,5 +37,9 @@ python wait_for_services.py
 echo "Running database migrations..."
 flask db upgrade
 
+# As in production, the app itself runs as the user that cannot change the
+# schema: without the migration URL, it connects with DATABASE_URL
+unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_PASSWORD
+
 echo "Starting Flask app..."
 exec python wsgi.py

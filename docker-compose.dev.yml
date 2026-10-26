@@ -7,14 +7,18 @@ services:
     image: mysql:8.4.11
     # Only the variables MySQL needs, interpolated from the --env-file passed
     # to docker compose, so SECRET_KEY and the Redis password stay out. The
-    # keys are the MySQL image's own names; the app reads DB_* everywhere.
+    # image makes MYSQL_USER, the migration user, owner of MYSQL_DATABASE;
+    # db/init/01-app-user.sh adds the app's DB_USER, with data rights only.
     environment:
       MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_USER: ${DB_MIGRATION_USER}
+      MYSQL_PASSWORD: ${DB_MIGRATION_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
     volumes:
       - db_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # ping exits 0 whenever the server is up, even if auth fails, so no
       # credentials need to appear in the process list

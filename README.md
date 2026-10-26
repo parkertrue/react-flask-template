@@ -66,7 +66,7 @@ Dev and test work as cloned. Production is the only file to create:
 cp .env.prod.example .env.prod
 ```
 
-It holds only the seven values that differ per deployment (including `SERVER_NAME`, the domain nginx serves); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
+It holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -74,13 +74,17 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its own (`10.217.0.0/24`), so a redeployed backend is reached the moment it starts. If that range is already in use on the server, add `EDGE_SUBNET_PREFIX=10.x.y` (three numbers) to `.env.prod`.
 
-**Changing a value later.** The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` locks the app out (every request gets a 502), and a new `DB_ROOT_PASSWORD` makes the next deploy fail at `migrate` while the running app keeps serving. Renaming `DB_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d`. With the bundled MySQL, which reads the `DB_*` values only when its volume is first created:
+**Database users.** The database has two users. The app's (`DB_USER`) may read and write rows but never change the schema, so a compromised backend cannot drop or alter a table. The migration user (`DB_MIGRATION_USER`) owns the schema, and only the one-off `migrate` service gets its password; the root password reaches only the `db` container. The bundled MySQL creates both when its volume is first created (`db/init/01-app-user.sh`), in every environment.
+
+**What the app reads.** The backend reads one URL per service: `DATABASE_URL` (the app's user), `REDIS_URL`, and, for `migrate` alone, `MIGRATION_DATABASE_URL`. `docker-compose.yml` builds them from the values above, and `.env.dev` and `.env.test` spell them out. Each password may instead come from a variable of its own (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which replaces the one in its URL, so a secrets store can supply just the password. A password written inside a URL must be percent-encoded; the generator above only produces characters that need none.
+
+**Changing a value later.** The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` locks the app out (every request gets a 502), and a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` while the running app keeps serving. Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d`. With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
 
 ```bash
-docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<DB_USER>'@'%' IDENTIFIED BY '<new password>'"
+docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<user>'@'%' IDENTIFIED BY '<new password>'"
 ```
 
-For a new `DB_ROOT_PASSWORD`, change both `'root'@'%'` and `'root'@'localhost'`. A new `REDIS_PASSWORD` needs only `up -d`. A new `SECRET_KEY` signs every user out.
+For a new `DB_ROOT_PASSWORD`, change both `'root'@'%'` and `'root'@'localhost'`; nothing outside the `db` container holds it. A new `REDIS_PASSWORD` needs only `up -d`. A new `SECRET_KEY` signs every user out.
 
 ---
 
@@ -156,8 +160,8 @@ What this does:
 * Loads `.env.dev`
 * Activates virtual environment (if not already active)
 * Waits for MySQL and Redis to be ready
-* Runs `flask db upgrade`
-* Starts the Flask app
+* Runs `flask db upgrade` as the migration user
+* Starts the Flask app as the app's user, which cannot change the schema, as in production
 
 `.env.dev` turns the Flask debugger on. To run without it, override it from the shell: `FLASK_DEBUG=0 ./run_dev.sh`.
 
@@ -184,7 +188,7 @@ The dev server listens on localhost only. To open it from another device on your
 
 ## Database Schema Changes (During Dev)
 
-`run_dev.sh` applies pending migrations each time it starts. To generate one after changing the SQLAlchemy models, from `backend/` with the virtualenv active and the dev database running, load the dev environment first (the `flask` command needs it):
+`run_dev.sh` applies pending migrations each time it starts. To generate one after changing the SQLAlchemy models, from `backend/` with the virtualenv active and the dev database running, load the dev environment first (the `flask` command needs it; its `MIGRATION_DATABASE_URL` connects as the user that owns the schema):
 
 ```bash
 set -a && source ../.env.dev && set +a
@@ -366,7 +370,7 @@ Requires `.env.prod` and a certificate in `nginx/certs/` (see above).
 docker compose --env-file .env.prod up --build
 ```
 
-A one-shot `migrate` container applies migrations as the MySQL root user, restricts the app's database user to reading and writing rows (`backend/restrict_db_user.py`), and exits. The backend then starts Gunicorn with credentials that cannot change the schema, and nginx starts once the backend passes its health check. Local development (`run_dev.sh`) still migrates with the dev user directly.
+A one-shot `migrate` container applies migrations as the migration user and exits. The backend then starts Gunicorn as the app's user, whose credentials cannot change the schema (see [Database users](#environment-files)), and nginx starts once the backend passes its health check.
 
 **When to rebuild:** frontend and backend code are both copied into their images, so rerun with `--build` after any code change.
 
