@@ -26,8 +26,12 @@ def make_limited_app(monkeypatch):
     limiter is module-level and init_app flips its global enabled/initialized
     flags, which would make every other test's app start enforcing limits.
     Snapshot its state and put it back afterwards.
+
+    Each app has its own in-memory database; dispose of its engine, which
+    closes the connection (Python warns about one garbage-collected open).
     """
     saved = dict(vars(limiter))
+    apps = []
 
     def make(storage_uri='memory://'):
         app = build_app(
@@ -38,9 +42,13 @@ def make_limited_app(monkeypatch):
         )
         with app.app_context():
             db.create_all()
+        apps.append(app)
         return app
 
     yield make
+    for app in apps:
+        with app.app_context():
+            db.engine.dispose()
     vars(limiter).clear()
     vars(limiter).update(saved)
 
