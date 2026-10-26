@@ -1,6 +1,6 @@
 import os
 from datetime import timedelta
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
@@ -17,19 +17,32 @@ PLACEHOLDER_PASSWORDS = {
 # The connect args below are PyMySQL's, so no other driver will do
 DATABASE_DRIVER = 'mysql+pymysql'
 
+# The compose files' names for the bundled MySQL and Redis, which the backend
+# reaches over a private Docker network. Any other host is outside it, so
+# production refuses to reach it without TLS that checks the server's
+# certificate and name (README, External Database or Redis).
+BUNDLED_DATABASE_HOST = 'db'
+BUNDLED_REDIS_HOST = 'redis'
+# URL options that could turn those checks off. PyMySQL checks both once the
+# URL names a CA bundle (ssl_ca), and redis-py over rediss:// by default.
+DATABASE_TLS_OPTIONS_REFUSED = (
+    'ssl_check_hostname', 'ssl_verify_cert', 'ssl_verify_identity', 'ssl_disabled')
+REDIS_TLS_OPTIONS_REFUSED = ('ssl_cert_reqs', 'ssl_check_hostname')
 
-def database_url() -> URL | None:
+
+def database_url(migration=True) -> URL | None:
     """The database to connect to, or None if no URL is set.
 
     The migration user's when MIGRATION_DATABASE_URL is set (only the
     migrate job and the integration suite, which builds its own tables, get
-    it), else the app's. Each URL's password may come from a variable of its
-    own instead, so a secrets store can supply the password alone. A URL
-    object, not a string: it prints its password as ***.
+    it) and `migration` allows it, else the app's. Each URL's password may
+    come from a variable of its own instead, so a secrets store can supply
+    the password alone. A URL object, not a string: it prints its password
+    as ***.
     """
-    for url_var, password_var in (
-            ('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD'),
-            ('DATABASE_URL', 'DATABASE_PASSWORD')):
+    sources = (('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD'),
+               ('DATABASE_URL', 'DATABASE_PASSWORD'))
+    for url_var, password_var in sources if migration else sources[1:]:
         value = os.getenv(url_var)
         if not value:
             continue
@@ -75,6 +88,15 @@ def redis_url() -> str | None:
     host = parts.netloc.rpartition('@')[2]
     return parts._replace(
         netloc=f"{parts.username}:{quote(password, safe='')}@{host}").geturl()
+
+
+def refuse_tls_options(service, query, refused):
+    """Fail on any option in a URL's query that could weaken its TLS checks"""
+    found = [option for option in refused if option in query]
+    if found:
+        raise ValueError(
+            f"The {service} URL may not set {', '.join(found)}: production checks "
+            f"the server's certificate and name")
 
 
 class Config:
@@ -241,6 +263,21 @@ class ProductionConfig(Config):
         for name, password in passwords.items():
             if password in PLACEHOLDER_PASSWORDS:
                 raise ValueError(f'{name} is still the .env.prod.example placeholder')
+
+        database = self.SQLALCHEMY_DATABASE_URI
+        if database.host != BUNDLED_DATABASE_HOST:
+            if 'ssl_ca' not in database.query:
+                raise ValueError(
+                    f'A database host other than {BUNDLED_DATABASE_HOST} needs TLS: add '
+                    f'?ssl_ca=<CA bundle path> to its URL')
+            refuse_tls_options('database', database.query, DATABASE_TLS_OPTIONS_REFUSED)
+        redis = urlsplit(self.REDIS_URL)
+        if redis.hostname != BUNDLED_REDIS_HOST:
+            if redis.scheme != 'rediss':
+                raise ValueError(
+                    f'A Redis host other than {BUNDLED_REDIS_HOST} needs TLS: '
+                    f'start REDIS_URL with rediss://')
+            refuse_tls_options('Redis', parse_qs(redis.query), REDIS_TLS_OPTIONS_REFUSED)
 
 
 def get_config():

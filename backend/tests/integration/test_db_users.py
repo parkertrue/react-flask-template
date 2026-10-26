@@ -11,6 +11,8 @@ import pytest
 from sqlalchemy import create_engine, make_url, text
 from sqlalchemy.exc import OperationalError
 
+import wait_for_services as wait
+
 # MySQL's ER_TABLEACCESS_DENIED_ERROR: a command the user may not run
 ACCESS_DENIED = 1142
 
@@ -60,3 +62,12 @@ def test_app_user_reads_and_writes_rows(integration_db, app_user):
 
     assert hashes == ['y']
     assert app_user.execute(text('SELECT COUNT(*) FROM users')).scalar() == 0
+
+
+def test_the_production_start_check_passes_the_app_user_alone():
+    """wait_for_services.py refuses a DATABASE_URL user that owns the schema"""
+    app_user = wait.schema_rights(make_url(os.environ['DATABASE_URL']))
+    owner = wait.schema_rights(make_url(os.environ['MIGRATION_DATABASE_URL']))
+
+    assert app_user == []
+    assert [grant.partition(' ON ')[0] for grant in owner] == ['GRANT ALL PRIVILEGES']

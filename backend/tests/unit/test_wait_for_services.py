@@ -2,9 +2,11 @@
 
 The checks themselves are faked: what matters here is the loop around them,
 which must give up on a typo at once and on a dead service after the timeout,
-saying why each service is not ready, and never printing a password.
+saying why each service is not ready, and never printing a password. In
+production it must also refuse an app user that may change the schema.
 """
 import json
+from unittest.mock import MagicMock
 
 import pymysql
 import pytest
@@ -23,6 +25,8 @@ ENV = {
 
 @pytest.fixture
 def env(monkeypatch):
+    """Development's settings: the tests of production set APP_ENV themselves"""
+    monkeypatch.setenv('APP_ENV', 'development')
     for name in ('MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD',
                  'MIGRATION_DATABASE_PASSWORD', 'REDIS_PASSWORD'):
         monkeypatch.delenv(name, raising=False)
@@ -77,6 +81,21 @@ def test_a_malformed_url_fails_at_once_saying_so(env, monkeypatch, capsys):
     assert exit_info.value.code == 1
     assert logged(capsys) == [
         ('ERROR', 'REDIS_URL must start with redis:// or rediss:// (TLS)')]
+
+
+def test_a_url_production_refuses_fails_at_once(env, monkeypatch, capsys):
+    """Before any wait: a server that requires TLS would refuse every try"""
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('SECRET_KEY', 'x' * 32)
+    monkeypatch.setenv('DATABASE_URL', 'mysql+pymysql://app:db-secret@mydb.example.com/app')
+    monkeypatch.setattr(wait, 'mysql_error', lambda *args: pytest.fail('should not connect'))
+
+    with pytest.raises(SystemExit) as exit_info:
+        wait.main()
+
+    assert exit_info.value.code == 1
+    assert logged(capsys) == [('ERROR', (
+        'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to its URL'))]
 
 
 def test_checks_the_urls_the_app_will_use(env, clock, monkeypatch):
@@ -198,3 +217,131 @@ def test_the_mysql_check_gives_up_on_a_connection_quickly(env, monkeypatch):
     wait.mysql_error(database_url(), [])
 
     assert made == [{'connect_timeout': 2}]
+
+
+# What db/init/01-app-user.sh grants the app's user
+APP_USER_GRANTS = [
+    'GRANT USAGE ON *.* TO `app`@`%`',
+    'GRANT SELECT, INSERT, UPDATE, DELETE ON `appdb`.* TO `app`@`%`',
+]
+
+
+@pytest.mark.parametrize('grant, allowed', [
+    *[(grant, True) for grant in APP_USER_GRANTS],
+    ('GRANT SELECT ON `appdb`.* TO `app`@`%`', True),
+    ('GRANT SELECT ON *.* TO `app`@`%`', False),
+    ('GRANT INSERT, UPDATE ON *.* TO `app`@`%`', False),
+    ('GRANT ALL PRIVILEGES ON `appdb`.* TO `app`@`%`', False),
+    ('GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON `appdb`.* TO `app`@`%`', False),
+    ('GRANT ALTER ON `appdb`.`users` TO `app`@`%`', False),
+    ('GRANT SELECT ON `appdb`.* TO `app`@`%` WITH GRANT OPTION', False),
+    ('GRANT SELECT (`email`) ON `appdb`.`users` TO `app`@`%`', False),
+    ('GRANT `rds_superuser_role`@`%` TO `admin`@`%`', False),
+])
+def test_the_app_user_may_hold_data_privileges_alone(grant, allowed):
+    assert wait.data_only(grant) is allowed
+
+
+@pytest.fixture
+def production(env, clock, monkeypatch):
+    """Production, with both services up: what each grant check read"""
+    monkeypatch.setenv('APP_ENV', 'production')
+    services(monkeypatch, mysql=[None], redis_=[None])
+    checked = []
+
+    def rights(granted):
+        def schema_rights(url):
+            checked.append(url)
+            return granted
+        monkeypatch.setattr(wait, 'schema_rights', schema_rights)
+    return checked, rights
+
+
+def test_the_grant_check_runs_in_production_alone(env, clock, monkeypatch, capsys):
+    services(monkeypatch, mysql=[None], redis_=[None])
+    monkeypatch.setattr(wait, 'schema_rights', lambda url: pytest.fail('not in development'))
+
+    wait.main()
+
+    assert logged(capsys) == [('INFO', 'Database and Redis are up')]
+
+
+def test_production_starts_when_the_app_user_holds_data_rights_only(production, capsys):
+    checked, rights = production
+    rights([])
+
+    wait.main()
+
+    assert [str(url) for url in checked] == ['mysql+pymysql://app:***@db:3306/app']
+    assert logged(capsys) == [('INFO', 'Database and Redis are up')]
+
+
+def test_production_refuses_an_app_user_that_may_change_the_schema(production, capsys):
+    _, rights = production
+    rights(['GRANT ALL PRIVILEGES ON `app`.* TO `app`@`%`'])
+
+    with pytest.raises(SystemExit) as exit_info:
+        wait.main()
+
+    assert exit_info.value.code == 1
+    assert logged(capsys)[-1] == ('ERROR', (
+        "DATABASE_URL's user may change more than rows, which only the migration user "
+        "may: GRANT ALL PRIVILEGES ON `app`.* TO `app`@`%`. Give the app a user with "
+        "SELECT, INSERT, UPDATE and DELETE on its database alone (README, External "
+        "Database or Redis)"))
+
+
+def test_the_migrate_job_checks_the_app_user_not_its_own(production, monkeypatch):
+    """The app will connect as DATABASE_URL's user, whatever migrate ran as"""
+    checked, rights = production
+    rights([])
+    monkeypatch.setenv('MIGRATION_DATABASE_URL', 'mysql+pymysql://owner:owner-secret@db/app')
+
+    wait.main()
+
+    assert [url.username for url in checked] == ['app']
+
+
+def test_production_needs_database_url_beside_a_migration_url(production, monkeypatch, capsys):
+    _, rights = production
+    rights([])
+    monkeypatch.setenv('MIGRATION_DATABASE_URL', 'mysql+pymysql://owner:owner-secret@db/app')
+    monkeypatch.delenv('DATABASE_URL')
+
+    with pytest.raises(SystemExit) as exit_info:
+        wait.main()
+
+    assert exit_info.value.code == 1
+    assert logged(capsys) == [('ERROR', 'Missing required environment variables: DATABASE_URL')]
+
+
+def test_unreadable_grants_stop_production_with_passwords_masked(production, monkeypatch, capsys):
+    monkeypatch.setenv('MIGRATION_DATABASE_URL', 'mysql+pymysql://owner:owner-secret@db/app')
+
+    def refuse(url):
+        raise OperationalError('connect', {}, Exception('lost db-secret owner-secret'))
+    monkeypatch.setattr(wait, 'schema_rights', refuse)
+
+    with pytest.raises(SystemExit) as exit_info:
+        wait.main()
+
+    assert exit_info.value.code == 1
+    level, message = logged(capsys)[-1]
+    assert (level, message.startswith("Could not read the grants of DATABASE_URL's user: ")) == (
+        'ERROR', True)
+    assert (message.count('lost *** ***'), 'secret' in message) == (1, False)
+
+
+def test_schema_rights_reads_the_users_grants(env, monkeypatch):
+    """Through SQLAlchemy; tests/integration/test_db_users.py runs it on MySQL"""
+    run = []
+    rows = [*APP_USER_GRANTS, 'GRANT DROP ON *.* TO `app`@`%`']
+    connection = MagicMock()
+    connection.__enter__.return_value.execute.side_effect = lambda statement: (
+        run.append(str(statement)) or MagicMock(**{'scalars.return_value.all.return_value': rows}))
+    engine = MagicMock(**{'connect.return_value': connection})
+    engine.dispose.side_effect = lambda: run.append('disposed')
+    monkeypatch.setattr(wait, 'create_engine', lambda url, **kwargs: engine)
+
+    assert wait.schema_rights(database_url()) == ['GRANT DROP ON *.* TO `app`@`%`']
+    assert run == ['SHOW GRANTS FOR CURRENT_USER()', 'disposed']

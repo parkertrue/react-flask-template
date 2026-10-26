@@ -18,6 +18,9 @@ This check takes about 30 minutes. Give long commands explicit timeouts, and
 wait with until-loops that have deadlines (RULES.md). It runs Docker: record
 all four Timings (RULES.md, Report).
 
+Build the scratch env file from `.env.prod.example` and keep its
+`COMPOSE_PROFILES`: the bundled `db` and `redis` run only under it.
+
 **Scope:** `$ARGUMENTS`. If empty, run both parts.
 
 ## 1. drills: failure injection

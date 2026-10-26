@@ -40,7 +40,13 @@ x-backend-env: &backend-env
   SECRET_KEY: ${SECRET_KEY}
 
 services:
+  # The bundled MySQL and Redis run under profiles that .env.prod.example's
+  # COMPOSE_PROFILES turns on. To use an external one instead, set its URLs
+  # in .env.prod and drop its profile (README, External Database or Redis);
+  # every depends_on on them is required: false, so nothing waits for a
+  # service that isn't there.
   db:
+    profiles: [bundled-db]
     logging: *logging
     <<: *security
     image: mysql:8.4.11
@@ -86,6 +92,7 @@ services:
           memory: 512m
 
   redis:
+    profiles: [bundled-redis]
     logging: *logging
     <<: *security
     image: redis:8.10-alpine
@@ -169,9 +176,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
+        required: false
+    # edge only for its route out of the host, to an external database
     networks:
+      - edge
       - internal
     restart: "no"
     deploy:
@@ -197,8 +208,10 @@ services:
         condition: service_completed_successfully
       db:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
+        required: false
     networks:
       edge:
         ipv4_address: *backend-address
@@ -274,8 +287,9 @@ services:
           cpus: "0.25"
           memory: 128m
 
-# nginx reaches only the backend; MySQL and Redis sit on a network with no
-# route out of the host, reachable only from the backend.
+# nginx reaches only the backend; the bundled MySQL and Redis sit on a
+# network with no route out of the host, reachable only from the backend and
+# migrate, which reach an external database or Redis through edge.
 networks:
   edge:
     ipam:
