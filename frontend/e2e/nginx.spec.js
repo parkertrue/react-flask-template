@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { test, expect } from '@playwright/test'
 import { SERVICE_UNAVAILABLE_MESSAGE } from './helpers'
@@ -52,6 +53,17 @@ function backendServes() {
   } catch {
     return false
   }
+}
+
+// Waits until a rate-limit zone's bucket is empty. A flood ends once one
+// request gets through, which leaves the bucket holding up to its burst; it
+// drains at the zone's rate (nginx/Dockerfile, which the test stack keeps
+// for these zones), so burst / rate seconds later it holds nothing.
+async function waitForEmptyBucket(zone) {
+  const read = file => readFileSync(path.join(REPO_ROOT, 'nginx', file), 'utf8')
+  const rate = Number(read('Dockerfile').match(new RegExp(`NGINX_${zone.toUpperCase()}_RATE=(\\d+)r/s`))[1])
+  const burst = Number(read('app_server.conf').match(new RegExp(`zone=${zone} burst=(\\d+)`))[1])
+  await new Promise(resolve => setTimeout(resolve, burst / rate * 1000))
 }
 
 const SECURITY_HEADERS = {
@@ -165,8 +177,9 @@ test.describe('nginx', () => {
     expect(burstLines().filter(line => line.status === 429).length).toBeLessThan(10)
     expect(logLines('nginx').filter(l => l.includes(secret))).toEqual([])
 
-    // Let the bucket refill, so the tests after this one are not limited
+    // Let the bucket empty, so the tests after this one are not limited
     await expect.poll(async () => (await request.get('/api/account')).status()).toBe(401)
+    await waitForEmptyBucket('api')
   })
 
   test('an oversized body is refused in the API\'s error shape', async ({ request }) => {
@@ -251,9 +264,6 @@ test.describe('nginx', () => {
     expect(await response.text()).toContain('<div id="root">')
   })
 
-  // Last in this block: the refill below waits for one free slot, not an
-  // empty bucket, so a page request straight after it could still be refused.
-  // The next block asks for /api/health alone, which no limit covers.
   test('a client loading pages in a loop is refused in the API\'s error shape', async ({ request }) => {
     // 10 r/s with a burst of 20 (nginx/Dockerfile): 60 at once overflows it
     const responses = await Promise.all(
@@ -267,8 +277,9 @@ test.describe('nginx', () => {
       })
     }
 
-    // Let the bucket refill, so the tests after this one are not limited
+    // Let the bucket empty, so the tests after this one are not limited
     await expect.poll(async () => (await request.get('/account')).status()).toBe(200)
+    await waitForEmptyBucket('page')
   })
 })
 
