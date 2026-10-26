@@ -3,7 +3,7 @@ import path from 'node:path'
 import { test, expect } from '@playwright/test'
 import { SERVICE_UNAVAILABLE_MESSAGE } from './helpers'
 
-// What nginx itself promises (nginx/templates/default.conf.template), checked
+// What nginx itself promises (nginx/servers/tls.conf.template, app_server.conf), checked
 // over the wire. The app works the same without any of these, so only this
 // file notices one breaking.
 

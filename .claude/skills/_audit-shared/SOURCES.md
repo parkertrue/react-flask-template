@@ -133,7 +133,7 @@ Ground rules when using these:
   headers, caching, and compression. Compare `security_headers.conf` and the
   caching rules against it.
 - **Mozilla SSL Configuration Generator**: https://ssl-config.mozilla.org
-  The TLS block at the top of `templates/default.conf.template` follows its
+  The TLS block at the top of `servers/tls.conf.template` follows its
   "intermediate" profile; regenerate and diff periodically.
 - **Mozilla Server Side TLS guidelines**: https://wiki.mozilla.org/Security/Server_Side_TLS
 - **nginx "Pitfalls and Common Mistakes"** (search that title; the old wiki moved).

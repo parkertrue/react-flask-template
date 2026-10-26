@@ -219,23 +219,41 @@ jobs:
 
       # Renders the templates the way the container does at start, in the
       # image nginx/Dockerfile pins, then nginx -T checks the result and dumps
-      # it as one file. The NGINX_* values are nginx/Dockerfile's defaults,
-      # and the backend address docker-compose.yml gives it.
+      # it as one file, once per NGINX_MODE. The NGINX_* values are
+      # nginx/Dockerfile's defaults, and the backend address
+      # docker-compose.yml gives it. A bad mode or trusted range must stop the
+      # container (nginx/server-mode.sh).
       - name: Validate
         run: |
           image=$(sed -n 's/^FROM \(nginx:[^ ]*\).*/\1/p' nginx/Dockerfile)
-          docker run --rm \
-            -e NGINX_ENTRYPOINT_QUIET_LOGS=1 -e NGINX_ENVSUBST_FILTER='^NGINX_' \
-            -e NGINX_SERVER_NAME=example.com \
-            -e NGINX_AUTH_RATE=20r/m -e NGINX_API_RATE=30r/s -e NGINX_PAGE_RATE=10r/s \
-            -e NGINX_BACKEND_ADDRESS=10.217.0.10 \
-            -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
-            -v "$PWD/nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro" \
-            -v "$PWD/nginx/security_headers.conf:/etc/nginx/security_headers.conf:ro" \
-            -v "$PWD/nginx/resource_headers.conf:/etc/nginx/resource_headers.conf:ro" \
-            -v "$PWD/nginx/templates:/etc/nginx/templates:ro" \
-            -v "$PWD/nginx/certs:/etc/nginx/certs:ro" \
-            "$image" nginx -T > "$RUNNER_TEMP/nginx.conf"
+          render() {
+            docker run --rm \
+              -e NGINX_ENTRYPOINT_QUIET_LOGS=1 -e NGINX_ENVSUBST_FILTER='^NGINX_' \
+              -e NGINX_SERVER_NAME=example.com \
+              -e NGINX_AUTH_RATE=20r/m -e NGINX_API_RATE=30r/s -e NGINX_PAGE_RATE=10r/s \
+              -e NGINX_BACKEND_ADDRESS=10.217.0.10 "$@" \
+              -v "$PWD/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+              -v "$PWD/nginx/proxy_params.conf:/etc/nginx/proxy_params.conf:ro" \
+              -v "$PWD/nginx/security_headers.conf:/etc/nginx/security_headers.conf:ro" \
+              -v "$PWD/nginx/resource_headers.conf:/etc/nginx/resource_headers.conf:ro" \
+              -v "$PWD/nginx/app_server.conf:/etc/nginx/app_server.conf:ro" \
+              -v "$PWD/nginx/templates:/etc/nginx/templates:ro" \
+              -v "$PWD/nginx/servers:/etc/nginx/servers:ro" \
+              -v "$PWD/nginx/server-mode.sh:/docker-entrypoint.d/25-server-mode.sh:ro" \
+              -v "$PWD/nginx/certs:/etc/nginx/certs:ro" \
+              "$image" nginx -T
+          }
+          render -e NGINX_MODE=tls > "$RUNNER_TEMP/nginx-tls.conf"
+          render -e NGINX_MODE=behind-proxy -e NGINX_TRUSTED_PROXIES='10.0.0.0/16, 2600:1f18::/40' \
+            > "$RUNNER_TEMP/nginx-behind-proxy.conf"
+          grep -q 'set_real_ip_from 2600:1f18::/40;' "$RUNNER_TEMP/nginx-behind-proxy.conf"
+          for bad in NGINX_MODE=edge NGINX_MODE=behind-proxy \
+                     NGINX_TRUSTED_PROXIES=0.0.0.0/0 'NGINX_TRUSTED_PROXIES=10.0.0.0/8;x'; do
+            if render -e NGINX_MODE=tls -e "$bad" > /dev/null 2>&1; then
+              echo "::error::nginx started with $bad"
+              exit 1
+            fi
+          done
 
       # Security analyzer (gixy-ng, the maintained fork of Yandex's gixy).
       # Skipped: hsts_header fires on the port-80 redirect server, where
@@ -244,5 +262,7 @@ jobs:
       # that doesn't matter for a few static files.
       - name: Lint
         run: |
-          pipx run --spec gixy-ng==0.2.55 gixy \
-            --skips hsts_header,try_files_is_evil_too "$RUNNER_TEMP/nginx.conf"
+          for mode in tls behind-proxy; do
+            pipx run --spec gixy-ng==0.2.55 gixy \
+              --skips hsts_header,try_files_is_evil_too "$RUNNER_TEMP/nginx-$mode.conf"
+          done

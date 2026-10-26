@@ -25,7 +25,7 @@ SERVICE_ENV = {
 # Read by app/config.py, but not set by SERVICE_ENV
 OPTIONAL_VARS = (
     'MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD', 'MIGRATION_DATABASE_PASSWORD',
-    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE')
+    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT')
 
 
 @pytest.fixture(autouse=True)
@@ -550,6 +550,35 @@ class TestProductionSecretKey:
         monkeypatch.setenv('SECRET_KEY', 'short')
 
         assert DevelopmentConfig().JWT_SECRET_KEY == 'short'
+
+
+class TestTrustedProxyCount:
+    """Rate limits key on the address the trusted proxies report"""
+
+    @pytest.fixture(autouse=True)
+    def strong_secret(self, monkeypatch):
+        monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+
+    def test_production_trusts_nginx_by_default(self):
+        assert ProductionConfig().TRUSTED_PROXY_COUNT == 1
+
+    @pytest.mark.parametrize('value, count', [('0', 0), ('2', 2)])
+    def test_a_deployment_sets_its_own_count(self, monkeypatch, value, count):
+        monkeypatch.setenv('TRUSTED_PROXY_COUNT', value)
+
+        assert ProductionConfig().TRUSTED_PROXY_COUNT == count
+
+    @pytest.mark.parametrize('value', ['-1', 'abc', '', '1.5', '٢'])
+    def test_refuses_anything_but_a_whole_number(self, monkeypatch, value):
+        monkeypatch.setenv('TRUSTED_PROXY_COUNT', value)
+
+        with pytest.raises(ValueError, match='TRUSTED_PROXY_COUNT must be a whole number'):
+            ProductionConfig()
+
+    def test_only_production_reads_it(self, monkeypatch):
+        monkeypatch.setenv('TRUSTED_PROXY_COUNT', '2')
+
+        assert DevelopmentConfig().TRUSTED_PROXY_COUNT == 0
 
 
 class TestProductionTls:

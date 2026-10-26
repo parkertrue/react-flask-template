@@ -74,8 +74,10 @@ alert exists for Redis, or users see these delays outside an outage.
 one address, which register's `10 per hour` would block, so the E2E backend
 runs `IntegrationConfig` with limits off. The keying on the client IP
 (`TRUSTED_PROXY_COUNT` and nginx's `X-Forwarded-For`) is unit-tested with
-hand-made headers, and the Redis counters are integration-tested; the real
-nginx → Flask client-IP path runs only in production. *Revisit when:* a
+hand-made headers, and the Redis counters are integration-tested. CI's
+Platform smoke job runs the real load balancer → nginx → Flask path, in
+`behind-proxy` mode with the production config, and checks the address the
+backend logs; `tls` mode's path runs only in production. *Revisit when:* a
 deployment exists, or the proxy chain changes (a CDN hop, a second proxy).
 
 **User text stored verbatim.** No server-side sanitizing; output escaping is
@@ -375,6 +377,13 @@ unreachable for about 30s. Two containers cannot share the address, so
 its CPU limit instead. A managed platform's load balancer does this job there.
 *Revisit when:* one backend container is no longer enough (then several
 fixed addresses in the upstream, or a reload of nginx after every deploy).
+
+**nginx's per-IP limits are per nginx.** On a platform, each task runs its
+own nginx beside its backend, so three tasks give one client three times the
+budget of `limit_req`/`limit_conn`. The backend's own limits (login,
+register, refresh, account deletion) count in Redis and stay exact. Exact
+limits at the edge belong to the load balancer's WAF. *Revisit when:* a
+deployment runs enough tasks that the multiplied budget matters.
 
 ## Deferred until the app grows
 

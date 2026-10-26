@@ -19,7 +19,16 @@ COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/proxy_params.conf /etc/nginx/proxy_params.conf
 COPY nginx/security_headers.conf /etc/nginx/security_headers.conf
 COPY nginx/resource_headers.conf /etc/nginx/resource_headers.conf
+COPY nginx/app_server.conf /etc/nginx/app_server.conf
 COPY nginx/templates /etc/nginx/templates
+COPY nginx/servers /etc/nginx/servers
+# After the image's own 20-envsubst-on-templates.sh; picks the servers for
+# NGINX_MODE and trusts NGINX_TRUSTED_PROXIES' X-Forwarded-For (see the script)
+COPY --chmod=755 nginx/server-mode.sh /docker-entrypoint.d/25-server-mode.sh
+# tls: nginx is the edge and serves HTTPS with nginx/certs/. behind-proxy: a
+# load balancer terminates TLS and NGINX_TRUSTED_PROXIES must name it (README,
+# Deploying to a Platform).
+ENV NGINX_MODE=tls
 # Production rate limits, per client IP; see templates/
 # The auth rate covers login and register together. Flask's own limits are
 # tighter per account; this one only has to stop a single address flooding.

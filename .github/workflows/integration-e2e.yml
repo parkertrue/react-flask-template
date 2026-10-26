@@ -59,6 +59,40 @@ jobs:
         if: always()
         run: docker compose --env-file .env.test -f docker-compose.test.yml down -v
 
+  # The layout of a container platform's task: the backend and a behind-proxy
+  # nginx sharing one network namespace, with no fixed address or dns_opt
+  # (.github/smoke/platform.yml). Only Compose gets the full E2E suite; this
+  # checks what the platform layout changes: health checks, headers, the body
+  # cap and the client's address.
+  platform:
+    name: Platform smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Start the platform layout
+        run: |
+          docker compose --env-file .env.test -f docker-compose.test.yml \
+            -f .github/smoke/platform.yml --profile platform up -d --build --wait
+
+      - name: Smoke test
+        run: python3 .github/scripts/smoke_platform.py
+
+      - name: Service logs on failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.test -f docker-compose.test.yml \
+            -f .github/smoke/platform.yml --profile platform logs
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose --env-file .env.test -f docker-compose.test.yml \
+            -f .github/smoke/platform.yml --profile platform down -v
+
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest

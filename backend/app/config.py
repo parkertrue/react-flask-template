@@ -246,7 +246,7 @@ class ProductionConfig(Config):
     def __init__(self):
         super().__init__()
         self.FLASK_DEBUG = False
-        self.TRUSTED_PROXY_COUNT = 1  # nginx
+        self.TRUSTED_PROXY_COUNT = trusted_proxy_count()
 
         # Anyone who knows the template's placeholder can forge JWTs, so a
         # weak key must stop the deploy rather than boot quietly.
@@ -278,6 +278,23 @@ class ProductionConfig(Config):
                     f'A Redis host other than {BUNDLED_REDIS_HOST} needs TLS: '
                     f'start REDIS_URL with rediss://')
             refuse_tls_options('Redis', parse_qs(redis.query), REDIS_TLS_OPTIONS_REFUSED)
+
+
+def trusted_proxy_count():
+    """How many proxies in production write X-Forwarded-For, 1 by default.
+
+    nginx is the one hop in front of the backend wherever it runs, even
+    behind a load balancer: it takes the client's address from the
+    balancer's header itself (NGINX_TRUSTED_PROXIES) and forwards that alone.
+    A deployment without nginx counts the proxies that append to the header:
+    1 for a load balancer, 2 with a CDN before it. Too
+    low, and every user shares the proxy's address and one rate-limit
+    bucket; too high, and a client picks its own address.
+    """
+    value = os.getenv('TRUSTED_PROXY_COUNT', '1')
+    if not (value.isascii() and value.isdigit()):
+        raise ValueError(f'TRUSTED_PROXY_COUNT must be a whole number, 0 or more. Got: {value!r}')
+    return int(value)
 
 
 def get_config():

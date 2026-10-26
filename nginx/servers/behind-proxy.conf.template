@@ -1,0 +1,46 @@
+# NGINX_MODE=behind-proxy: a load balancer in front terminates TLS and
+# forwards plain HTTP here, as on a container platform (README, Deploying to
+# a Platform). Rendered into /etc/nginx/conf.d/default.conf at container start
+# (server-mode.sh). The client's address comes from the balancer's
+# X-Forwarded-For, trusted only from NGINX_TRUSTED_PROXIES, which this mode
+# requires (conf.d/real-ip.conf).
+
+# The balancer reached the client over HTTPS, or the server below has already
+# redirected it there
+map $host $forwarded_proto {
+    default https;
+}
+
+# Any other Host gets no response, as in tls mode, but for the health check:
+# a load balancer's names the target's own address, which no server_name can
+# know in advance. The route is public anyway.
+server {
+    listen 80 default_server;
+
+    location = /api/health {
+        access_log off;
+
+        include /etc/nginx/resource_headers.conf;
+
+        proxy_pass http://backend;
+        include /etc/nginx/proxy_params.conf;
+    }
+
+    location / {
+        return 444;
+    }
+}
+
+server {
+    listen 80;
+    server_name ${NGINX_SERVER_NAME};
+
+    # A balancer listener that forwards plain HTTP instead of redirecting it
+    # still sends no page or token over it. Not $scheme, which is always
+    # http here.
+    if ($http_x_forwarded_proto != "https") {
+        return 301 https://$host$request_uri;
+    }
+
+    include /etc/nginx/app_server.conf;
+}
