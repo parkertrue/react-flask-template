@@ -63,7 +63,8 @@ Files: `.env.dev`, `.env.test`, `.env.prod.example`, `backend/app/config.py`,
 
 ### nginx
 Files: `nginx/` (Dockerfile, `nginx.conf`, `proxy_params.conf`,
-`security_headers.conf`, `resource_headers.conf`, `templates/`).
+`security_headers.conf`, `resource_headers.conf`, `app_server.conf`,
+`server-mode.sh`, `templates/`, `servers/`).
 - Compare TLS settings with the Mozilla "intermediate" profile, and headers and
   caching with h5bp `server-configs-nginx`. Is the CSP as strict as the
   built app allows (check `frontend/index.html` and the build output for inline
@@ -76,6 +77,10 @@ Files: `nginx/` (Dockerfile, `nginx.conf`, `proxy_params.conf`,
   address with no DNS (`00-upstream.conf.template` against the compose
   files' `EDGE_SUBNET_PREFIX`), timeouts and keepalive in line with
   gunicorn's settings?
+- Both `NGINX_MODE`s, rendered as CI's Nginx config job does: does
+  `behind-proxy` keep everything `tls` does but TLS itself, and does
+  `NGINX_TRUSTED_PROXIES` give the client's address without letting a client
+  choose it (`.github/smoke/platform.yml` runs that layout)?
 
 ### docker: images and Compose
 Files: `backend/Dockerfile`, `backend/entrypoint.sh`, `nginx/Dockerfile`,

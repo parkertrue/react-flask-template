@@ -1,0 +1,85 @@
+# CI's Platform smoke job: the layout of a container platform's task (an ECS
+# task, a Kubernetes pod), on the test stack's db and redis. The backend and an
+# nginx in behind-proxy mode share one network namespace, as a task's
+# containers do, so nginx reaches the backend at 127.0.0.1, with no fixed
+# address and no dns_opt, which only the compose files set. The host stands in
+# for the load balancer.
+#
+# docker compose --env-file .env.test -f docker-compose.test.yml \
+#   -f .github/smoke/platform.yml --profile platform up -d --build --wait
+# then python3 .github/scripts/smoke_platform.py. Paths resolve against
+# docker-compose.test.yml's directory, the repository root.
+
+services:
+  migrate:
+    profiles:
+      - e2e
+      - platform
+
+  platform-backend:
+    build: ./backend
+    # The hardening a platform's task definition gives it, as in
+    # docker-compose.yml
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    # Production's config, so the client address goes through the real
+    # ProxyFix and rate limiter; .env.test's values pass its checks
+    environment:
+      APP_ENV: production
+      DATABASE_URL: mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}
+      REDIS_URL: redis://app:${REDIS_PASSWORD}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+    # nginx's port: in a shared namespace the first container publishes for
+    # all of them. The load balancer reaches only this one.
+    ports:
+      - "127.0.0.1:8081:80"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    pids_limit: 128
+    profiles:
+      - platform
+
+  platform-nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    network_mode: service:platform-backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    environment:
+      NGINX_MODE: behind-proxy
+      NGINX_BACKEND_ADDRESS: 127.0.0.1
+      # The load balancer's addresses: requests from the host reach the
+      # published port from the network's gateway
+      NGINX_TRUSTED_PROXIES: ${EDGE_SUBNET_PREFIX:-10.217.1}.0/24
+    depends_on:
+      platform-backend:
+        condition: service_healthy
+    restart: "no"
+    pids_limit: 64
+    profiles:
+      - platform

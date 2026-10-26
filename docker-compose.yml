@@ -250,7 +250,7 @@ services:
       dockerfile: nginx/Dockerfile
     environment:
       # The domain this deployment serves; requests for any other host are
-      # dropped (see nginx/templates/default.conf.template)
+      # dropped (see nginx/servers/tls.conf.template)
       NGINX_SERVER_NAME: ${SERVER_NAME:?set SERVER_NAME in .env.prod}
       NGINX_BACKEND_ADDRESS: *backend-address
     # The master process binds 80/443, owns its cache directories, reads the

@@ -289,13 +289,13 @@ docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e dow
 GitHub Actions (`.github/workflows/`):
 
 * **CI** (`ci.yml`) runs lint and the backend and frontend unit suites, runs them again after deleting the example code as [Starting a New App](#starting-a-new-app-from-this-template) describes (`.github/scripts/remove_examples.py`), validates all three compose files, lints the workflows and Dependabot config (zizmor) and both Dockerfiles (hadolint), checks that `LICENSE` exists, refuses trailing whitespace (outside Markdown) and a missing final newline in any tracked file (`.editorconfig` sets editors to match), and checks the rendered nginx config (`nginx -T`, then the gixy-ng security analyzer), on every push and pull request to `main`.
-* **Integration & E2E** (`integration-e2e.yml`) runs the integration and Playwright suites on every push and pull request to `main`, nightly to catch drift in base images, and on demand from the Actions tab.
+* **Integration & E2E** (`integration-e2e.yml`) runs the integration and Playwright suites, and a smoke test of the layout a container platform runs (the backend and nginx in `behind-proxy` mode sharing one network namespace), on every push and pull request to `main`, nightly to catch drift in base images, and on demand from the Actions tab.
 
 Every job has a read-only token and a timeout, and actions are pinned to commit SHAs.
 
 Dependabot (`.github/dependabot.yml`) opens weekly update PRs for the Python locks, npm, Docker images and GitHub Actions. For it to also open security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under the repository's Settings > Advanced Security.
 
-To stop a failing check from merging, require these status checks on `main` (Settings > Branches): Backend unit, Frontend unit, Scaffold, Compose files, Workflows, Dockerfiles, Nginx config, Backend integration and Playwright E2E.
+To stop a failing check from merging, require these status checks on `main` (Settings > Branches): Backend unit, Frontend unit, Scaffold, Compose files, Workflows, Dockerfiles, Nginx config, Backend integration, Platform smoke and Playwright E2E.
 
 ---
 
@@ -334,7 +334,7 @@ sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
      - /etc/letsencrypt:/etc/letsencrypt:ro
    ```
 
-4. In `.env.prod`, set `SERVER_NAME=yourdomain.com www.yourdomain.com`. In `nginx/templates/default.conf.template`, point the certificate at Certbot's paths:
+4. In `.env.prod`, set `SERVER_NAME=yourdomain.com www.yourdomain.com`. In `nginx/servers/tls.conf.template`, point the certificate at Certbot's paths:
 
    ```nginx
    ssl_certificate      /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
