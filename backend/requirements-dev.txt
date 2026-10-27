@@ -35,7 +35,7 @@ deprecated==3.0.0
     # via
     #   -c requirements.txt
     #   limits
-dnspython==2.8.0
+dnspython==2.9.0
     # via
     #   -c requirements.txt
     #   email-validator

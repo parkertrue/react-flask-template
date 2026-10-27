@@ -20,7 +20,7 @@ cryptography==50.0.2
     # via -r requirements.in
 deprecated==3.0.0
     # via limits
-dnspython==2.8.0
+dnspython==2.9.0
     # via email-validator
 email-validator==2.3.0
     # via -r requirements.in
