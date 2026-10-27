@@ -15,13 +15,12 @@ import os
 import re
 import sys
 import time
-from urllib.parse import unquote, urlsplit
 
 import redis
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-from app.config import database_url, get_config, redis_url
+from app.config import database_url, get_config, read_redis_url, redis_url
 from app.utils.log import JsonFormatter
 
 log = logging.getLogger('wait_for_services')
@@ -129,7 +128,7 @@ def main():
         log.error(f"Missing required environment variables: {', '.join(missing)}")
         sys.exit(1)
     secrets = [url.password for url in (database, app_database) if url]
-    secrets.append(unquote(urlsplit(redis_).password))
+    secrets.append(read_redis_url().password)
 
     deadline = time.monotonic() + TIMEOUT_SECONDS
     shown = None

@@ -4,8 +4,8 @@ import { OPERATOR, TERMS_VERSION } from '@/legal'
 import PlaceholderNotice from './PlaceholderNotice'
 
 // The template's outline of terms of service. Each bracketed passage is for
-// the app's developer to replace; raise TERMS_VERSION (here and in the
-// backend) whenever the terms change.
+// the app's developer to replace; raise TERMS_VERSION (src/legal.js and
+// backend/app/auth/models.py) whenever the terms change.
 export default function TermsPage() {
   return (
     <div className="legal-page page-column">

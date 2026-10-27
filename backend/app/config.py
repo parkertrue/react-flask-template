@@ -1,8 +1,6 @@
 import os
 import re
 from datetime import timedelta
-from urllib.parse import parse_qs, quote, unquote, urlsplit
-
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -79,31 +77,42 @@ def database_url(migration=True) -> URL | None:
     return None
 
 
-def redis_url() -> str | None:
+def read_redis_url() -> URL | None:
     """REDIS_URL, with REDIS_PASSWORD as its password if set; None if unset.
 
-    A string, since Flask-Limiter takes nothing else, so unlike the database
-    password this one is readable in app.config. The user is required: the
-    compose files' Redis disables the all-powerful "default" user.
+    The user is required: the compose files' Redis disables the
+    all-powerful "default" user.
     """
     value = os.getenv('REDIS_URL')
     if not value:
         return None
     try:
-        parts = urlsplit(value)
-        parts.port  # raises on a port that isn't a number
-    except ValueError:
+        url = make_url(value)
+    except (ArgumentError, ValueError):
+        # Not the value itself: it holds the password. A port that isn't a
+        # number is a ValueError
         raise ValueError('REDIS_URL is not a valid URL') from None
-    if parts.scheme not in ('redis', 'rediss'):
+    if os.getenv('REDIS_PASSWORD'):
+        url = url.set(password=os.getenv('REDIS_PASSWORD'))
+    if url.drivername not in ('redis', 'rediss'):
         raise ValueError('REDIS_URL must start with redis:// or rediss:// (TLS)')
-    password = os.getenv('REDIS_PASSWORD') or unquote(parts.password or '')
-    if not (parts.username and password and parts.hostname):
+    if not all([url.username, url.password, url.host]):
         raise ValueError(
             'REDIS_URL must name a user, password and host '
             '(the password may be in REDIS_PASSWORD)')
-    host = parts.netloc.rpartition('@')[2]
-    return parts._replace(
-        netloc=f"{parts.username}:{quote(password, safe='')}@{host}").geturl()
+    return url
+
+
+def redis_url() -> str | None:
+    """The Redis to connect to, or None if REDIS_URL is unset.
+
+    A string, since Flask-Limiter takes nothing else, so unlike the database
+    password this one is readable in app.config.
+    """
+    url = read_redis_url()
+    if url is None:
+        return None
+    return url.render_as_string(hide_password=False)
 
 
 def refuse_tls_options(url_var, query, refused):
@@ -288,15 +297,15 @@ class ProductionConfig(Config):
                         f'?ssl_ca=<CA bundle path> to {url_var}')
                 refuse_tls_options(url_var, database.query, DATABASE_TLS_OPTIONS_REFUSED)
 
-        redis = urlsplit(self.REDIS_URL)
-        if unquote(redis.password) in PLACEHOLDER_PASSWORDS:
+        redis = read_redis_url()
+        if redis.password in PLACEHOLDER_PASSWORDS:
             raise ValueError('The Redis password is still the .env.prod.example placeholder')
-        if redis.hostname != BUNDLED_REDIS_HOST:
-            if redis.scheme != 'rediss':
+        if redis.host != BUNDLED_REDIS_HOST:
+            if redis.drivername != 'rediss':
                 raise ValueError(
                     f'A Redis host other than {BUNDLED_REDIS_HOST} needs TLS: '
                     f'start REDIS_URL with rediss://')
-            refuse_tls_options('REDIS_URL', parse_qs(redis.query), REDIS_TLS_OPTIONS_REFUSED)
+            refuse_tls_options('REDIS_URL', redis.query, REDIS_TLS_OPTIONS_REFUSED)
 
 
 def trusted_proxy_count():

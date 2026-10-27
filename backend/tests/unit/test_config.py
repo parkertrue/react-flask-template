@@ -384,6 +384,13 @@ class TestRedisUrl:
 
         assert DevelopmentConfig().REDIS_URL == value
 
+    def test_a_ca_bundle_path_reaches_redis_intact(self, monkeypatch):
+        """The URL is rebuilt, which percent-encodes the path's slashes"""
+        monkeypatch.setenv(
+            'REDIS_URL', 'rediss://app:pw@cache.example.com:6380/2?ssl_ca_certs=/etc/ssl/ca.pem')
+
+        assert parse_url(DevelopmentConfig().REDIS_URL)['ssl_ca_certs'] == '/etc/ssl/ca.pem'
+
     @pytest.mark.parametrize('value', ['http://app:pw@redishost/0', 'unix:///tmp/redis.sock'])
     def test_refuses_another_scheme(self, monkeypatch, value):
         monkeypatch.setenv('REDIS_URL', value)

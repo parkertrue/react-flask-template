@@ -16,23 +16,6 @@ export const hasUnsupportedCharacters = text => UNSUPPORTED_CHARACTER.test(text)
 export const UNSUPPORTED_CHARACTERS_MESSAGE = 'must not contain emoji or other symbols like © or °'
 
 /**
- * The characters any password may use: no spaces, and no emoji or other
- * pictographic symbols. Like every validator here, returns the first rule
- * broken, or undefined.
- */
-function validatePasswordCharacters(password) {
-  const normalized = password.normalize('NFKC')
-
-  if (/\s/u.test(normalized)) {
-    return 'Password must not contain spaces'
-  }
-
-  if (hasUnsupportedCharacters(normalized)) {
-    return `Password ${UNSUPPORTED_CHARACTERS_MESSAGE}`
-  }
-}
-
-/**
  * Validate password meets all requirements: 8-128 characters with an
  * uppercase letter, a lowercase letter and a number, and no spaces or emoji.
  * Checked as the backend checks it, after NFKC normalization, and wherever a
@@ -53,9 +36,12 @@ export function validatePassword(password) {
     return `Password must be at most ${PASSWORD_MAX_LENGTH} characters`
   }
 
-  const characters = validatePasswordCharacters(password)
-  if (characters) {
-    return characters
+  if (/\s/u.test(normalized)) {
+    return 'Password must not contain spaces'
+  }
+
+  if (hasUnsupportedCharacters(normalized)) {
+    return `Password ${UNSUPPORTED_CHARACTERS_MESSAGE}`
   }
 
   if (!/[A-Z]/.test(normalized)) {
