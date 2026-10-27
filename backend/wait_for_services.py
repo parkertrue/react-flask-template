@@ -7,7 +7,8 @@ app does, one JSON object per line on stdout, so every line the backend
 container writes parses alike.
 
 In production it then refuses to start if DATABASE_URL's user may do more
-than read and write rows: only the migration user may change the schema.
+than read and write rows in its own database: only the migration user may
+change the schema.
 """
 import logging
 import os
@@ -31,12 +32,14 @@ log.setLevel(logging.INFO)
 TIMEOUT_SECONDS = 60
 
 # All the app's own database user may hold: rows in its database, and on
-# *.* only USAGE, MySQL's word for no privilege at all. INSERT or UPDATE on
-# *.* would reach MySQL's own grant tables.
+# *.* only USAGE, MySQL's word for no privilege at all. Rows anywhere else
+# could be MySQL's own grant tables (mysql.*) or another app's.
 DATA_PRIVILEGES = {'SELECT', 'INSERT', 'UPDATE', 'DELETE'}
 # One row of SHOW GRANTS: privileges on one object. Anything else (a role, a
 # column grant, WITH GRANT OPTION) fails to match, and so is refused.
 GRANT_ROW = re.compile(r'GRANT (?P<privileges>[A-Z ,]+) ON (?P<target>\S+) TO \S+')
+# What may follow the database in a grant's target: all its tables, or one
+TABLES = re.compile(r'\*|`[^`]+`')
 
 
 def describe(error, secrets):
@@ -70,25 +73,32 @@ def redis_error(url, secrets):
         return describe(error, secrets)
 
 
-def data_only(grant):
-    """Whether one row of SHOW GRANTS gives no more than DATA_PRIVILEGES"""
+def data_only(grant, database):
+    """Whether one row of SHOW GRANTS gives no more than DATA_PRIVILEGES,
+    and those in `database` alone"""
     match = GRANT_ROW.fullmatch(grant)
     if not match:
         return False
     privileges = set(match['privileges'].split(', '))
     if match['target'] == '*.*':
         return privileges == {'USAGE'}
-    return privileges <= DATA_PRIVILEGES
+    # SHOW GRANTS prints the name as it was granted, and `_` is a GRANT
+    # wildcard: unescaped, `app_db` covers appXdb too. The name holds nothing
+    # else that needs escaping (DATABASE_NAME in app/config.py).
+    target, _, tables = match['target'].partition('.')
+    return (target == f"`{database.replace('_', r'\_')}`"
+            and TABLES.fullmatch(tables) is not None
+            and privileges <= DATA_PRIVILEGES)
 
 
 def schema_rights(url):
-    """The grants that let this login do more than read and write rows,
-    from MySQL's own list: none for the app's user"""
+    """The grants that let this login do more than read and write rows in
+    its own database, from MySQL's own list: none for the app's user"""
     engine = create_engine(url, poolclass=NullPool, connect_args={'connect_timeout': 2})
     with engine.connect() as connection:
         grants = connection.execute(text('SHOW GRANTS FOR CURRENT_USER()')).scalars().all()
     engine.dispose()
-    return [grant for grant in grants if not data_only(grant)]
+    return [grant for grant in grants if not data_only(grant, url.database)]
 
 
 def main():
@@ -153,8 +163,8 @@ def main():
         sys.exit(1)
     if granted:
         log.error(
-            f"DATABASE_URL's user may change more than rows, which only the migration "
-            f"user may: {'; '.join(granted)}. Give the app a user with SELECT, INSERT, "
+            f"DATABASE_URL's user may do more than read and write rows in its own "
+            f"database: {'; '.join(granted)}. Give the app a user with SELECT, INSERT, "
             f"UPDATE and DELETE on its database alone (README, External Database or Redis)")
         sys.exit(1)
 

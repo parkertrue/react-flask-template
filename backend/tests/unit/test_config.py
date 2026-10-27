@@ -326,6 +326,24 @@ class TestDatabaseUrl:
 
         assert str(exc_info.value) == 'MIGRATION_DATABASE_URL is not a valid URL'
 
+    @pytest.mark.parametrize('name', ['app_db', 'AppDB2', '_'])
+    def test_accepts_a_database_of_letters_digits_and_underscores(self, monkeypatch, name):
+        monkeypatch.setenv('DATABASE_URL', f'mysql+pymysql://user:pass@dbhost/{name}')
+
+        assert DevelopmentConfig().SQLALCHEMY_DATABASE_URI.database == name
+
+    @pytest.mark.parametrize('name', ['app-db', 'app%25db', 'app%60db', 'app.db', 'bücher'])
+    def test_refuses_any_other_database_name(self, monkeypatch, name):
+        """Only such a name is safe between backticks, with `_` its one GRANT
+        wildcard, which the production grant check escapes"""
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', f'mysql+pymysql://user:pass@dbhost/{name}')
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == (
+            'MIGRATION_DATABASE_URL must name a database of letters, digits and _ alone')
+
 
 class TestRedisUrl:
     """What REDIS_URL accepts, and how REDIS_PASSWORD joins it"""
@@ -546,6 +564,18 @@ class TestProductionSecretKey:
         assert str(exc_info.value) == (
             f'The {service} password is still the .env.prod.example placeholder')
 
+    def test_rejects_the_app_users_placeholder_beside_a_migration_url(self, monkeypatch):
+        """The migrate job logs in as DATABASE_URL's user too"""
+        monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+        monkeypatch.setenv('MIGRATION_DATABASE_URL', 'mysql+pymysql://owner:ownerpass@db/d')
+        monkeypatch.setenv('DATABASE_PASSWORD', 'your_db_password_here')
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            'The database password is still the .env.prod.example placeholder')
+
     def test_short_secret_allowed_outside_production(self, monkeypatch):
         monkeypatch.setenv('SECRET_KEY', 'short')
 
@@ -609,13 +639,30 @@ class TestProductionTls:
             ProductionConfig()
 
         assert str(exc_info.value) == (
-            'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to its URL')
+            'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to DATABASE_URL')
 
-    def test_the_migration_url_is_held_to_the_same_rule(self, monkeypatch):
-        monkeypatch.setenv('MIGRATION_DATABASE_URL', self.EXTERNAL_DATABASE)
+    @pytest.mark.parametrize('with_tls, without_tls', [
+        ('MIGRATION_DATABASE_URL', 'DATABASE_URL'),
+        ('DATABASE_URL', 'MIGRATION_DATABASE_URL'),
+    ])
+    def test_every_database_url_needs_tls_not_only_the_one_in_use(
+            self, monkeypatch, with_tls, without_tls):
+        """The migrate job logs in as DATABASE_URL's user too, to read its grants"""
+        monkeypatch.setenv(with_tls, f'{self.EXTERNAL_DATABASE}?ssl_ca=/ca.pem')
+        monkeypatch.setenv(without_tls, self.EXTERNAL_DATABASE)
 
-        with pytest.raises(ValueError, match='database host other than db needs TLS'):
+        with pytest.raises(ValueError) as exc_info:
             ProductionConfig()
+
+        assert str(exc_info.value) == (
+            f'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> '
+            f'to {without_tls}')
+
+    def test_accepts_both_database_urls_over_tls(self, monkeypatch):
+        for var in ('MIGRATION_DATABASE_URL', 'DATABASE_URL'):
+            monkeypatch.setenv(var, f'{self.EXTERNAL_DATABASE}?ssl_ca=/ca.pem')
+
+        assert ProductionConfig().SQLALCHEMY_DATABASE_URI.query == {'ssl_ca': '/ca.pem'}
 
     @pytest.mark.parametrize('option', [
         'ssl_check_hostname=false', 'ssl_verify_cert=false',
@@ -627,7 +674,7 @@ class TestProductionTls:
             ProductionConfig()
 
         assert str(exc_info.value) == (
-            f"The database URL may not set {option.split('=')[0]}: production checks "
+            f"DATABASE_URL may not set {option.split('=')[0]}: production checks "
             f"the server's certificate and name")
 
     def test_refuses_an_external_redis_without_tls(self, monkeypatch):
@@ -647,7 +694,7 @@ class TestProductionTls:
             ProductionConfig()
 
         assert str(exc_info.value) == (
-            "The Redis URL may not set ssl_cert_reqs, ssl_check_hostname: production "
+            "REDIS_URL may not set ssl_cert_reqs, ssl_check_hostname: production "
             "checks the server's certificate and name")
 
     def test_external_hosts_need_no_tls_outside_production(self, monkeypatch):

@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import timedelta
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
@@ -29,37 +30,52 @@ DATABASE_TLS_OPTIONS_REFUSED = (
     'ssl_check_hostname', 'ssl_verify_cert', 'ssl_verify_identity', 'ssl_disabled')
 REDIS_TLS_OPTIONS_REFUSED = ('ssl_cert_reqs', 'ssl_check_hostname')
 
+# Each database URL's variable, and the one that may hold its password
+# instead, so a secrets store can supply the password alone. The migration
+# user's comes first: wherever it is set, it wins.
+DATABASE_URL_VARIABLES = (('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD'),
+                          ('DATABASE_URL', 'DATABASE_PASSWORD'))
+# What db/init/01-app-user.sh allows: no quoting needed between backticks,
+# and `_` the one GRANT wildcard (wait_for_services.py escapes it)
+DATABASE_NAME = re.compile(r'[A-Za-z0-9_]+')
+
+
+def read_database_url(url_var, password_var) -> URL | None:
+    """One database URL, with its password variable applied; None if unset"""
+    value = os.getenv(url_var)
+    if not value:
+        return None
+    try:
+        url = make_url(value)
+    except ArgumentError:
+        # Not the value itself: it holds the password
+        raise ValueError(f'{url_var} is not a valid URL') from None
+    if os.getenv(password_var):
+        url = url.set(password=os.getenv(password_var))
+    if url.drivername != DATABASE_DRIVER:
+        raise ValueError(f'{url_var} must start with {DATABASE_DRIVER}://')
+    if not all([url.username, url.password, url.host, url.database]):
+        raise ValueError(
+            f'{url_var} must name a user, password, host and database '
+            f'(the password may be in {password_var})')
+    if not DATABASE_NAME.fullmatch(url.database):
+        raise ValueError(f'{url_var} must name a database of letters, digits and _ alone')
+    return url
+
 
 def database_url(migration=True) -> URL | None:
     """The database to connect to, or None if no URL is set.
 
     The migration user's when MIGRATION_DATABASE_URL is set (only the
     migrate job and the integration suite, which builds its own tables, get
-    it) and `migration` allows it, else the app's. Each URL's password may
-    come from a variable of its own instead, so a secrets store can supply
-    the password alone. A URL object, not a string: it prints its password
-    as ***.
+    it) and `migration` allows it, else the app's. A URL object, not a
+    string: it prints its password as ***.
     """
-    sources = (('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWORD'),
-               ('DATABASE_URL', 'DATABASE_PASSWORD'))
-    for url_var, password_var in sources if migration else sources[1:]:
-        value = os.getenv(url_var)
-        if not value:
-            continue
-        try:
-            url = make_url(value)
-        except ArgumentError:
-            # Not the value itself: it holds the password
-            raise ValueError(f'{url_var} is not a valid URL') from None
-        if os.getenv(password_var):
-            url = url.set(password=os.getenv(password_var))
-        if url.drivername != DATABASE_DRIVER:
-            raise ValueError(f'{url_var} must start with {DATABASE_DRIVER}://')
-        if not all([url.username, url.password, url.host, url.database]):
-            raise ValueError(
-                f'{url_var} must name a user, password, host and database '
-                f'(the password may be in {password_var})')
-        return url
+    sources = DATABASE_URL_VARIABLES if migration else DATABASE_URL_VARIABLES[1:]
+    for url_var, password_var in sources:
+        url = read_database_url(url_var, password_var)
+        if url:
+            return url
     return None
 
 
@@ -90,12 +106,12 @@ def redis_url() -> str | None:
         netloc=f"{parts.username}:{quote(password, safe='')}@{host}").geturl()
 
 
-def refuse_tls_options(service, query, refused):
+def refuse_tls_options(url_var, query, refused):
     """Fail on any option in a URL's query that could weaken its TLS checks"""
     found = [option for option in refused if option in query]
     if found:
         raise ValueError(
-            f"The {service} URL may not set {', '.join(found)}: production checks "
+            f"{url_var} may not set {', '.join(found)}: production checks "
             f"the server's certificate and name")
 
 
@@ -256,28 +272,31 @@ class ProductionConfig(Config):
                 f'SECRET_KEY must be a random value of at least '
                 f'{MIN_SECRET_KEY_LENGTH} characters in production')
 
-        passwords = {
-            'The database password': self.SQLALCHEMY_DATABASE_URI.password,
-            'The Redis password': unquote(urlsplit(self.REDIS_URL).password),
-        }
-        for name, password in passwords.items():
-            if password in PLACEHOLDER_PASSWORDS:
-                raise ValueError(f'{name} is still the .env.prod.example placeholder')
+        # Every database URL that is set, not only the one this process
+        # connects as: the migrate job also logs in as DATABASE_URL's user,
+        # to read its grants (wait_for_services.py)
+        for url_var, password_var in DATABASE_URL_VARIABLES:
+            database = read_database_url(url_var, password_var)
+            if database is None:
+                continue
+            if database.password in PLACEHOLDER_PASSWORDS:
+                raise ValueError('The database password is still the .env.prod.example placeholder')
+            if database.host != BUNDLED_DATABASE_HOST:
+                if 'ssl_ca' not in database.query:
+                    raise ValueError(
+                        f'A database host other than {BUNDLED_DATABASE_HOST} needs TLS: add '
+                        f'?ssl_ca=<CA bundle path> to {url_var}')
+                refuse_tls_options(url_var, database.query, DATABASE_TLS_OPTIONS_REFUSED)
 
-        database = self.SQLALCHEMY_DATABASE_URI
-        if database.host != BUNDLED_DATABASE_HOST:
-            if 'ssl_ca' not in database.query:
-                raise ValueError(
-                    f'A database host other than {BUNDLED_DATABASE_HOST} needs TLS: add '
-                    f'?ssl_ca=<CA bundle path> to its URL')
-            refuse_tls_options('database', database.query, DATABASE_TLS_OPTIONS_REFUSED)
         redis = urlsplit(self.REDIS_URL)
+        if unquote(redis.password) in PLACEHOLDER_PASSWORDS:
+            raise ValueError('The Redis password is still the .env.prod.example placeholder')
         if redis.hostname != BUNDLED_REDIS_HOST:
             if redis.scheme != 'rediss':
                 raise ValueError(
                     f'A Redis host other than {BUNDLED_REDIS_HOST} needs TLS: '
                     f'start REDIS_URL with rediss://')
-            refuse_tls_options('Redis', parse_qs(redis.query), REDIS_TLS_OPTIONS_REFUSED)
+            refuse_tls_options('REDIS_URL', parse_qs(redis.query), REDIS_TLS_OPTIONS_REFUSED)
 
 
 def trusted_proxy_count():
