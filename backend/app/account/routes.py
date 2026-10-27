@@ -5,7 +5,7 @@ from sqlalchemy import delete
 from app import db, limiter
 from app.account.schemas import AccountDeleteRequest, AccountResponse
 from app.auth.models import User
-from app.auth.routes import account_key, account_password_limit, token_user_id
+from app.auth.routes import account_key, account_password_limit
 from app.utils.errors import error_response, service_unavailable
 from app.utils.log import security_event
 from app.utils.redis_service import get_redis_service
@@ -21,38 +21,25 @@ def get_account():
     return jsonify(AccountResponse.model_validate(current_user).model_dump()), 200
 
 
-def _access_user_id():
-    """The user a valid access token belongs to, or None"""
-    header = request.headers.get('Authorization', '')
-    if not header.startswith('Bearer '):
-        return None
-    return token_user_id(header.removeprefix('Bearer '), 'access')
-
-
-def _account_key():
-    """The account a valid access token belongs to, keyed as login keys it,
-    so the two share a budget of wrong passwords"""
-    user_id = _access_user_id()
-    user = db.session.get(User, int(user_id)) if user_id else None
-    # A request without a valid token is turned away with a 401 and never
-    # counts, so any key will do
-    return account_key(user.email) if user else 'email:none'
-
-
 def _wrong_password(response):
     return response.status_code == 403
 
 
 @account_bp.route('/delete', methods=['POST'])
+# The token first: the limits below run only for a signed-in user, so their
+# keys read current_user, which the user loader has already fetched. A key
+# function must not touch the database: Flask-Limiter takes any error it
+# raises for a Redis outage and retries, for as long as MySQL stays down.
+@jwt_required()
 # Per user, so an access token alone is not enough to guess the password
-# behind it. Only wrong passwords count, so a request without a valid token,
-# which @jwt_required turns away with a 401, never does.
+# behind it. Only wrong passwords count.
 @limiter.limit(
     '5 per minute',
-    key_func=lambda: f'delete-account:user:{_access_user_id()}',
+    key_func=lambda: f'delete-account:user:{current_user.id}',
     deduct_when=_wrong_password)
-@account_password_limit(key_func=_account_key, deduct_when=_wrong_password)
-@jwt_required()
+# Keyed as login keys the account, so the two share a budget of wrong passwords
+@account_password_limit(
+    key_func=lambda: account_key(current_user.email), deduct_when=_wrong_password)
 def delete_account():
     """Delete the signed-in user's account and everything it owns.
 

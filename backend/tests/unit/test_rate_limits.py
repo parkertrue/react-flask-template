@@ -8,6 +8,7 @@ from limits.storage import MemoryStorage
 from flask_jwt_extended import (
     create_access_token, create_refresh_token, decode_token, get_csrf_token)
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from app import db, limiter
 from app.auth.models import TERMS_VERSION, User
@@ -405,6 +406,25 @@ class TestDeleteAccountLimit:
         assert statuses == [403, 401] * 50
         assert self.delete(client, headers).status_code == 429
         assert login(client, '10.0.1.1', email='owner@example.com').status_code == 429
+
+    def test_a_database_outage_answers_503_without_touching_the_limiter(
+            self, owner_app, monkeypatch, logged):
+        """Flask-Limiter takes any error raised while it checks a limit for a
+        Redis outage and retries, so a key that read MySQL would spin there
+        for as long as MySQL stays down. Only the user loader reads it."""
+        headers = self.headers(owner_app, 'owner@example.com')
+        lookups = []
+
+        def unreachable(*args, **kwargs):
+            lookups.append(args)
+            raise OperationalError('SELECT', {}, Exception('2003 refused'))
+        monkeypatch.setattr(db.session, 'get', unreachable)
+
+        response = self.delete(owner_app.test_client(), headers)
+
+        assert response.status_code == 503
+        assert len(lookups) == 1
+        assert [line['message'] for line in logged() if line['logger'] == 'flask-limiter'] == []
 
 
 def test_unlimited_routes_have_no_per_ip_quota(limited_app):
