@@ -142,6 +142,11 @@ jobs:
       - name: Copies agree
         run: python3 .github/scripts/check_compose.py
 
+      # The db init script runs once per volume, so test its refusals and
+      # SQL quoting here, against a stub mysql
+      - name: Init script
+        run: python3 .github/scripts/check_db_init.py
+
   workflows:
     name: Workflows
     runs-on: ubuntu-latest

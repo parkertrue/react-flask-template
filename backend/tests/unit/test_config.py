@@ -72,6 +72,22 @@ class TestConfigClasses:
         assert config.USES_SERVICES is True
         assert config.RATELIMIT_ENABLED is True
 
+    @pytest.mark.parametrize('value', ['1', 'true', 'TRUE'])
+    def test_debug_flag_turns_debug_on_outside_production(self, monkeypatch, value):
+        """Production forces debug off whatever FLASK_DEBUG says"""
+        monkeypatch.setenv('FLASK_DEBUG', value)
+
+        assert DevelopmentConfig().FLASK_DEBUG is True
+        monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+        assert ProductionConfig().FLASK_DEBUG is False
+
+    @pytest.mark.parametrize('value', ['0', 'false', ''])
+    def test_debug_flag_off_values(self, monkeypatch, value):
+        """A set FLASK_DEBUG=0 is off: run_dev.sh's override relies on it"""
+        monkeypatch.setenv('FLASK_DEBUG', value)
+
+        assert DevelopmentConfig().FLASK_DEBUG is False
+
     def test_unit_test_config_attributes(self):
         """UnitTestConfig should have correct attributes"""
         config = UnitTestConfig()

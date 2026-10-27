@@ -20,6 +20,10 @@ FORBIDDEN = [
     ('JSON.SET', 'refresh_tokens:acl-json', '$', '1'),
     ('TS.CREATE', 'refresh_tokens:acl-series'),
     ('BF.ADD', 'refresh_tokens:acl-bloom', 'x'),
+    ('CF.ADD', 'refresh_tokens:acl-cuckoo', 'x'),
+    ('CMS.INITBYDIM', 'refresh_tokens:acl-cms', '10', '5'),
+    ('TOPK.RESERVE', 'refresh_tokens:acl-topk', '10'),
+    ('TDIGEST.CREATE', 'refresh_tokens:acl-tdigest'),
 ]
 
 
