@@ -1,8 +1,8 @@
 from flask import jsonify
 
 
-# Every outage answers 503 with these words, whichever service is down: the
-# user can only wait, and a signed-in user mustn't read "Sign-in is unavailable"
+# Every outage answers 503 with these words, whichever service is down:
+# the user can only wait.
 SERVICE_UNAVAILABLE_MESSAGE = 'The service is temporarily unavailable, please try again shortly'
 
 

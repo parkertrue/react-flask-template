@@ -4,7 +4,7 @@ from typing import Annotated
 
 from email_validator import EmailNotValidError, validate_email
 from pydantic import (
-    AfterValidator, BaseModel, BeforeValidator, Field, field_validator, ConfigDict)
+    AfterValidator, BaseModel, BeforeValidator, Field, ConfigDict)
 
 # Checked after normalizing, so the stored form always fits the users.email
 # column.
@@ -77,22 +77,21 @@ Password = Annotated[
     AfterValidator(_check_strength),
 ]
 
+# Every email the app accepts, stored and looked up in normalize_email's form
+Email = Annotated[str, AfterValidator(normalize_email)]
+
 
 class RegisterRequest(BaseModel):
-    email: str
+    email: Email
     password: Password
     # The version of the terms the user saw and accepted
     terms_version: int = Field(strict=True)
 
     model_config = ConfigDict(extra='forbid')
 
-    check_email = field_validator('email')(normalize_email)
-
 
 class LoginRequest(BaseModel):
-    email: str
+    email: Email
     password: Password
 
     model_config = ConfigDict(extra='forbid')
-
-    check_email = field_validator('email')(normalize_email)

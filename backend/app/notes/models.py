@@ -36,6 +36,7 @@ class Note(db.Model):
         server_default=db.func.now(),
         nullable=False
     )
+
     def __init__(self, *, user_id: int, content: str) -> None:
         self.user_id = user_id
         self.content = content

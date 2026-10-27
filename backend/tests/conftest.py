@@ -20,7 +20,7 @@ os.environ.setdefault('SECRET_KEY', 'test-secret-key-0123456789abcdef')
 
 @pytest.fixture(scope='session')
 def app():
-    """The unit app: UnitTestConfig, so in-memory SQLite whatever DB_* says, no Redis and no rate limiting."""
+    """The unit app: UnitTestConfig, so in-memory SQLite whatever DATABASE_URL says, no Redis and no rate limiting."""
     os.environ['APP_ENV'] = 'unit'
 
     app = create_app()

@@ -3,8 +3,7 @@
 CI's Workflows job runs this. README names the checks to require on `main`
 (Settings > Branches), by job name; a job added to a workflow but not to that
 list would never block a merge, and a name left in the list after its job is
-gone would block every merge. Nothing else compares the two, so each was
-fixed by hand when it drifted.
+gone would block every merge. Nothing else compares the two.
 """
 import re
 import sys

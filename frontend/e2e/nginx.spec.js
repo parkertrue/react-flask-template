@@ -1,6 +1,6 @@
-import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
+import { execFileSync } from 'child_process'
+import { readFileSync } from 'fs'
+import path from 'path'
 import { test, expect } from '@playwright/test'
 import { SERVICE_UNAVAILABLE_MESSAGE } from './helpers'
 
