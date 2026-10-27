@@ -20,7 +20,7 @@ described below.
 | `daily` | audit-infra | Every day, or after any config or infra change |
 | `periodic` | audit-tests, audit-security, audit-code, audit-a11y, audit-docs, audit-scaffold | Every week or two, and after any feature lands |
 | `ops` | audit-security, audit-recovery | Monthly, and after infra or deployment changes |
-| `release` | all nine (the eight above plus audit-legal) | Before tagging a release or publishing the template |
+| `release` | every check above, plus audit-legal | Before tagging a release or publishing the template |
 
 `audit-legal` runs only in `release`, or on its own (`/audit-legal`) after a
 change that collects new personal data, adds a third-party service, or adds

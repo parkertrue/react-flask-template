@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import HomePage from '../HomePage'
 import { renderRoutes, signIn } from '@/test/router'
-import { APP_NAME } from '@/appName'
+import { APP_NAME, APP_TAGLINE } from '@/appName'
 
 vi.mock('@/features/health/ApiStatus', () => ({ default: () => null }))
 
@@ -19,6 +19,7 @@ describe('HomePage', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: `Welcome to ${APP_NAME}` })).toBeInTheDocument()
+    expect(screen.getByText(APP_TAGLINE)).toBeInTheDocument()
     expect(document.title).toBe(APP_NAME)
   })
 

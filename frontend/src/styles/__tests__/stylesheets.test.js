@@ -95,7 +95,7 @@ const unguardedMotion = css =>
     .map(([, property]) => property)
 
 describe('stylesheets', () => {
-  // Only shared stylesheets are named: CI's Scaffold job deletes the features
+  // Only shared stylesheets are named: the features can be deleted (README, Starting a New App)
   it('finds every stylesheet under src/', () => {
     expect(stylesheets.map(label)).toEqual(expect.arrayContaining(['styles/tokens.css', 'styles/buttons.css']))
   })

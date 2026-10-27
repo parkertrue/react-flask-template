@@ -43,7 +43,8 @@ def _schemas():
 
 def test_finds_the_schemas():
     names = {model.__name__ for model in _schemas()}
-    # Only shared ones are named: CI's Scaffold job deletes the examples
+    # Only shared ones are named: the examples can be deleted (README,
+    # Starting a New App)
     assert {'AccountResponse', 'LoginRequest', 'RegisterRequest'} <= names
 
 
