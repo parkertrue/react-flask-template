@@ -65,8 +65,8 @@ tests. Check that they still pass, then look for what they can't see:
   on mocks being called, never on outcomes; snapshots of large markup;
   `expect(true)`. Propose a guard for any pattern you find more than once.
 - Tests that never assert, or whose only assertion is that nothing threw.
-- Frontend tests asserting class names, markup structure or `data-testid`
-  instead of roles, labels and text.
+- Frontend tests asserting markup structure instead of roles, labels and
+  text (lint already refuses `data-testid` and `toHaveClass`).
 
 **Mutation spot check:** pick at least five places where a bug would hurt
 most (auth checks, token rotation, rate-limit keys, input validation, error

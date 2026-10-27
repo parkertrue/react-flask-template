@@ -210,7 +210,7 @@ export async function expectVisibleFocus(page) {
     document.activeElement?.blur()
     window.focusStops = new WeakSet()
   })
-  const seen = []
+  const stops = []
   let roundTrip = false
   for (let press = 0; press < 200 && !roundTrip; press++) {
     await page.keyboard.press('Tab')
@@ -229,13 +229,12 @@ export async function expectVisibleFocus(page) {
       }
     })
     roundTrip = stop === null
-    if (!roundTrip) {
-      seen.push(stop.name)
-      expect(stop, `focus on ${stop.name}`).toEqual({ ...stop, outlined: true, uncovered: true })
-    }
+    if (!roundTrip) stops.push(stop)
   }
-  expect(seen.length, 'Tab reached the page\'s controls').toBeGreaterThan(0)
+  expect(stops.length, 'Tab reached the page\'s controls').toBeGreaterThan(0)
   expect(roundTrip, 'Tab went round the page within 200 stops').toBe(true)
+  expect(stops.filter(stop => !stop.outlined || !stop.uncovered), 'stops without a visible focus')
+    .toEqual([])
 }
 
 /**

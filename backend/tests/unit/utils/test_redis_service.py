@@ -273,7 +273,7 @@ class TestFailFastWhenRedisIsDown:
             raise ConnectionRefusedError
 
         with patch('redis.connection.Connection._connect', refuse):
-            with pytest.raises(Exception):
+            with pytest.raises(redis.ConnectionError):
                 make_client().ping()
         return len(attempts)
 
