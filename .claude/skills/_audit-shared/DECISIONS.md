@@ -150,8 +150,8 @@ shipped to anyone else to run.
 
 **Redis 8 is used unmodified under its tri-license.** Redis 8 is licensed
 under RSALv2, SSPLv1 or AGPLv3, at the user's choice. The stack runs the
-`redis:8` image unmodified as a private store that users never reach, which
-none of the three restricts. *Revisit when:* Redis is modified or offered to
+`redis:8.10-alpine` image unmodified as a private store that users never
+reach, which none of the three restricts. *Revisit when:* Redis is modified or offered to
 customers as a service, or a lawyer prefers Valkey (BSD-3-Clause).
 
 **The template's copyright is its owner's.** The first commit came from a
@@ -291,9 +291,9 @@ three more dev packages, and the planted tests would stay anyway, since
 config fails silently. *Revisit when:* the rules outgrow the custom rule
 (more layers, per-feature exceptions), as for import-linter above.
 
-**Ruff's `select` lists every rule in full.** Ruff 0.16's own default set is
-far wider than pyflakes and syntax errors (`I`, `SIM`, `B`, `RUF`, `UP` and
-about 30 more families), and it changes between releases, so
+**Ruff's `select` lists every rule in full.** Ruff's own default set (checked on
+0.16) is far wider than pyflakes and syntax errors (`I`, `SIM`, `B`, `RUF`,
+`UP` and about 30 more families), and it changes between releases, so
 `extend-select` would turn on whatever the installed ruff defaults to.
 *Revisit when:* the repo chooses to adopt ruff's defaults.
 

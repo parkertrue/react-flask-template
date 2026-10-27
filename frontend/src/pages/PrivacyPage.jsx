@@ -55,7 +55,8 @@ export default function PrivacyPage() {
       <p>
         [Name each provider that handles personal data for you, such as your
         hosting provider or a log service, and the country it processes data
-        in.] We do not sell your personal data or share it for advertising.
+        in, with the safeguard for any transfer outside the EU/UK.] We do not
+        sell your personal data or share it for advertising.
       </p>
 
       <h2>Your rights</h2>

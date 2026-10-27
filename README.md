@@ -76,9 +76,9 @@ nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its
 
 **Database users.** The database has two users. The app's (`DB_USER`) may read and write rows but never change the schema, so a compromised backend cannot drop or alter a table. The migration user (`DB_MIGRATION_USER`) owns the schema, and only the one-off `migrate` service gets its password; the root password reaches only the `db` container. The bundled MySQL creates both when its volume is first created (`db/init/01-app-user.sh`), in every environment; for an external database, you create them ([External Database or Redis](#external-database-or-redis)). In production, the backend refuses to start if the app's user can do more than read and write rows.
 
-**What the app reads.** The backend reads one URL per service: `DATABASE_URL` (the app's user), `REDIS_URL`, and, for `migrate` alone, `MIGRATION_DATABASE_URL`. `docker-compose.yml` builds them from the values above, and `.env.dev` and `.env.test` spell them out. Each password may instead come from a variable of its own (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which replaces the one in its URL, so a secrets store can supply just the password. A password written inside a URL must be percent-encoded; the generator above only produces characters that need none.
+**What the app reads.** The backend reads one URL per service: `DATABASE_URL` (the app's user), `REDIS_URL`, and, for `migrate` alone, `MIGRATION_DATABASE_URL`. `docker-compose.yml` builds them from the values above, and `.env.dev` and `.env.test` spell them out. On a container platform, each password may instead come from a variable of its own (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which replaces the one in its URL, so a secrets store can supply just the password ([Deploying to a Platform](#deploying-to-a-platform)). `docker-compose.yml` passes none of them to its containers, so with Compose the password stays in the URL. A password written inside a URL must be percent-encoded; the generator above only produces characters that need none.
 
-**Changing a value later.** The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` locks the app out (every request gets a 502), and a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` while the running app keeps serving. Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d`. With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
+**Changing a value later.** The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` makes the next deploy fail at `migrate` within seconds (it logs in as the app's user to check its grants), and the app is down, answering 502 or 504, until the password is fixed; a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` too, and the running app keeps serving only if that deploy changes nothing else (see [Build and Start](#build-and-start) for a deploy that keeps it serving whatever fails). Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d`. With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
 
 ```bash
 docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<user>'@'%' IDENTIFIED BY '<new password>'"
@@ -374,6 +374,16 @@ A one-shot `migrate` container applies migrations as the migration user and exit
 
 **When to rebuild:** frontend and backend code are both copied into their images, so rerun with `--build` after any code change.
 
+**Deploying a change to a running app:** a single `up -d --build` replaces the backend before `migrate` runs, so if `migrate` fails (a bad migration, a wrong password, an unreachable database), the app is down until it is fixed. Build and migrate first instead; the running app keeps serving through both, and each command stops the deploy if it fails:
+
+```bash
+docker compose --env-file .env.prod build \
+  && docker compose --env-file .env.prod up --exit-code-from migrate migrate \
+  && docker compose --env-file .env.prod up -d --wait
+```
+
+The last command replaces the backend and nginx, so requests get a 502 or 504, or a refused connection, for a few seconds. A migration must keep the old code working, since the old backend serves after it runs ([Deploying to a Platform](#deploying-to-a-platform), Migrations).
+
 **Production URL:** `https://<SERVER_NAME>` ([https://localhost](https://localhost) when testing locally with `SERVER_NAME=localhost`).
 
 ---
@@ -384,6 +394,8 @@ The bundled MySQL and Redis containers are optional: production can use a MySQL 
 
 1. Remove its profile from `COMPOSE_PROFILES` in `.env.prod` (`bundled-db`, `bundled-redis`), so its container no longer runs.
 2. Set its URLs in `.env.prod`: `DATABASE_URL` and `MIGRATION_DATABASE_URL` for the database, `REDIS_URL` for Redis (the example file's last lines show their shape). They replace the URLs `docker-compose.yml` would build. The bundled values it no longer uses can stay; Compose warns about each one you remove.
+
+Each managed service is a processor of your users' data: see [Personal Data and Legal Pages](#personal-data-and-legal-pages), "Before launch", step 3.
 
 `migrate` and the backend reach an external service through the `edge` network, the one with a route out of the host.
 
@@ -403,7 +415,7 @@ The bundled MySQL and Redis containers are optional: production can use a MySQL 
 * The Redis URL must start with `rediss://`. ElastiCache's certificates chain to Amazon's public roots, which the image's bundle holds, so it needs nothing more; for another CA, add `?ssl_ca_certs=<path>`.
 * Options that could switch either check off (`ssl_check_hostname`, `ssl_verify_cert`, `ssl_verify_identity` and `ssl_disabled` in the database URL; `ssl_cert_reqs` and `ssl_check_hostname` in the Redis URL) are refused.
 
-**Two database users.** Create them as the provider's admin user, as `db/init/01-app-user.sh` does for the bundled MySQL:
+**Two database users.** Create them as the provider's admin user, as the MySQL image and `db/init/01-app-user.sh` do for the bundled MySQL:
 
 ```sql
 CREATE DATABASE appdb;
@@ -423,7 +435,7 @@ The database name may hold only letters, digits and `_`, and `_` is a wildcard i
 
 **Network access.** Let only the server reach the database and Redis (security groups, a private network, or the provider's allowlist), never the internet.
 
-**Passwords in URLs** must be percent-encoded; the generator in [Environment Files](#environment-files) only produces characters that need none. A password can also come from its own variable (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which needs no encoding.
+**Passwords in URLs** must be percent-encoded; the generator in [Environment Files](#environment-files) only produces characters that need none. With Compose the password must be in the URL; on a platform it can come from its own variable instead (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which needs no encoding.
 
 The backend gives up on a DNS lookup after one try of 1 second (`dns_opt`, so a stopped bundled service fails fast). Pooled connections are reused, so an external host is looked up rarely, but a slow resolver can fail a request that needs a new connection.
 
@@ -431,7 +443,7 @@ The backend gives up on a DNS lookup after one try of 1 second (`dns_opt`, so a 
 
 ## Deploying to a Platform
 
-The Compose stack is one way to run the app. The same two images also run on a container platform (Amazon ECS on Fargate, Kubernetes, Google Cloud Run with sidecars), with managed MySQL and Redis ([External Database or Redis](#external-database-or-redis)). Nothing in the images depends on Compose: what they read from the environment is the whole contract, and `.env.prod` is only Compose's way of supplying it.
+The Compose stack is one way to run the app. The same two images also run on a container platform (Amazon ECS on Fargate, Kubernetes, Google Cloud Run with sidecars), with managed MySQL and Redis ([External Database or Redis](#external-database-or-redis)). Nothing in the images depends on Compose: what they read from the environment is the whole contract, and `.env.prod` is only Compose's way of supplying it. The platform and each managed service it adds (a database, Redis, a log service, a CDN) are processors of your users' data: see [Personal Data and Legal Pages](#personal-data-and-legal-pages), "Before launch", step 3.
 
 ### The Contract
 
@@ -451,7 +463,7 @@ docker build --platform linux/amd64 -f nginx/Dockerfile -t <registry>/app-nginx:
 
 **Secrets.** Keep each URL without its password in plain configuration, and inject `DATABASE_PASSWORD`, `REDIS_PASSWORD` and `SECRET_KEY` from the platform's secret store. Each password variable replaces its URL's password.
 
-**Migrations** run once per deploy, before the new backend starts: the backend image with the command `flask db upgrade`, plus `MIGRATION_DATABASE_URL` (or `MIGRATION_DATABASE_PASSWORD`) and `DB_QUERY_TIMEOUT=0`. Give that job its own task or job definition, so the long-running backend never holds the migration user's credentials. Rolling deploys run old and new backends side by side for a while, so a migration must keep the old code working: add a column in one release, and drop the old one in a later release.
+**Migrations** run once per deploy, before the new backend starts: the backend image with the command `flask db upgrade`, plus `MIGRATION_DATABASE_URL` (its password inline or in `MIGRATION_DATABASE_PASSWORD`; the variable alone does nothing) and `DB_QUERY_TIMEOUT=0`. Give that job its own task or job definition, so the long-running backend never holds the migration user's credentials. Rolling deploys run old and new backends side by side for a while, so a migration must keep the old code working: add a column in one release, and drop the old one in a later release.
 
 **The client's address.** The load balancer terminates TLS and sends nginx plain HTTP with `X-Forwarded-For`. nginx trusts that header only from `NGINX_TRUSTED_PROXIES` and forwards the result to the backend, whose `TRUSTED_PROXY_COUNT` stays 1. Get the range wrong, and either every user shares the balancer's address (one rate-limit bucket, so one user can lock everyone out), or a client can choose its own address. Set `TRUSTED_PROXY_COUNT` only if you leave nginx out: 1 behind a load balancer, 2 with a CDN in front of it.
 
@@ -496,7 +508,7 @@ A sketch of one working layout, not infrastructure code. Translate it into your 
 
 Then:
 
-- Copy nginx's page headers (`nginx/app_server.conf`: the CSP, HSTS, `X-Frame-Options`, `Permissions-Policy`) into a response headers policy, and its caching too: `index.html` `no-cache`, `/assets/*` cached for a year.
+- Copy nginx's page headers into a response headers policy (the CSP and `Permissions-Policy` from the `/` location in `nginx/app_server.conf`; HSTS, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy` from `nginx/security_headers.conf`), and its caching too: `index.html` `no-cache`, `/assets/*` cached for a year.
 - Route unknown paths to `index.html` with a CloudFront Function on the S3 behavior, not with custom error responses: those apply to the whole distribution and would turn the API's 404s into the page.
 - Let only CloudFront reach the ALB, and add CloudFront's origin-facing ranges (AWS's `ip-ranges.json`, `CLOUDFRONT_ORIGIN_FACING`) to `NGINX_TRUSTED_PROXIES`, or every client gets a CloudFront edge's address.
 - Add AWS WAF on CloudFront for exact edge rate limits.
@@ -511,7 +523,7 @@ Every container logs to stdout, which Docker keeps, rotated at three files of 10
 docker compose --env-file .env.prod logs -f nginx backend
 ```
 
-The backend's lines (the app's, gunicorn's, the start-up wait's and the one-shot `migrate` service's) and nginx's access log are one JSON object per line. nginx's error log (an unreachable backend, an oversized body) is plain text.
+The backend's lines (the app's, gunicorn's, the start-up wait's and the one-shot `migrate` service's) and nginx's access log are one JSON object per line. nginx's error log (an unreachable backend, an oversized body) is plain text, and so is the second copy of the exception gunicorn prints when a worker fails to boot.
 
 nginx logs one request in 100 that it refuses for a client's rate (a 429), and every other request. A client flooding the API writes a few sampled lines a second instead of thousands, which would push every earlier line out of Docker's 30 MB in seconds; multiply the sampled lines by 100 for the flood's size. A single 429 a real user got is likely not in the log.
 
@@ -582,12 +594,12 @@ Every app built from the template collects personal data from its first sign-up,
 
 Deleting an account (the Account page asks for the password) deletes its `users` row, every feature's rows that reference it, and its sessions in Redis, at once. What the logs and MySQL's binary log hold about it goes as they age out, and so would its copies in backups, by their own retention: state that in the privacy notice.
 
-No analytics, no third-party requests, no email and no processors. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.
+No analytics, no third-party requests and no email: the template itself sends nothing to a third party, though your host and any managed service you add are processors. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.
 
 **Before launch:**
 1. Fill in `legal.js`, then write the three pages for your app from the table above and your own features.
 2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped. Decide the MySQL binary log together with backups: keep it for point-in-time recovery, or turn it off.
-3. Name every provider that processes personal data for you (the host, a log service, a CDN, an email service) in the privacy notice, and sign each one's data processing agreement.
+3. Name every provider that processes personal data for you (the host, a log service, a CDN, an email service) in the privacy notice, and sign each one's data processing agreement. If one processes EU or UK users' data outside the EU/EEA or UK, note the transfer safeguard in the notice (an adequacy decision, or the standard contractual clauses in its agreement), or choose a region inside.
 4. Set `security.txt`'s `Contact` to the email in `legal.js` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year (the same test fails from 30 days before it lapses).
 5. Ask the lawyer whether your markets need a checkbox or whether a sentence beside the button would do, and whether a German audience needs the contact page labelled "Impressum" with more details on it.
 6. Check whether the European Accessibility Act covers your service (e-commerce, banking and a few other sectors; microenterprises are exempt).
