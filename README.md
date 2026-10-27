@@ -413,7 +413,7 @@ CREATE USER 'app'@'%' IDENTIFIED BY '<app password>' REQUIRE SSL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON `appdb`.* TO 'app'@'%';
 ```
 
-In a database name, `_` is a wildcard in `GRANT`: write `app\_db` for `app_db`. On start-up in production, the backend and `migrate` read the grants of `DATABASE_URL`'s user and refuse to start if it holds anything beyond `SELECT`, `INSERT`, `UPDATE` and `DELETE` on its database (`USAGE` on `*.*`, MySQL's name for none, is fine): no schema rights, no rights on every database (which would include MySQL's own grant tables), no role and no `WITH GRANT OPTION`. There is no opt-out: a provider that offers a single database user is not supported. The admin user stays with you; neither container ever gets it.
+The database name may hold only letters, digits and `_`, and `_` is a wildcard in `GRANT`: write `app\_db` for `app_db`, since the start check refuses the unescaped form, which covers other databases too. On start-up in production, the backend and `migrate` read the grants of `DATABASE_URL`'s user and refuse to start if it holds anything beyond `SELECT`, `INSERT`, `UPDATE` and `DELETE` on its database (`USAGE` on `*.*`, MySQL's name for none, is fine): no schema rights, no rights on every database or on any other one (MySQL's own grant tables, another app's), no role and no `WITH GRANT OPTION`. There is no opt-out: a provider that offers a single database user is not supported. The admin user stays with you; neither container ever gets it.
 
 **Redis settings the app cannot check.** Its ACL user may not read the server's configuration, so set these yourself:
 

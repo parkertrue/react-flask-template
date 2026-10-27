@@ -95,7 +95,26 @@ def test_a_url_production_refuses_fails_at_once(env, monkeypatch, capsys):
 
     assert exit_info.value.code == 1
     assert logged(capsys) == [('ERROR', (
-        'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to its URL'))]
+        'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to DATABASE_URL'))]
+
+
+def test_the_migrate_job_checks_the_app_users_url_before_logging_in(env, monkeypatch, capsys):
+    """migrate logs in as DATABASE_URL's user too, to read its grants: TLS on
+    the migration URL alone would send that password in the clear"""
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('SECRET_KEY', 'x' * 32)
+    monkeypatch.setenv('MIGRATION_DATABASE_URL',
+                       'mysql+pymysql://owner:owner-secret@mydb.example.com/app?ssl_ca=/ca.pem')
+    monkeypatch.setenv('DATABASE_URL', 'mysql+pymysql://app:db-secret@mydb.example.com/app')
+    monkeypatch.setattr(wait, 'mysql_error', lambda *args: pytest.fail('should not connect'))
+    monkeypatch.setattr(wait, 'schema_rights', lambda url: pytest.fail('should not connect'))
+
+    with pytest.raises(SystemExit) as exit_info:
+        wait.main()
+
+    assert exit_info.value.code == 1
+    assert logged(capsys) == [('ERROR', (
+        'A database host other than db needs TLS: add ?ssl_ca=<CA bundle path> to DATABASE_URL'))]
 
 
 def test_checks_the_urls_the_app_will_use(env, clock, monkeypatch):
@@ -219,27 +238,45 @@ def test_the_mysql_check_gives_up_on_a_connection_quickly(env, monkeypatch):
     assert made == [{'connect_timeout': 2}]
 
 
-# What db/init/01-app-user.sh grants the app's user
+# What db/init/01-app-user.sh grants the app's user, in ENV's database
 APP_USER_GRANTS = [
     'GRANT USAGE ON *.* TO `app`@`%`',
-    'GRANT SELECT, INSERT, UPDATE, DELETE ON `appdb`.* TO `app`@`%`',
+    'GRANT SELECT, INSERT, UPDATE, DELETE ON `app`.* TO `app`@`%`',
 ]
 
 
 @pytest.mark.parametrize('grant, allowed', [
     *[(grant, True) for grant in APP_USER_GRANTS],
-    ('GRANT SELECT ON `appdb`.* TO `app`@`%`', True),
+    ('GRANT SELECT ON `app`.* TO `app`@`%`', True),
+    ('GRANT SELECT, INSERT ON `app`.`notes` TO `app`@`%`', True),
     ('GRANT SELECT ON *.* TO `app`@`%`', False),
     ('GRANT INSERT, UPDATE ON *.* TO `app`@`%`', False),
-    ('GRANT ALL PRIVILEGES ON `appdb`.* TO `app`@`%`', False),
-    ('GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON `appdb`.* TO `app`@`%`', False),
-    ('GRANT ALTER ON `appdb`.`users` TO `app`@`%`', False),
-    ('GRANT SELECT ON `appdb`.* TO `app`@`%` WITH GRANT OPTION', False),
-    ('GRANT SELECT (`email`) ON `appdb`.`users` TO `app`@`%`', False),
+    ('GRANT ALL PRIVILEGES ON `app`.* TO `app`@`%`', False),
+    ('GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON `app`.* TO `app`@`%`', False),
+    ('GRANT ALTER ON `app`.`users` TO `app`@`%`', False),
+    ('GRANT SELECT ON `app`.* TO `app`@`%` WITH GRANT OPTION', False),
+    ('GRANT SELECT (`email`) ON `app`.`users` TO `app`@`%`', False),
     ('GRANT `rds_superuser_role`@`%` TO `admin`@`%`', False),
+    # Rows in any other database: MySQL's own grant tables, another app's
+    ('GRANT SELECT, INSERT, UPDATE, DELETE ON `mysql`.* TO `app`@`%`', False),
+    ('GRANT INSERT, UPDATE ON `mysql`.`user` TO `app`@`%`', False),
+    ('GRANT SELECT ON `otherapp`.* TO `app`@`%`', False),
+    ('GRANT SELECT ON `appx`.* TO `app`@`%`', False),
+    # Not a target SHOW GRANTS prints
+    ('GRANT SELECT ON `app`.notes TO `app`@`%`', False),
 ])
 def test_the_app_user_may_hold_data_privileges_alone(grant, allowed):
-    assert wait.data_only(grant) is allowed
+    assert wait.data_only(grant, 'app') is allowed
+
+
+@pytest.mark.parametrize('grant, allowed', [
+    ('GRANT SELECT, INSERT, UPDATE, DELETE ON `app\\_db`.* TO `app`@`%`', True),
+    ('GRANT SELECT, INSERT ON `app\\_db`.`notes` TO `app`@`%`', True),
+    # Unescaped, `_` is a wildcard: the grant covers appXdb too
+    ('GRANT SELECT, INSERT, UPDATE, DELETE ON `app_db`.* TO `app`@`%`', False),
+])
+def test_a_grant_names_the_database_as_mysql_escapes_it(grant, allowed):
+    assert wait.data_only(grant, 'app_db') is allowed
 
 
 @pytest.fixture
@@ -285,8 +322,8 @@ def test_production_refuses_an_app_user_that_may_change_the_schema(production, c
 
     assert exit_info.value.code == 1
     assert logged(capsys)[-1] == ('ERROR', (
-        "DATABASE_URL's user may change more than rows, which only the migration user "
-        "may: GRANT ALL PRIVILEGES ON `app`.* TO `app`@`%`. Give the app a user with "
+        "DATABASE_URL's user may do more than read and write rows in its own database: "
+        "GRANT ALL PRIVILEGES ON `app`.* TO `app`@`%`. Give the app a user with "
         "SELECT, INSERT, UPDATE and DELETE on its database alone (README, External "
         "Database or Redis)"))
 
