@@ -131,10 +131,25 @@ describe('RegisterPage', () => {
       expect(registerUser).toHaveBeenCalledWith('user@example.com', 'Password123', TERMS_VERSION)
     })
 
-    it.each([
-      ['the server refuses', Object.assign(new Error('409'), {
+    // The field's own message, focused, like a failed submit's
+    it('ties a taken email to the Email field, and lets the user try again', async () => {
+      registerUser.mockRejectedValue(Object.assign(new Error('409'), {
         response: { status: 409, data: errorBody('EMAIL_ALREADY_REGISTERED', 'Email already registered') },
-      }), 'Email already registered'],
+      }))
+      const { user } = renderPage()
+      await fill(user)
+
+      await user.click(submitButton())
+
+      await waitFor(() => expect(field.email()).toHaveFocus())
+      expect(field.email()).toHaveAttribute('aria-invalid', 'true')
+      expect(field.email()).toHaveAccessibleDescription('Email already registered')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
+      expect(field.email()).not.toHaveAttribute('readonly')
+    })
+
+    it.each([
       ['the terms have changed', Object.assign(new Error('409'), {
         response: { status: 409, data: errorBody('TERMS_OUTDATED', 'The terms have changed') },
       }), 'The terms have changed'],

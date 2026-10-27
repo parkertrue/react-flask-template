@@ -101,7 +101,11 @@ test.describe('Critical User Journey', () => {
 
     await submitRegistration(page, existingEmail)
 
-    await expect(page.getByRole('alert')).toHaveText(/already registered/i)
+    // The field's own message, focused, like a failed submit's
+    const email = page.getByLabel('Email')
+    await expect(email).toBeFocused()
+    await expect(email).toHaveAttribute('aria-invalid', 'true')
+    await expect(email).toHaveAccessibleDescription(/already registered/i)
     await expect(page).toHaveURL(/\/register/)
   })
 })

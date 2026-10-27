@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { registerUser } from '@/auth/authService'
 import { getErrorMessage } from '@/api/errors'
@@ -20,6 +20,8 @@ export default function RegisterPage() {
   const { values, errors, handleChange, validate } = useFormFields({
     email: '', password: '', confirmPassword: '', acceptTerms: false
   })
+  // The submit event's form is gone by the time the server answers
+  const form = useRef(null)
   const [formError, setFormError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   // The password rules stay hidden, to keep the form short, until a password
@@ -52,8 +54,13 @@ export default function RegisterPage() {
       await registerUser(values.email, values.password, TERMS_VERSION)
       navigate('/login', { state: { registered: true } })
     } catch (err) {
-      setFormError(getErrorMessage(err))
       setSubmitting(false)
+      if (err.response?.data?.error?.code === 'EMAIL_ALREADY_REGISTERED') {
+        // The field's own message, focused, like a failed submit's
+        validate(form.current, { email: getErrorMessage(err) })
+      } else {
+        setFormError(getErrorMessage(err))
+      }
     }
   }
 
@@ -65,6 +72,7 @@ export default function RegisterPage() {
           <h1 id="register-heading">Register</h1>
 
           <form
+            ref={form}
             onSubmit={handleSubmit}
             noValidate
             className="auth-form"

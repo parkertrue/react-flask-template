@@ -124,9 +124,13 @@ export async function expireAccessToken(page) {
 
 // axe checks what jsdom cannot, such as color contrast, against the WCAG 2.2
 // A and AA rules. Each page is checked as rendered, with any error states shown.
+// Its heading outline too: exactly one h1 (axe's own rule asks for at least
+// one), and heading-order, which axe files under best practice
 export async function expectNoViolations(page) {
+  await expect(page.locator('h1')).toHaveCount(1)
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    .options({ rules: { 'heading-order': { enabled: true } } })
     .analyze()
   // The rule ids and the offending markup, so a failure says what to fix
   expect(violations.map(v => ({ rule: v.id, nodes: v.nodes.map(n => n.html) }))).toEqual([])
