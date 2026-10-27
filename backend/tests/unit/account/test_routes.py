@@ -1,12 +1,9 @@
 import json
 from datetime import datetime, timedelta
 
-import jwt
 import pytest
-from flask_jwt_extended import create_refresh_token
 from sqlalchemy import select
 
-from app.account import routes as account_routes
 from app.auth.models import User
 
 
@@ -206,37 +203,3 @@ class TestDeleteAccount:
         for secret in ('WrongPassword123', email):
             assert secret not in text
 
-
-class TestAccessUserId:
-    """The delete limit's key: the user of a valid access token, else None"""
-
-    def user_id(self, app, headers):
-        with app.test_request_context(headers=headers):
-            return account_routes._access_user_id()
-
-    def test_a_valid_access_token(self, app, sample_user, auth_headers):
-        assert self.user_id(app, auth_headers) == str(sample_user.id)
-
-    @pytest.mark.parametrize('headers', [
-        {},
-        {'Authorization': 'Basic abc'},
-        {'Authorization': 'Bearer not-a-jwt'},
-    ])
-    def test_no_valid_token(self, app, headers):
-        assert self.user_id(app, headers) is None
-
-    def test_an_expired_token(self, app, expired_token):
-        assert self.user_id(app, {'Authorization': f'Bearer {expired_token}'}) is None
-
-    def test_a_signed_token_without_a_user(self, app):
-        """Signed with the app's key, so PyJWT accepts it, but
-        flask-jwt-extended refuses a token that names no user"""
-        token = jwt.encode(
-            {'type': 'access', 'jti': 'x'}, app.config['JWT_SECRET_KEY'], algorithm='HS256')
-        assert self.user_id(app, {'Authorization': f'Bearer {token}'}) is None
-
-    def test_a_refresh_token(self, app, sample_user):
-        with app.app_context():
-            token = create_refresh_token(identity=str(sample_user.id))
-
-        assert self.user_id(app, {'Authorization': f'Bearer {token}'}) is None

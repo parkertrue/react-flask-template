@@ -1032,3 +1032,38 @@ class TestSecurityEvents:
 
         assert response.get_json()['error']['code'] == 'AUTH_MISSING_TOKEN'
         assert security_events() == []
+
+
+class TestTokenUserId:
+    """The user of a valid token of the given kind, else None: the refresh
+    limit's key, checked before @jwt_required runs"""
+
+    def user_id(self, app, token, kind='access'):
+        with app.test_request_context():
+            return auth_routes.token_user_id(token, kind)
+
+    def test_a_valid_token(self, app, auth_headers, sample_user):
+        token = auth_headers['Authorization'].removeprefix('Bearer ')
+
+        assert self.user_id(app, token) == str(sample_user.id)
+
+    @pytest.mark.parametrize('token', [None, '', 'not-a-jwt'])
+    def test_no_valid_token(self, app, token):
+        assert self.user_id(app, token) is None
+
+    def test_an_expired_token(self, app, expired_token):
+        assert self.user_id(app, expired_token) is None
+
+    def test_a_signed_token_without_a_user(self, app):
+        """Signed with the app's key, so PyJWT accepts it, but
+        flask-jwt-extended refuses a token that names no user"""
+        token = jwt.encode(
+            {'type': 'access', 'jti': 'x'}, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+
+        assert self.user_id(app, token) is None
+
+    def test_a_token_of_the_other_kind(self, app, sample_user):
+        with app.app_context():
+            token = create_refresh_token(identity=str(sample_user.id))
+
+        assert self.user_id(app, token) is None
