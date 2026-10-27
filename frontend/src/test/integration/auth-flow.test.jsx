@@ -46,7 +46,7 @@ describe('Authentication Flow Integration Tests', () => {
         { email: 'test@example.com', password: 'Password123', terms_version: TERMS_VERSION })
     })
 
-    it('shows the server message when the email is taken', async () => {
+    it('ties a taken email to the Email field', async () => {
       server.use(
         http.post('/api/auth/register', () => HttpResponse.json(
           errorBody('EMAIL_ALREADY_REGISTERED', 'Email already registered'),
@@ -56,7 +56,10 @@ describe('Authentication Flow Integration Tests', () => {
 
       await fillRegistration(user, 'existing@example.com')
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(/email already registered/i)
+      const email = screen.getByLabelText('Email')
+      await waitFor(() => expect(email).toHaveFocus())
+      expect(email).toHaveAttribute('aria-invalid', 'true')
+      expect(email).toHaveAccessibleDescription('Email already registered')
     })
   })
 
