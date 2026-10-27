@@ -64,6 +64,9 @@ describe('code rules', () => {
     ['src/pages/x.jsx', 'export const X = () => <button disabled />', 'no-restricted-syntax'],
     ['src/components/forms/x.jsx', 'export const X = () => <input disabled />', 'no-restricted-syntax'],
     ['src/pages/__tests__/x.test.jsx', "screen.getByTestId('x')", 'no-restricted-syntax'],
+    ['src/pages/__tests__/x.test.jsx', "expect(x).toHaveClass('x')", 'no-restricted-syntax'],
+    ['e2e/x.spec.js', "page.getByTestId('x')", 'no-restricted-syntax'],
+    ['e2e/x.spec.js', "expect(x).toHaveClass('x')", 'no-restricted-syntax'],
     ['src/pages/__tests__/x.test.jsx', "vi.mock('@/auth/storage')", 'no-restricted-syntax'],
     ['src/auth/__tests__/x.test.jsx', "vi.mock('../storage')", 'no-restricted-syntax'],
     // The session is read and written in auth/storage.js alone
@@ -114,6 +117,14 @@ describe('test rules', () => {
     ['src/test/x.js', 'export const check = x => expect([400, 422]).toContain(x)', 'no-restricted-syntax'],
     ['src/test/x.js', 'export const check = x => expect(x.a || x.b).toBe(true)', 'no-restricted-syntax'],
     ['e2e/helpers.js', 'export const check = x => expect([400, 422]).toContain(x)', 'no-restricted-syntax'],
+    // An assertion that may not run, outside a test's callback
+    ['src/test/x.js', 'export const check = x => { if (x.ok) expect(x.status).toBe(1) }', 'no-restricted-syntax'],
+    ['src/test/x.js', 'export const check = x => { try { run() } catch { expect(x).toBe(1) } }', 'no-restricted-syntax'],
+    ['e2e/helpers.js', 'export const check = x => { if (x.ok) expect(x.status).toBe(1) }', 'no-restricted-syntax'],
+    ['e2e/helpers.js', 'export const check = x => { try { expect(x).toBe(1) } catch { run() } }', 'no-restricted-syntax'],
+    ['e2e/helpers.js', 'export const check = x => (x.ok ? expect(x).toBe(1) : run())', 'no-restricted-syntax'],
+    ['src/x/__tests__/a.test.js', 'const check = x => x.ok && expect(x.status).toBe(1)', 'no-restricted-syntax'],
+    ['e2e/x.spec.js', 'function check(x) { switch (x) { case 1: expect(x).toBe(1) } }', 'no-restricted-syntax'],
     // End-to-end tests
     ['e2e/x.spec.js', "test('a', async ({ page }) => { await page.goto('/') })", 'playwright/expect-expect'],
     ['e2e/x.spec.js', "test('a', async ({ page }) => { if (x) await expect(page).toHaveURL('/') })", 'playwright/no-conditional-in-test'],
@@ -122,6 +133,8 @@ describe('test rules', () => {
     ['e2e/x.spec.js', "test('a', async ({ page }) => { await page.waitForTimeout(1); await expect(page).toHaveURL('/') })", 'playwright/no-wait-for-timeout'],
     ['e2e/x.spec.js', "test('a', async () => { expect([400, 422]).toContain(x.status()) })", 'no-restricted-syntax'],
     ['e2e/x.spec.js', "test('a', async () => { expect(x.a || x.b).toBe(true) })", 'no-restricted-syntax'],
+    ['e2e/x.spec.js', "test('a', async ({ page }) => { expect(await page.title()).toBeTruthy() })", 'playwright/no-restricted-matchers'],
+    ['e2e/x.spec.js', "test('a', async ({ page }) => { expect(await page.title()).not.toBeNull() })", 'playwright/no-restricted-matchers'],
   ])('refuses %s: %s', async (filePath, code, ruleId) => {
     expect(await ruleIds(filePath, code)).toContain(ruleId)
   })
@@ -131,6 +144,9 @@ describe('test rules', () => {
     ['src/x/__tests__/a.test.js', "import { it, expect } from 'vitest'; const x = [1]; it('a', () => { expect([1]).toEqual(x) })"],
     ['src/components/forms/__tests__/a.test.jsx', "import { it, expect } from 'vitest'; const x = <input />; it('a', () => { expect(x).toBe(x) })"],
     ['e2e/x.spec.js', "import { test, expect } from '@playwright/test'\n\ntest('a', async ({ page }) => { await expect(page).toHaveURL('/') })"],
+    // A loop's assert runs on every pass; a finally's failure still fails
+    ['e2e/helpers.js', "import { expect } from '@playwright/test'\n\nexport const check = xs => { for (const x of xs) expect(x).toBe(1) }"],
+    ['e2e/helpers.js', "import { expect } from '@playwright/test'\n\nexport const check = (x, done) => { try { expect(x).toBe(1) } finally { done() } }"],
   ])('allows %s: %s', async (filePath, code) => {
     expect(await ruleIds(filePath, code)).toEqual([])
   })

@@ -10,9 +10,10 @@
 #   every import. TID251 bans the calls listed below.
 # - DTZ refuses naive datetimes: every timestamp is UTC.
 # - S102 and S307 refuse exec and eval; S608 refuses SQL built from strings.
+# - B017 refuses pytest.raises(Exception), which passes on any error at all.
 # - RUF100 refuses a noqa that suppresses nothing.
 [lint]
-select = ["E4", "E7", "E9", "F", "Q", "T20", "ERA", "FIX", "TID251", "TID252", "DTZ", "S102", "S307", "S608", "RUF100"]
+select = ["E4", "E7", "E9", "F", "Q", "T20", "ERA", "FIX", "TID251", "TID252", "DTZ", "S102", "S307", "S608", "B017", "RUF100"]
 
 [lint.flake8-quotes]
 inline-quotes = "single"

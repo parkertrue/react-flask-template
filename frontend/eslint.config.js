@@ -23,10 +23,17 @@ const NO_TEXT_AS_HTML = {
   selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
   message: 'Render text, which React escapes. User markup must be sanitized first (CLAUDE.md).',
 }
-const NO_TEST_IDS = {
-  selector: "JSXAttribute[name.name='data-testid'], Identifier[name=/ByTestId$/]",
-  message: 'Find elements by role, label or text: production markup has no data-testid.',
-}
+// Tests find and check what the user sees; E2E specs take these too
+const NO_TEST_IDS = [
+  {
+    selector: "JSXAttribute[name.name='data-testid'], Identifier[name=/ByTestId$/]",
+    message: 'Find elements by role, label or text: production markup has no data-testid.',
+  },
+  {
+    selector: "MemberExpression[property.name='toHaveClass']",
+    message: 'Assert what the user sees, not a class name.',
+  },
+]
 const NO_DISABLED = {
   selector: "JSXAttribute[name.name='disabled']",
   message: 'disabled drops keyboard focus: mark a busy control aria-disabled or readOnly and guard its handler.',
@@ -40,7 +47,7 @@ const FORM_CONTROL = {
   message: 'Use FormField (src/components/forms) instead of a raw form control.',
 }
 const restrictSyntax = (...selectors) => ({
-  'no-restricted-syntax': ['error', NO_TEXT_AS_HTML, NO_TEST_IDS, NO_DISABLED, NO_MOCKED_STORAGE, ...selectors],
+  'no-restricted-syntax': ['error', NO_TEXT_AS_HTML, ...NO_TEST_IDS, NO_DISABLED, NO_MOCKED_STORAGE, ...selectors],
 })
 
 // Assertions that accept several answers, in unit and E2E tests alike
@@ -55,6 +62,25 @@ const NO_HEDGES = [
     message: 'Pin the one answer the code gives.',
   },
 ]
+
+// An assertion that may not run, in a shared helper or a spec's own function,
+// which vitest/ and playwright/no-conditional-expect, looking only inside a
+// test's callback, miss (backend: test_assertions.py scans conftest.py too).
+// A try with only a finally is allowed: what fails in it still fails the test
+const NO_CONDITIONAL_EXPECT = {
+  selector: ":matches(IfStatement, ConditionalExpression, TryStatement[handler], SwitchCase, LogicalExpression) CallExpression[callee.name='expect']",
+  message: 'Assert unconditionally: collect what to check, then assert once.',
+}
+
+// Matchers that almost any value passes, refused in unit and E2E tests alike
+const WEAK_MATCHERS = {
+  toBeDefined: 'Assert the value itself.',
+  toBeTruthy: 'Assert the value itself.',
+  toBeFalsy: 'Assert the value itself.',
+  'not.toBeNull': 'Assert the value itself.',
+  'not.toBeUndefined': 'Assert the value itself.',
+  toBeOneOf: 'Pin the one answer the code gives.',
+}
 
 // The session lives in one place, auth/storage.js
 const NO_STORAGE = {
@@ -198,7 +224,7 @@ export default defineConfig([
     // Shared test helpers assert too, so they take the same hedge rules as
     // the tests that call them (e2e/helpers.js below)
     files: ['src/test/**'],
-    rules: restrictSyntax(FORM_CONTROL, ...NO_HEDGES),
+    rules: restrictSyntax(FORM_CONTROL, ...NO_HEDGES, NO_CONDITIONAL_EXPECT),
   },
   {
     // Every assertion must be able to fail: none behind an if or in a catch,
@@ -208,15 +234,8 @@ export default defineConfig([
     files: ['src/**/*.{test,spec}.{js,jsx}'],
     extends: [vitest.configs.recommended],
     rules: {
-      ...restrictSyntax(FORM_CONTROL, ...NO_HEDGES),
-      'vitest/no-restricted-matchers': ['error', {
-        toBeDefined: 'Assert the value itself.',
-        toBeTruthy: 'Assert the value itself.',
-        toBeFalsy: 'Assert the value itself.',
-        'not.toBeNull': 'Assert the value itself.',
-        'not.toBeUndefined': 'Assert the value itself.',
-        toBeOneOf: 'Pin the one answer the code gives.',
-      }],
+      ...restrictSyntax(FORM_CONTROL, ...NO_HEDGES, NO_CONDITIONAL_EXPECT),
+      'vitest/no-restricted-matchers': ['error', WEAK_MATCHERS],
       // A run checks one branch only, even when the assert comes after it
       'vitest/no-conditional-in-test': 'error',
     },
@@ -224,12 +243,12 @@ export default defineConfig([
   {
     // FormField's own tests keep its folder's raw form controls
     files: ['src/components/forms/**/*.{test,spec}.{js,jsx}'],
-    rules: restrictSyntax(...NO_HEDGES),
+    rules: restrictSyntax(...NO_HEDGES, NO_CONDITIONAL_EXPECT),
   },
   {
     files: ['e2e/**'],
     rules: {
-      'no-restricted-syntax': ['error', ...NO_HEDGES],
+      'no-restricted-syntax': ['error', ...NO_TEST_IDS, ...NO_HEDGES, NO_CONDITIONAL_EXPECT],
     },
   },
   {
@@ -238,6 +257,7 @@ export default defineConfig([
     rules: {
       // e2e/helpers.js's expect* helpers (expectNoViolations, ...) assert too
       'playwright/expect-expect': ['error', { assertFunctionPatterns: ['^expect[A-Z]'] }],
+      'playwright/no-restricted-matchers': ['error', WEAK_MATCHERS],
     },
   },
 ])
