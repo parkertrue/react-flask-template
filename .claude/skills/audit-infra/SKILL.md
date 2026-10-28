@@ -45,12 +45,12 @@ Files: `.env.dev`, `.env.test`, `.env.prod.example`, `backend/app/config.py`,
   (CLAUDE.md's Naming Conventions table)? Are they listed explicitly, never via
   `env_file:`? Does only the `db` service get the root password, and only
   `migrate` the migration URL?
-- External services (README, "External Database or Redis"): are `db` and
+- External services (`docs/deployment.md`, "External Database or Redis"): are `db` and
   `redis` under the profiles `.env.prod.example`'s `COMPOSE_PROFILES` turns
   on, with every `depends_on` on them `required: false`? Does production
   refuse an external host without verified TLS, and an app user with more
-  than row rights, and is each tested? Does the README match what the code
-  refuses?
+  than row rights, and is each tested? Does `docs/deployment.md` match what
+  the code refuses?
 - Does `APP_ENV` alone select the config class? Can anything else promote or
   demote one? Does `ProductionConfig` reject weak or placeholder secrets, and
   is that tested?

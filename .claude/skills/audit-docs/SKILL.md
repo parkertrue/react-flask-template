@@ -1,6 +1,6 @@
 ---
 name: audit-docs
-description: Check README.md and CLAUDE.md against the code - every command, path, port, variable, count and architectural claim - and for gaps a new user or operator would hit.
+description: Check README.md, docs/ and CLAUDE.md against the code - every command, path, port, variable, count and architectural claim - and for gaps a new user or operator would hit.
 disable-model-invocation: true
 context: fork
 ---
@@ -10,7 +10,7 @@ context: fork
 First read `.claude/skills/_audit-shared/RULES.md` and follow it throughout.
 Then read `DECISIONS.md` from the same folder.
 
-**Documents:** `README.md`, `CLAUDE.md`, `.env.prod.example`'s comments, and
+**Documents:** `README.md`, `docs/*.md`, `CLAUDE.md`, `.env.prod.example`'s comments, and
 the `.claude/skills/` files themselves. Every factual claim the skills make
 about the repo is in scope (paths, commands, CI triggers, tool usage, scan
 targets), since a wrong claim there makes an audit report a false result.
@@ -34,7 +34,7 @@ from one makes that audit report it covered without looking.
 
 ## 2. The two documents agree
 
-README is for people using the template; CLAUDE.md is for working on it. The
+README and `docs/` are for people using the template (README the quick path, `docs/` the operator detail); CLAUDE.md is for working on it. The
 same fact must not differ between them. Flag contradictions, and long passages
 duplicated in both, which will drift apart (say which one should hold it).
 
@@ -42,16 +42,16 @@ duplicated in both, which will drift apart (say which one should hold it).
 
 This is a read-through, not a full run: the commands that start services are
 checked on paper, against the scripts and compose files they invoke. Follow
-the README as a new user would, top to bottom, without using knowledge from
+the README, and `docs/` where it links there, as a new user would, top to bottom, without using knowledge from
 the code: clone, set up, run dev, run each test suite, build and run
 production. Note every step that is missing, out of order, or that only works
 with knowledge the document doesn't give. Do the same for an operator: deploy,
 renew certificates, back up, upgrade, roll back, rotate secrets, read logs.
 Gaps that DECISIONS.md lists as known (no backups yet) are mentioned only if
-the README fails to say they are not provided. The operator steps (the
+the docs fail to say they are not provided. The operator steps (the
 runbook, certificate renewal, what production lacks) wait for the first
-server (Known gaps, "README's production section"): report them only where
-README gives a step that is wrong, not where one is missing. Also flag any instruction that
+server (Known gaps, "The production docs wait"): report them only where
+the docs give a step that is wrong, not where one is missing. Also flag any instruction that
 has the reader edit a tracked file that CI, tests or another stack also use
 (a change for production that breaks the test stack).
 

@@ -1,5 +1,5 @@
 // Who runs the app, as the contact page, the privacy notice and the terms
-// name them. Placeholders: README's "Personal Data and Legal Pages" lists
+// name them. Placeholders: docs/personal-data.md lists
 // what to fill in. public/.well-known/security.txt can't import this, so a
 // test checks that its Contact matches the email.
 export const OPERATOR = {
