@@ -57,8 +57,9 @@ Audits are **read-only** with respect to the repository:
     `docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e down -v`.
   - A **production-config stack** for checks that need production behavior
     (persistent volumes, restart policies): `docker-compose.yml` with
-    `-p app_audit`, an env file written to the scratch directory with fresh
-    random secrets (`python -c "import secrets; print(secrets.token_urlsafe(48))"`),
+    `-p app_audit`, an env file written to the scratch directory from
+    `.env.prod.example` (keep its `COMPOSE_PROFILES` line: without it `db`
+    and `redis` don't start), with fresh random secrets (`python -c "import secrets; print(secrets.token_urlsafe(48))"`),
     `SERVER_NAME=localhost` and `EDGE_SUBNET_PREFIX=10.217.9` (the default
     `10.217.0` clashes with a local production stack's edge network, and
     the test stack uses `10.217.1`), plus a scratch override file that rebinds
@@ -114,9 +115,10 @@ Audits are **read-only** with respect to the repository:
   on Linux/macOS). Frontend: `npm` in `frontend/`.
 - CI runs on pushes to `main` and on pull requests: ruff, ESLint, both unit
   suites with coverage, the same again after `remove_examples.py` (the
-  Scaffold job), compose validation, zizmor, a license and a whitespace
-  check, hadolint and gixy-ng.
-  Integration and E2E run on `main`, on pull requests, and daily. Check the
+  Scaffold job), compose validation, zizmor, a license, required-checks and
+  whitespace check, hadolint and gixy-ng.
+  Integration, E2E and the Platform smoke job run on `main`, on pull
+  requests, and daily. Check the
   `on:` blocks in `.github/workflows/` if in doubt. **Read CI results instead
   of re-running them:** `gh run list --commit $(git rev-parse HEAD)` first,
   then per workflow (`gh run list --branch main --workflow CI --limit 5`, and
