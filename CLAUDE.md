@@ -91,9 +91,10 @@ Shared material lives in `.claude/skills/_audit-shared/`: `RULES.md` (what every
 
 ## Production Build
 ```bash
-docker compose --env-file .env.prod build
+docker compose --env-file .env.prod build --provenance=false
 docker compose --env-file .env.prod up
 ```
+`--provenance=false` keeps an unchanged image's ID, so a redeploy recreates only the containers whose image changed (README, "Build and Start"); Compose 5.0 ignores `provenance: false` in the compose file.
 
 ## Architecture
 
