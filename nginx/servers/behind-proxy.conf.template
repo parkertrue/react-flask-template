@@ -1,6 +1,6 @@
 # NGINX_MODE=behind-proxy: a load balancer in front terminates TLS and
-# forwards plain HTTP here, as on a container platform (README, Deploying to
-# a Platform). Rendered into /etc/nginx/conf.d/default.conf at container start
+# forwards plain HTTP here, as on a container platform (docs/deployment.md,
+# Deploying to a Platform). Rendered into /etc/nginx/conf.d/default.conf at container start
 # (server-mode.sh). The client's address comes from the balancer's
 # X-Forwarded-For, trusted only from NGINX_TRUSTED_PROXIES, which this mode
 # requires (conf.d/real-ip.conf).

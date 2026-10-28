@@ -164,7 +164,7 @@ def main():
         log.error(
             f"DATABASE_URL's user may do more than read and write rows in its own "
             f"database: {'; '.join(granted)}. Give the app a user with SELECT, INSERT, "
-            f"UPDATE and DELETE on its database alone (README, External Database or Redis)")
+            f"UPDATE and DELETE on its database alone (docs/deployment.md, External Database or Redis)")
         sys.exit(1)
 
 

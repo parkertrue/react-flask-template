@@ -16,7 +16,7 @@ when `DATABASE_URL`'s user holds more than row rights (`wait_for_services.py`),
 with no opt-out, so a provider that offers a single database user is
 unsupported (user's decision, 2026-10-21). TLS is required for any host but
 `db` and `redis`, the bundled services' names, so renaming those services
-means editing `config.py` too (README, "External Database or Redis"). One gap
+means editing `config.py` too (`docs/deployment.md`, "External Database or Redis"). One gap
 stays: a `MIGRATION_DATABASE_URL` set on the backend itself wins over
 `DATABASE_URL`, and the app then runs as the schema's owner; only the
 compose file's `environment:` lists keep it on `migrate`.
@@ -169,7 +169,7 @@ attribution from derived apps.
 **Legal placeholders are not enforced at build.** Nothing stops a
 production image from serving the placeholder `OPERATOR` values in
 `frontend/src/legal.js`, `contact@example.com` in `security.txt`, or the
-"Placeholder" banner on the legal pages. README's "Before launch" list is
+"Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before launch" list is
 the only safeguard: a build check would have to tell the production image
 apart from the test stack's, which serves the same placeholders on purpose
 (LEGAL-21). *Revisit when:* the first real deployment is prepared.
@@ -415,12 +415,12 @@ recovery check is blocked by the missing backups). They are not new findings.
 - **No deployment yet**, so these don't exist: automated backups and a
   restore procedure, server hardening (SSH, firewall, Fail2ban), certificate
   auto-renewal, CD, monitoring, centralized logging, a CDN.
-- **README's production section waits for the first server.** The Let's
+- **The production docs wait for the first server.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
-  nginx template (which breaks CI and the test stack if followed), README
-  doesn't list what production lacks, and there is no operator runbook
+  nginx template (which breaks CI and the test stack if followed), the docs
+  don't list what production lacks, and there is no operator runbook
   (detached start, status, rollback, TLS key rotation, a failed `up -d`;
-  README's Logs section covers reading logs). All three get written and
+  `docs/deployment.md`'s Logs section covers reading logs). All three get written and
   tried on a real server rather than on paper. Until then the docs and
   recovery checks don't report them.
 - **TLS between containers** is not needed while every service shares one

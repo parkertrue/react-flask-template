@@ -19,7 +19,7 @@ DATABASE_DRIVER = 'mysql+pymysql'
 # The compose files' names for the bundled MySQL and Redis, which the backend
 # reaches over a private Docker network. Any other host is outside it, so
 # production refuses to reach it without TLS that checks the server's
-# certificate and name (README, External Database or Redis).
+# certificate and name (docs/deployment.md, External Database or Redis).
 BUNDLED_DATABASE_HOST = 'db'
 BUNDLED_REDIS_HOST = 'redis'
 # URL options that could turn those checks off. PyMySQL checks both once the
