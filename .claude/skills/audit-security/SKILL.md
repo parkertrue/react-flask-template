@@ -48,10 +48,15 @@ this app and record what each one turns up:
 - **Secrets:** nothing secret in git history
   (`git log -p --all -S 'SECRET_KEY=' -- . ':!*.example' ':!*.examples' ':!.env.dev' ':!.env.test' ':!.claude'`
   plus a scan for key-shaped strings), `ProductionConfig`'s secret checks,
-  root DB password reaching only `migrate`, secrets never logged (grep the
-  logging calls).
+  the root DB password reaching only `db`, and the migration user's only
+  `migrate`, secrets never logged (grep the logging calls).
 - **Transport and headers:** TLS config, HSTS, CSP, frame, referrer,
   permissions and content-type headers; HTTP→HTTPS; the catch-all host.
+  In `behind-proxy` mode (`nginx/servers/behind-proxy.conf.template`,
+  `nginx/server-mode.sh`): can a client skip the `X-Forwarded-Proto`
+  redirect, set its own address through `X-Forwarded-For`
+  (`NGINX_TRUSTED_PROXIES`), or get anything but `/api/health` from the
+  catch-all?
 - **Containers and Redis:** non-root users, capabilities, read-only roots,
   networks (can nginx reach MySQL? should it?), exposed ports, the Redis ACL,
   and the MySQL privileges of the app's and the migration user
@@ -77,8 +82,11 @@ this app and record what each one turns up:
 - Dependabot: first confirm alerts are enabled
   (`gh api repos/{owner}/{repo}/vulnerability-alerts` answers 204), since an
   empty alert list looks the same either way; then
-  `gh api repos/{owner}/{repo}/dependabot/alerts --jq '.[] | select(.state=="open")'`
-  and open Dependabot PRs (`gh pr list --author app/dependabot`).
+  `gh api repos/{owner}/{repo}/dependabot/alerts --paginate --jq '.[] | select(.state=="open" or .state=="auto_dismissed")'`
+  and open Dependabot PRs (`gh pr list --author app/dependabot`). An
+  `auto_dismissed` alert is a finding: an auto-dismiss rule (such as the
+  "Dismiss low impact alerts" preset) is on again and hides advisories.
+  So is an `npm audit` or `pip-audit` hit missing from the alert list.
 - Images: are the pinned base images (Dockerfiles, compose files, the
   hadolint digest in CI) current releases of supported versions? Then scan
   the built images for OS-package CVEs, which tag checks can't see:
@@ -132,6 +140,18 @@ describes. Nothing else.
   with a password that differs only by Unicode normalization, and delete an
   account with a wrong password, then with the right one (every session of
   that account must then be refused).
+- **`behind-proxy` probes,** once the test stack is down (both use the
+  `app_test` project): bring up the platform smoke stack
+  (`docker compose --env-file .env.test -f docker-compose.test.yml -f .github/smoke/platform.yml --profile platform up -d --build --wait`,
+  nginx on `127.0.0.1:8081`, the host standing in for the load balancer;
+  tear down with `--profile platform --profile e2e down -v`). A request
+  whose `X-Forwarded-Proto` isn't `https` must redirect; a forged leftmost
+  `X-Forwarded-For` hop must not become the client's address in nginx's
+  and the backend's logs (the rightmost untrusted one must); any path but
+  `/api/health` with a bare-IP `Host` gets no response. The host's requests
+  come from a trusted address, so judge an untrusted sender's
+  `X-Forwarded-For` from the `real-ip.conf` that `nginx/server-mode.sh`
+  writes (`docker exec app_test-platform-nginx-1 cat /etc/nginx/conf.d/real-ip.conf`).
 
 Tear the test stack down. Then, **for the rate-limit probes only**, bring up
 the production-config stack (RULES.md): the test stack runs `IntegrationConfig`,

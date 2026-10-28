@@ -293,7 +293,7 @@ GitHub Actions (`.github/workflows/`):
 
 Every job has a read-only token and a timeout, and actions are pinned to commit SHAs.
 
-Dependabot (`.github/dependabot.yml`) opens weekly update PRs for the Python locks, npm, Docker images and GitHub Actions. For it to also open security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under the repository's Settings > Advanced Security.
+Dependabot (`.github/dependabot.yml`) opens weekly update PRs for the Python locks, npm, Docker images and GitHub Actions. For it to also open security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under the repository's Settings > Advanced Security. There, under Dependabot rules, turn off "Dismiss low impact alerts": it hides advisories in development-only packages, most of what `npm audit` finds, from the alert list.
 
 To stop a failing check from merging, require these status checks on `main` (Settings > Branches): Backend unit, Frontend unit, Scaffold, Compose files, Workflows, Dockerfiles, Nginx config, Backend integration, Platform smoke and Playwright E2E.
 
