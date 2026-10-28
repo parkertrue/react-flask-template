@@ -39,6 +39,11 @@ updates:
       # to the next LTS by hand, together with setup-node in both workflows.
       - dependency-name: node
         update-types: ["version-update:semver-major"]
+      # Python's version is also in setup-python (both workflows) and
+      # backend/lock_deps.sh, which a PR for the Dockerfile alone would leave
+      # behind. Bump all of them by hand, then re-lock.
+      - dependency-name: python
+        update-types: ["version-update:semver-minor"]
 
   - package-ecosystem: docker-compose
     directory: /

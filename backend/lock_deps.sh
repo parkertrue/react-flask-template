@@ -3,7 +3,7 @@
 # Pass --upgrade to move every package to its newest release.
 #
 # Runs pip-compile inside the production base image, so the locks resolve for
-# Linux and Python 3.14 whatever machine this is run on.
+# Linux and the production image's Python whatever machine this is run on.
 set -e
 cd "$(dirname "$0")"
 

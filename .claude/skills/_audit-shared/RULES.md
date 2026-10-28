@@ -115,8 +115,8 @@ Audits are **read-only** with respect to the repository:
   on Linux/macOS). Frontend: `npm` in `frontend/`.
 - CI runs on pushes to `main` and on pull requests: ruff, ESLint, both unit
   suites with coverage, the same again after `remove_examples.py` (the
-  Scaffold job), compose validation, zizmor, a license, required-checks and
-  whitespace check, hadolint and gixy-ng.
+  Scaffold job), compose validation, zizmor, a license, required-checks,
+  toolchain-version and whitespace check, hadolint and gixy-ng.
   Integration, E2E and the Platform smoke job run on `main`, on pull
   requests, and daily. Check the
   `on:` blocks in `.github/workflows/` if in doubt. **Read CI results instead
