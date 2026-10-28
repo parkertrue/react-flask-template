@@ -377,12 +377,12 @@ A one-shot `migrate` container applies migrations as the migration user and exit
 **Deploying a change to a running app:** a single `up -d --build` replaces the backend before `migrate` runs, so if `migrate` fails (a bad migration, a wrong password, an unreachable database), the app is down until it is fixed. Build and migrate first instead; the running app keeps serving through both, and each command stops the deploy if it fails:
 
 ```bash
-docker compose --env-file .env.prod build \
+docker compose --env-file .env.prod build --provenance=false \
   && docker compose --env-file .env.prod up --exit-code-from migrate migrate \
   && docker compose --env-file .env.prod up -d --wait
 ```
 
-The last command replaces the backend and nginx, so requests get a 502 or 504, or a refused connection, for a few seconds. A migration must keep the old code working, since the old backend serves after it runs ([Deploying to a Platform](#deploying-to-a-platform), Migrations).
+`--provenance=false` keeps an unchanged image's ID: under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so without the flag every rebuild gets a new ID and `up -d` replaces every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. (Compose 5.0 ignores `provenance: false` under the compose file's `build:`, so it stays a flag.) When the build changed an image, the last command replaces the backend and nginx, so requests get a 502 or 504, or a refused connection, for a few seconds. A migration must keep the old code working, since the old backend serves after it runs ([Deploying to a Platform](#deploying-to-a-platform), Migrations).
 
 **Production URL:** `https://<SERVER_NAME>` ([https://localhost](https://localhost) when testing locally with `SERVER_NAME=localhost`).
 
