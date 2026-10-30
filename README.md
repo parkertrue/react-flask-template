@@ -132,7 +132,7 @@ Create `.env.prod` and fill in every value. Production refuses placeholder passw
 
 ```bash
 cp .env.prod.example .env.prod
-python -c "import secrets; print(secrets.token_urlsafe(48))"   # Generates a value
+openssl rand -hex 32   # Generates a value
 ```
 
 ### HTTPS Certificate
