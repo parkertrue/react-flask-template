@@ -18,7 +18,7 @@ Only Nginx is published (ports 80 and 443). Nginx reaches only Flask; the bundle
 `.env.prod` holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+openssl rand -hex 32
 ```
 
 nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its own (`10.217.0.0/24`), so a redeployed backend is reached the moment it starts. If that range is already in use on the server, add `EDGE_SUBNET_PREFIX=10.x.y` (three numbers) to `.env.prod`.
