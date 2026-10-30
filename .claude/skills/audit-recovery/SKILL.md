@@ -64,7 +64,7 @@ retries will create duplicates.
 | Disk full | In a second short run, give `db` a size-limited `tmpfs` for its data directory (a fresh MySQL 8.4 data dir is about 209 MB; allow ~260 MB) via an override (`volumes: !reset []` plus `tmpfs`), then fill it from inside the container with a throwaway file (`MSYS_NO_PATHCONV=1` on the `docker exec` lines from Git Bash, and only there: exported for the whole shell, it breaks the `--env-file` paths given to compose). Writes may hang rather than fail; "remove the cause" by deleting the filler file, not via SQL. Record what clients and healthchecks see. Teardown: if this run starts on top of an existing stack, `down -v` misses the named `db_data` volume hidden by the override, so remove `app_audit_db_data` by hand; starting after `down -v` of the first run never creates it. Redis AOF and log volumes filling are reviewed on paper only. |
 | nginx restart | `docker restart` nginx. Brief outage only; no config errors in logs. |
 | Whole stack restart | `docker compose ... stop` then `start`, simulating a host reboot. Does everything come back, with data and sessions intact? Does `migrate` re-run harmlessly? (After a real reboot, restart policies start containers without honoring `depends_on`; that can't be tested safely on Docker Desktop, so review it on paper.) |
-| Credential change | Follow README's "Changing a value later" in the scratch env file. First edit `DB_PASSWORD` alone and `up -d`: expect `up -d` to fail at `migrate` within seconds (it reads the app user's grants) and the app down, every request a 502 or 504. Restore, then edit `DB_MIGRATION_PASSWORD` alone: expect `up -d` to fail at `migrate` while the running app keeps serving; then the same with a backend change too (a label override): expect the app down. Then follow README's migrate-first deploy (Build and Start) with that bad password and the backend change: expect it to stop at `migrate` while the old backend keeps serving. Then follow README's procedure for each, and for a new `REDIS_PASSWORD` and `SECRET_KEY`, with `up -d --wait`, probing at once after `--wait` returns. Does each behave as expected? Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` is not covered by README: list it under *Unverified*. |
+| Credential change | Follow `docs/deployment.md`'s "Changing a Value Later" in the scratch env file. First edit `DB_PASSWORD` alone and `up -d`: expect `up -d` to fail at `migrate` within seconds (it reads the app user's grants) and the app down, every request a 502 or 504. Restore, then edit `DB_MIGRATION_PASSWORD` alone: expect `up -d` to fail at `migrate` while the running app keeps serving; then the same with a backend change too (a label override): expect the app down. Then follow `docs/deployment.md`'s migrate-first deploy (Redeploying) with that bad password and the backend change: expect it to stop at `migrate` while the old backend keeps serving. Then follow its procedure for each, and for a new `REDIS_PASSWORD` and `SECRET_KEY`, with `up -d --wait`, probing at once after `--wait` returns. Does each behave as expected? Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` is not covered there: list it under *Unverified*. |
 | Bad deploy | Recreate the backend with a startup failure that needs no code change: a `SECRET_KEY` under 32 characters in the scratch env file (`up -d --force-recreate backend`). Does it refuse to start, does nginx answer with the JSON 5xx body, and does restoring the key bring it back? |
 
 Also read the logs (`docker compose ... logs`) after each drill: are
@@ -79,7 +79,7 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   *Skipped*, and review only what a backup would need: which volumes hold
   state (MySQL, Redis AOF), what can be lost without harm (rate-limit
   counters), consistent MySQL dumps (`--single-transaction`), and the 3-2-1
-  rule. Once a backup procedure exists in the repo or README, this part must
+  rule. Once a backup procedure exists in the repo or `docs/`, this part must
   instead restore the most recent backup into a fresh `app_audit` stack and run
   the driver script against it.
 - **Compromised host:** if an attacker gets a shell in each container (nginx,
@@ -87,11 +87,11 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   rotated? Is the rotation procedure documented (SECRET_KEY invalidates all
   tokens; DB and Redis passwords; TLS key)? Is there a way to revoke every
   session at once?
-- **Operator documentation:** does README tell an operator how to restart,
+- **Operator documentation:** do README and `docs/deployment.md` tell an operator how to restart,
   roll back a bad deploy, rotate secrets, and read logs? The runbook waits
-  for the first server (DECISIONS.md, Known gaps, "README's production
-  section"), so a missing runbook step is a finding only where README
-  presents the step as covered, or gives one that is wrong.
+  for the first server (DECISIONS.md, Known gaps, "The production docs
+  wait"), so a missing runbook step is a finding only where they
+  present the step as covered, or gives one that is wrong.
 
 ## Out of scope
 Fixing anything. Live production drills: there is no deployment, and drills

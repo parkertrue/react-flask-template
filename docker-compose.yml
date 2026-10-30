@@ -42,7 +42,7 @@ x-backend-env: &backend-env
 services:
   # The bundled MySQL and Redis run under profiles that .env.prod.example's
   # COMPOSE_PROFILES turns on. To use an external one instead, set its URLs
-  # in .env.prod and drop its profile (README, External Database or Redis);
+  # in .env.prod and drop its profile (docs/deployment.md, External Database or Redis);
   # every depends_on on them is required: false, so nothing waits for a
   # service that isn't there.
   db:
