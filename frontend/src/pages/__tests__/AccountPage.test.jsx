@@ -136,23 +136,29 @@ describe('AccountPage', () => {
   })
 
   describe('deleting the account', () => {
-    const passwordField = () => screen.getByLabelText('Password')
-    const deleteButton = () =>
-      screen.getByRole('button', { name: /^(delete account|deleting\.\.\.)$/i })
+    // jsdom leaves the page behind a modal dialog reachable, so every query
+    // of the dialog's own controls is made within it
     const dialog = () => screen.getByRole('dialog', { name: 'Delete your account?' })
+    const inDialog = () => within(dialog())
+    const passwordField = () => inDialog().getByLabelText('Password')
+    const submitButton = () =>
+      inDialog().getByRole('button', { name: /^(delete account|deleting\.\.\.)$/i })
+    // The page's own, the first in the document
+    const pageDeleteButton = () => screen.getAllByRole('button', { name: 'Delete account' })[0]
 
     async function askToDelete(user, password = 'MyPassword123') {
+      await user.click(pageDeleteButton())
       await user.type(passwordField(), password)
-      await user.click(deleteButton())
     }
 
-    it('asks for confirmation before deleting anything', async () => {
+    it('asks for the password in a dialog, deleting nothing yet', async () => {
       const { user } = renderPage()
 
-      await askToDelete(user)
+      await user.click(pageDeleteButton())
 
-      expect(within(dialog()).getByText(/cannot be undone/)).toBeInTheDocument()
-      expect(within(dialog()).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+      expect(dialog()).toHaveAccessibleDescription(/cannot be undone/)
+      expect(passwordField()).toHaveFocus()
+      expect(passwordField()).toHaveAccessibleDescription('Enter your password to confirm.')
       expect(deleteAccount).not.toHaveBeenCalled()
     })
 
@@ -160,18 +166,34 @@ describe('AccountPage', () => {
       const { user } = renderPage()
       await askToDelete(user)
 
-      await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+      await user.click(inDialog().getByRole('button', { name: 'Cancel' }))
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(pageDeleteButton()).toHaveFocus()
       expect(deleteAccount).not.toHaveBeenCalled()
       expect(storage.getAccessToken()).toBe('access-token')
+    })
+
+    it('asks afresh after a failed try is cancelled', async () => {
+      deleteAccount.mockRejectedValue(
+        httpError(503, 'SERVICE_UNAVAILABLE', 'Could not delete the account'))
+      const { user } = renderPage()
+      await askToDelete(user)
+      await user.click(submitButton())
+      await inDialog().findByRole('alert')
+      await user.click(inDialog().getByRole('button', { name: 'Cancel' }))
+
+      await user.click(pageDeleteButton())
+
+      expect(passwordField()).toHaveValue('')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     })
 
     it('deletes the account with the password, ends the session and says so', async () => {
       const { user, router } = renderPage()
       await askToDelete(user)
 
-      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+      await user.click(submitButton())
 
       expect(await screen.findByText('Login page: account deleted')).toBeInTheDocument()
       expect(router.state.location.pathname).toBe('/login')
@@ -180,14 +202,15 @@ describe('AccountPage', () => {
       expect(storage.getSessionEnded()).toBe(false)
     })
 
-    it('refuses an empty password before asking', async () => {
+    it('refuses an empty password without sending it', async () => {
       const { user } = renderPage()
+      await user.click(pageDeleteButton())
 
-      await user.click(deleteButton())
+      await user.click(submitButton())
 
       expect(passwordField()).toHaveAccessibleDescription(expect.stringContaining('Password is required'))
       expect(passwordField()).toHaveFocus()
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(deleteAccount).not.toHaveBeenCalled()
     })
 
     it.each([
@@ -197,15 +220,15 @@ describe('AccountPage', () => {
       ['a password without an uppercase letter', 'mypassword123',
         'Password must contain at least one uppercase letter'],
       ['a password without a number', 'MyPassword', 'Password must contain at least one number'],
-    ])('refuses %s before asking', async (_, password, message) => {
+    ])('refuses %s without sending it', async (_, password, message) => {
       const { user } = renderPage()
+      await askToDelete(user, password)
 
-      await user.type(passwordField(), password)
-      await user.click(deleteButton())
+      await user.click(submitButton())
 
       expect(passwordField()).toHaveAccessibleDescription(expect.stringContaining(message))
       expect(passwordField()).toHaveFocus()
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(deleteAccount).not.toHaveBeenCalled()
     })
 
     // Nothing was deleted, so the session stays for another try
@@ -215,7 +238,7 @@ describe('AccountPage', () => {
       const { user, router } = renderPage()
       await askToDelete(user)
 
-      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+      await user.click(submitButton())
 
       await waitFor(() => expect(passwordField()).toHaveFocus())
       expect(passwordField()).toHaveAttribute('aria-invalid', 'true')
@@ -224,7 +247,7 @@ describe('AccountPage', () => {
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(router.state.location.pathname).toBe('/account')
       expect(storage.getAccessToken()).toBe('access-token')
-      expect(deleteButton()).toHaveAttribute('aria-disabled', 'false')
+      expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
       expect(passwordField()).not.toHaveAttribute('readonly')
     })
 
@@ -232,17 +255,17 @@ describe('AccountPage', () => {
       ['the server fails', httpError(503, 'SERVICE_UNAVAILABLE', 'Could not delete the account'),
         'Could not delete the account'],
       ['the network fails', new Error('Network Error'), 'Network error'],
-    ])('keeps the session and says so when %s', async (_, error, message) => {
+    ])('keeps the session and says so in the dialog when %s', async (_, error, message) => {
       deleteAccount.mockRejectedValue(error)
       const { user, router } = renderPage()
       await askToDelete(user)
 
-      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+      await user.click(submitButton())
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(message)
+      expect(await inDialog().findByRole('alert')).toHaveTextContent(message)
       expect(router.state.location.pathname).toBe('/account')
       expect(storage.getAccessToken()).toBe('access-token')
-      expect(deleteButton()).toHaveAttribute('aria-disabled', 'false')
+      expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
       expect(passwordField()).not.toHaveAttribute('readonly')
     })
 
@@ -253,11 +276,10 @@ describe('AccountPage', () => {
         .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
       const { user } = renderPage()
       await askToDelete(user)
-      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+      await user.click(submitButton())
       await screen.findByRole('alert')
 
-      await user.click(deleteButton())
-      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+      await user.click(submitButton())
 
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       await act(async () => finish())
@@ -265,19 +287,18 @@ describe('AccountPage', () => {
       expect(deleteAccount).toHaveBeenCalledTimes(2)
     })
 
-    it('marks the form busy and ignores repeat submits while deleting', async () => {
+    it('marks the dialog busy and ignores repeat submits while deleting', async () => {
       let finish
       deleteAccount.mockImplementation(() => new Promise(resolve => { finish = resolve }))
       const { user } = renderPage()
       await askToDelete(user)
-      await user.click(within(dialog()).getByRole('button', { name: 'Delete account' }))
+      await user.click(submitButton())
 
-      await user.click(deleteButton())
+      await user.click(submitButton())
 
-      expect(deleteButton()).toHaveTextContent('Deleting...')
-      expect(deleteButton()).toHaveAttribute('aria-disabled', 'true')
+      expect(submitButton()).toHaveTextContent('Deleting...')
+      expect(submitButton()).toHaveAttribute('aria-disabled', 'true')
       expect(passwordField()).toHaveAttribute('readonly')
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(deleteAccount).toHaveBeenCalledTimes(1)
       await act(async () => finish())
     })

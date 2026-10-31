@@ -78,10 +78,11 @@ Check on every page, logged out and logged in:
   they run axe on most states (form errors, busy and failed actions, a
   failed load, the error page, a session that ended, edit mode, the open
   delete dialog). Run axe (`@axe-core/playwright`, as they do) on any state
-  they miss. Check every `ConfirmDialog` (deleting a note, deleting the
-  account): its initial focus, the focus returned after Cancel, and the
-  focus after confirming (for the account, the login page's `h1`, with the
-  message that the account is gone).
+  they miss. Check every dialog (`ConfirmDialog` deleting a note,
+  `FormDialog` deleting the account): its initial focus, the focus
+  returned after Cancel, the focus after confirming (for the account, the
+  login page's `h1`, with the message that the account is gone), and, for
+  `FormDialog`, a failed submit's message inside the dialog.
 - **Accessibility tree:** take `page.locator('body').ariaSnapshot()` for
   each page and check names, roles and states read sensibly.
 

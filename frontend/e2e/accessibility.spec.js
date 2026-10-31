@@ -175,8 +175,8 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
     })
 
-    // ConfirmDialog, the app's one dialog component, checked here so that
-    // no feature's spec has to keep it
+    // FormDialog, checked here so that no feature's spec has to keep it.
+    // ConfirmDialog shares its styles; the notes spec checks its behavior
     test('deleting the account, asking, busy and then failed, has no violations', async ({ page }) => {
       await page.goto('/account')
       await expect(memberSince(page)).toBeVisible()
@@ -202,12 +202,16 @@ test.describe('Accessibility', () => {
       dialog = await askToDeleteAccount(page)
       const release = await holdRequests(page, 'POST', '**/api/account/delete', serviceUnavailable)
       await dialog.getByRole('button', { name: 'Delete account' }).click()
-      // The dialog hands focus back to the button, now busy
-      await expect(page.getByRole('button', { name: 'Deleting...' })).toBeFocused()
+      // The dialog stays, its button busy and still focused, and Escape
+      // cannot close it mid-request, pressed once or twice
+      await expect(dialog.getByRole('button', { name: 'Deleting...' })).toBeFocused()
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeVisible()
       await expectNoViolations(page)
 
       release()
-      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expect(dialog.getByRole('alert')).toHaveText(/temporarily unavailable/)
       await expectNoViolations(page)
     })
 
