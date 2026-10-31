@@ -29,6 +29,9 @@ const PAIRINGS = [
   ['invalid fields', 'danger', 'surface', NON_TEXT],
   ['busy button edges', 'border', 'surface', NON_TEXT],
   ['focus rings on the navbar', 'on-strong', 'navbar', NON_TEXT],
+  ['the API status dot, checking', 'border', 'surface-muted', NON_TEXT],
+  ['the API status dot, ok', 'success', 'surface-muted', NON_TEXT],
+  ['the API status dot, error', 'danger', 'surface-muted', NON_TEXT],
 ]
 
 const tokensCss = readFileSync(path.resolve(import.meta.dirname, '../tokens.css'), 'utf8')
