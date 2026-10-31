@@ -121,10 +121,11 @@ export default function RegisterPage() {
               id="acceptTerms"
               type="checkbox"
               label={<>
-                I accept the <Link to="/terms" target="_blank" className="text-link">Terms</Link> and
-                the <Link to="/privacy" target="_blank" className="text-link">Privacy notice</Link>
+                I accept the <Link to="/terms" target="_blank" aria-describedby="new-tab-note" className="text-link">Terms</Link> and
+                the <Link to="/privacy" target="_blank" aria-describedby="new-tab-note" className="text-link">Privacy notice</Link>
+                {/* Read with each link, never shown, and left out of the checkbox's name */}
+                <span id="new-tab-note" hidden>Opens in a new tab.</span>
               </>}
-              hint="Both open in a new tab."
               checked={values.acceptTerms}
               onChange={handleTermsChange}
               error={errors.acceptTerms}

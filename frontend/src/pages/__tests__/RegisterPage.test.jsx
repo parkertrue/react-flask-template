@@ -51,11 +51,13 @@ describe('RegisterPage', () => {
     renderPage()
 
     expect(termsCheckbox()).not.toBeChecked()
-    expect(termsCheckbox()).toHaveAccessibleDescription('Both open in a new tab.')
+    expect(termsCheckbox()).toHaveAccessibleDescription('')
+    expect(screen.getByText('Opens in a new tab.')).not.toBeVisible()
     for (const [name, href] of [['Terms', '/terms'], ['Privacy notice', '/privacy']]) {
       const link = screen.getByRole('link', { name })
       expect(link).toHaveAttribute('href', href)
       expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAccessibleDescription('Opens in a new tab.')
     }
   })
 
