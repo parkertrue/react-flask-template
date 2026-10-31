@@ -31,14 +31,14 @@ describe('Notes, through the whole app', () => {
     )
     const { user } = renderRoutes(routes, '/notes')
 
-    await user.click(await screen.findByRole('button', { name: 'Edit note #1' }))
-    const field = screen.getByRole('textbox', { name: 'Edit note #1' })
+    await user.click(await screen.findByRole('button', { name: 'Edit', description: 'Draft' }))
+    const field = screen.getByRole('textbox', { name: 'Edit note' })
     await user.clear(field)
     await user.type(field, 'Final')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Final')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Delete note #1' }))
+    await user.click(screen.getByRole('button', { name: 'Delete', description: 'Final' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
     expect(await screen.findByText(/no notes yet/i)).toBeInTheDocument()
   })
@@ -53,7 +53,7 @@ describe('Notes, through the whole app', () => {
     )
     const { user } = renderRoutes(routes, '/notes')
 
-    await user.click(await screen.findByRole('button', { name: 'Delete note #1' }))
+    await user.click(await screen.findByRole('button', { name: 'Delete', description: 'Stale' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Resource not found')

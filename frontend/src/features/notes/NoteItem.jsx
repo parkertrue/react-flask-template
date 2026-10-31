@@ -74,7 +74,7 @@ export default function NoteItem({ note, onEdit, onDelete, emptiedFocusRef }) {
       <li ref={rowRef} className="note-item">
         <NoteForm
           id={`note-${note.id}-input`}
-          label={`Edit note #${note.id}`}
+          label="Edit note"
           submitLabel="Save"
           busyLabel="Saving..."
           initialContent={note.content}
@@ -87,18 +87,16 @@ export default function NoteItem({ note, onEdit, onDelete, emptiedFocusRef }) {
     )
   }
 
-  // Every row has an Edit and a Delete, so each is named by its note's number
-  // and described by its text
+  // Every row has an Edit and a Delete, named by their visible labels and
+  // described by the note's text, which tells one row's from another's
   return (
     <li ref={rowRef} className="note-item">
       <span id={contentId} className="note-content">{note.content}</span>
-      <span className="note-id">(#{note.id})</span>
       <span className="note-actions">
         <button
           ref={editButtonRef}
           type="button"
           className="btn btn-secondary btn-small"
-          aria-label={`Edit note #${note.id}`}
           aria-describedby={contentId}
           aria-disabled={deleting}
           onClick={() => { if (!deleting) setEditing(true) }}
@@ -108,7 +106,6 @@ export default function NoteItem({ note, onEdit, onDelete, emptiedFocusRef }) {
         <button
           type="button"
           className="btn btn-danger btn-small"
-          aria-label={`${deleting ? 'Deleting' : 'Delete'} note #${note.id}`}
           aria-describedby={contentId}
           aria-disabled={deleting}
           onClick={() => { if (!deleting) setConfirming(true) }}

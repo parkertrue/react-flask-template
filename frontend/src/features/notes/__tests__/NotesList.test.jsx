@@ -27,18 +27,19 @@ describe('NotesList', () => {
     expect(screen.queryByText(/no notes yet/i)).not.toBeInTheDocument()
   })
 
-  it('lists each note with its number, in the order given', () => {
+  // The id counts across all users, so it would mean nothing to this one
+  it('lists each note by its text alone, never its id, in the order given', () => {
     render(<NotesList notes={[{ id: 3, content: 'Third' }, { id: 1, content: 'First' }]} loading={false} />)
 
-    expect(listed()).toEqual(['Third(#3)', 'First(#1)'])
+    expect(listed()).toEqual(['Third', 'First'])
   })
 
   it.each([
-    [0, 'Edit note #3', 'Third'],
-    [1, 'Delete note #3', 'Third'],
-    [2, 'Edit note #1', 'First'],
-    [3, 'Delete note #1', 'First'],
-  ])('offers Edit and Delete per note, named by number and described by text (button %i)', (index, name, text) => {
+    [0, 'Edit', 'Third'],
+    [1, 'Delete', 'Third'],
+    [2, 'Edit', 'First'],
+    [3, 'Delete', 'First'],
+  ])('offers Edit and Delete per note, named by their labels and described by its text (button %i)', (index, name, text) => {
     render(<NotesList notes={[{ id: 3, content: 'Third' }, { id: 1, content: 'First' }]} loading={false} />)
 
     const button = screen.getAllByRole('button')[index]
