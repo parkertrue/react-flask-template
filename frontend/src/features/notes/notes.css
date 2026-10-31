@@ -32,10 +32,6 @@
   overflow-wrap: anywhere;
 }
 
-.note-id {
-  font-size: 0.85rem;
-}
-
 .note-actions {
   display: flex;
   gap: 0.5rem;

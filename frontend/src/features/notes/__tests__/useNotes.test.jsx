@@ -190,7 +190,7 @@ describe('useNotes', () => {
       await act(async () => {
         await result.current.editNote(1, 'One')
       })
-      expect(result.current.status).toBe('Note #1 saved')
+      expect(result.current.status).toBe('Note saved')
 
       updateNote.mockReturnValue(new Promise(() => {}))
       act(() => { result.current.editNote(1, 'One') })
