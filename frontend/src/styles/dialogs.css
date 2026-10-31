@@ -25,6 +25,11 @@
   margin: 0 0 0.5rem;
 }
 
+/* A field (FormDialog's password) sits clear of the text above it */
+.dialog-body .form-group {
+  margin-top: 1rem;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

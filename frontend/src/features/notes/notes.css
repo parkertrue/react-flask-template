@@ -13,10 +13,11 @@
 }
 
 /* The buttons sit at the end of the row, or on a line of their own under
-   the note once the row is too narrow for both */
+   the note once the row is too narrow for both. No right padding: the row's
+   background is the page's, so its buttons line up with "Add note". */
 .note-item {
   background: var(--color-surface);
-  padding: 1rem;
+  padding: 1rem 0 1rem 1rem;
   border-left: 4px solid var(--color-primary);
   display: flex;
   flex-wrap: wrap;
