@@ -154,12 +154,18 @@ test.describe('Notes accessibility', () => {
     await expectTargetSize(page)
   })
 
-  test('the delete confirmation has no violations', async ({ page }) => {
+  test('the delete confirmation has no violations, and Escape keeps the note', async ({ page }) => {
     await addNote(page, 'A note to delete')
     await page.getByRole('button', { name: /^Delete note #/ }).click()
 
-    await expect(page.getByRole('dialog', { name: 'Delete this note?' })).toBeVisible()
+    const dialog = page.getByRole('dialog', { name: 'Delete this note?' })
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
     await expectNoViolations(page)
+
+    // Focus goes back to the button that asked
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole('button', { name: /^Delete note #/ })).toBeFocused()
   })
 
   test('the notes page reflows, shows focus and has large enough targets', async ({ page }) => {

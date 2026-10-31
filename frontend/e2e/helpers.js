@@ -80,14 +80,14 @@ export async function logoutAllDevices(page) {
 }
 
 /**
- * On the account page, type the password and ask to delete the account;
- * returns the dialog that asks to confirm
+ * On the account page, ask to delete the account and type the password into
+ * the dialog that opens; returns the dialog, for its Delete account button
  */
 export async function askToDeleteAccount(page, password = TEST_PASSWORD) {
-  await page.getByLabel('Password').fill(password)
   await page.getByRole('button', { name: 'Delete account' }).click()
   const dialog = page.getByRole('dialog', { name: 'Delete your account?' })
-  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  await expect(dialog.getByLabel('Password')).toBeFocused()
+  await dialog.getByLabel('Password').fill(password)
   return dialog
 }
 

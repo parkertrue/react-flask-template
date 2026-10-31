@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { useLogout } from '@/auth/useLogout'
 import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
 import { getErrorMessage } from '@/api/errors'
-import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import FormDialog from '@/components/dialogs/FormDialog'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
@@ -19,8 +19,7 @@ export default function AccountPage() {
   const [account, setAccount] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const deletion = useFormFields({ 'delete-password': '' })
-  const deletionForm = useRef(null)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [askingDelete, setAskingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
 
@@ -50,30 +49,32 @@ export default function AccountPage() {
     await logOut()
   }
 
-  // The password is checked here first, then the dialog asks once more
-  const handleDeleteSubmit = (e) => {
-    e.preventDefault()
-    if (deleting) return
-    const valid = deletion.validate(e.currentTarget, {
-      'delete-password': validatePassword(deletion.values['delete-password']),
-    })
-    if (valid) setConfirmingDelete(true)
+  // Each time afresh: no password or message from an earlier try
+  const askToDelete = () => {
+    deletion.reset()
+    setDeleteError(null)
+    setAskingDelete(true)
   }
 
-  const handleDelete = async () => {
-    setConfirmingDelete(false)
+  // Typing the password in the dialog is the confirmation
+  const handleDelete = async (e) => {
+    const form = e.currentTarget
+    const valid = deletion.validate(form, {
+      'delete-password': validatePassword(deletion.values['delete-password']),
+    })
+    if (!valid) return
     setDeleteError(null)
     setDeleting(true)
     try {
       await deleteAccount(deletion.values['delete-password'])
     } catch (err) {
       // Nothing was deleted: a wrong password, or the server could not end
-      // the account's sessions. A session that has ended takes the user to
-      // the login page on its own.
+      // the account's sessions. The dialog stays for another try. A session
+      // that has ended takes the user to the login page on its own.
       setDeleting(false)
       if (err.response?.data?.error?.code === 'WRONG_PASSWORD') {
         // The field's own message, focused, like a failed submit's
-        deletion.validate(deletionForm.current, { 'delete-password': getErrorMessage(err) })
+        deletion.validate(form, { 'delete-password': getErrorMessage(err) })
       } else {
         setDeleteError(getErrorMessage(err))
       }
@@ -121,39 +122,33 @@ export default function AccountPage() {
       <section aria-labelledby="delete-heading">
         <h2 id="delete-heading">Delete account</h2>
         <p>Delete this account and everything in it. This cannot be undone.</p>
-        <form
-          ref={deletionForm}
-          onSubmit={handleDeleteSubmit}
-          noValidate
-          aria-labelledby="delete-heading"
-        >
-          <FormField
-            id="delete-password"
-            label="Password"
-            hint="Enter your password to confirm."
-            type="password"
-            autoComplete="current-password"
-            value={deletion.values['delete-password']}
-            onChange={deletion.handleChange}
-            error={deletion.errors['delete-password']}
-            readOnly={deleting}
-            required
-            maxLength={PASSWORD_MAX_LENGTH}
-          />
-          {deleteError && <div className="error-message" role="alert">{deleteError}</div>}
-          <button type="submit" aria-disabled={deleting} className="btn btn-danger">
-            {deleting ? 'Deleting...' : 'Delete account'}
-          </button>
-        </form>
-        {confirmingDelete && (
-          <ConfirmDialog
+        <button type="button" onClick={askToDelete} className="btn btn-danger">
+          Delete account
+        </button>
+        {askingDelete && (
+          <FormDialog
             title="Delete your account?"
-            confirmLabel="Delete account"
-            onConfirm={handleDelete}
-            onCancel={() => setConfirmingDelete(false)}
+            description="Your account and everything in it will be deleted. This cannot be undone."
+            submitLabel={deleting ? 'Deleting...' : 'Delete account'}
+            busy={deleting}
+            onSubmit={handleDelete}
+            onCancel={() => setAskingDelete(false)}
           >
-            <p>Your account and everything in it will be deleted. This cannot be undone.</p>
-          </ConfirmDialog>
+            <FormField
+              id="delete-password"
+              label="Password"
+              hint="Enter your password to confirm."
+              type="password"
+              autoComplete="current-password"
+              value={deletion.values['delete-password']}
+              onChange={deletion.handleChange}
+              error={deletion.errors['delete-password']}
+              readOnly={deleting}
+              required
+              maxLength={PASSWORD_MAX_LENGTH}
+            />
+            {deleteError && <div className="error-message" role="alert">{deleteError}</div>}
+          </FormDialog>
         )}
       </section>
     </div>
