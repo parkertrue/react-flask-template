@@ -35,6 +35,11 @@
   gap: 0.5rem;
 }
 
+/* A checkbox's label is a sentence, often with links: normal weight */
+.form-check .form-label {
+  font-weight: normal;
+}
+
 .form-checkbox {
   flex: none;
   width: 1.5rem;

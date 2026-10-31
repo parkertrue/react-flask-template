@@ -24,7 +24,7 @@ export default function LogoutButton() {
       type="button"
       onClick={handleLogout}
       aria-disabled={submitting}
-      className="btn btn-danger btn-small"
+      className="btn btn-secondary btn-small"
     >
       {submitting ? 'Logging out...' : 'Log out'}
     </button>
