@@ -93,6 +93,29 @@ jobs:
           docker compose --env-file .env.test -f docker-compose.test.yml \
             -f .github/smoke/platform.yml --profile platform down -v
 
+  # deploy.sh against a registry on the runner: good deploys, a failed start
+  # rolled back, a failed migration that leaves the running app alone, and
+  # its refusals (.github/scripts/smoke_deploy.py)
+  deploy:
+    name: Deploy smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate self-signed certificates
+        run: |
+          mkdir -p nginx/certs
+          openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+            -keyout nginx/certs/privkey.pem \
+            -out nginx/certs/fullchain.pem \
+            -subj "/CN=localhost"
+
+      - name: Deploy, fail and roll back
+        run: python3 .github/scripts/smoke_deploy.py
+
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest

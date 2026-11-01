@@ -1,0 +1,73 @@
+name: Publish images
+
+# Builds the backend and nginx images once per commit on main and pushes them
+# to GitHub's container registry, tagged by commit, for deploy.sh to pull
+# (docs/deployment.md, Redeploying). Branch protection runs every check on a
+# branch up to date with main before it merges, so main's commits are already
+# tested and nothing reruns here. Not a required check: it runs on main only.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Every commit gets its images, so a newer push never cancels an older one
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The one write token in the workflows: pushing to this repository's
+    # packages (DECISIONS.md)
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Registry names must be lowercase; an owner or repository name may not be
+      - name: Image names
+        id: names
+        run: echo "repository=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      # Provenance attestations need a BuildKit builder, not the Docker
+      # daemon's own
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # No build cache: a cache another run wrote could poison a published
+      # image. The labels name the commit, so an image tells where it came from.
+      - name: Backend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.repository }}/backend:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Nginx
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: nginx/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.names.outputs.repository }}/nginx:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

@@ -30,6 +30,11 @@ x-backend-hardening: &backend-hardening
 # .env.prod if 10.217.0.0/24 is already in use on the host.
 x-backend-address: &backend-address "${EDGE_SUBNET_PREFIX:-10.217.0}.10"
 
+# The app's images: built here by default, or pulled from a registry by
+# deploy.sh, which sets IMAGE_TAG in .env.deploy (IMAGE_REPOSITORY comes from
+# .env.prod). docs/deployment.md, Redeploying.
+x-backend-image: &backend-image ${IMAGE_REPOSITORY:-app}/backend:${IMAGE_TAG:-local}
+
 # What the app reads, interpolated from --env-file .env.prod, so the root
 # and migration passwords stay out. The URLs are built from .env.prod's
 # parts unless it sets the URL itself. APP_ENV is fixed by this file.
@@ -167,7 +172,7 @@ services:
   migrate:
     logging: *logging
     <<: [*security, *backend-hardening]
-    build: ./backend
+    image: *backend-image
     command: ["flask", "db", "upgrade"]
     environment:
       <<: *backend-env
@@ -195,6 +200,7 @@ services:
   backend:
     logging: *logging
     <<: [*security, *backend-hardening]
+    image: *backend-image
     build: ./backend
     environment: *backend-env
     # Looking up a stopped container's name (Redis or MySQL during an outage)
@@ -245,6 +251,7 @@ services:
   nginx:
     logging: *logging
     <<: *security
+    image: ${IMAGE_REPOSITORY:-app}/nginx:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: nginx/Dockerfile
