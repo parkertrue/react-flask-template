@@ -15,7 +15,7 @@ Only Nginx is published (ports 80 and 443). Nginx reaches only Flask; the bundle
 
 ## Environment File
 
-`.env.prod` holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either), and, on a server that pulls its images, `IMAGE_REPOSITORY` ([From the Registry](#from-the-registry)); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
+`.env.prod` holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
 openssl rand -hex 32
@@ -29,7 +29,7 @@ nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its
 
 ### Changing a Value Later
 
-The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` makes the next deploy fail at `migrate` within seconds (it logs in as the app's user to check its grants), and the app is down, answering 502 or 504, until the password is fixed; a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` too, and the running app keeps serving only if that deploy changes nothing else (see [Redeploying](#redeploying) for a deploy that keeps it serving whatever fails). Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d` (with `--env-file .env.deploy` after `.env.prod` on a server that deploys [from the registry](#from-the-registry)). With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
+The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` makes the next deploy fail at `migrate` within seconds (it logs in as the app's user to check its grants), and the app is down, answering 502 or 504, until the password is fixed; a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` too, and the running app keeps serving only if that deploy changes nothing else (see [Redeploying](#redeploying) for a deploy that keeps it serving whatever fails). Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d` (with `--env-file .env.deploy` after `.env.prod` on a server that deploys [with `deploy.sh`](#redeploying)). With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
 
 ```bash
 docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<user>'@'%' IDENTIFIED BY '<new password>'"
@@ -77,30 +77,26 @@ Let's Encrypt certificates expire after 90 days. Renew with `certbot renew` (the
 
 A one-shot `migrate` container applies migrations as the migration user and exits. The backend then starts Gunicorn as the app's user, whose credentials cannot change the schema (see [Database users](#environment-file)), and nginx starts once the backend passes its health check.
 
-Frontend and backend code are both copied into their images, so a code change needs new images. A server either pulls them from a registry, where CI published them ([From the Registry](#from-the-registry)), or builds them itself ([Building on the Host](#building-on-the-host)). Pick one per server. Either way, a migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release).
-
-### From the Registry
-
-CI's Publish job (`.github/workflows/publish.yml`) builds both images once for every commit of `main` and pushes them to GitHub's container registry as `ghcr.io/<owner>/<repo>/backend:<commit>` and `ghcr.io/<owner>/<repo>/nginx:<commit>`, the full commit hash. A server pulls the commit it is told to and builds nothing, so it runs exactly the images CI built. `deploy.sh`, at the repository root, does the deploy on any host that runs Docker:
+Frontend and backend code are both copied into their images, so a code change needs new images. `deploy.sh`, at the repository root, builds them on the server from the commit you name and deploys them, on any host that runs Docker:
 
 ```bash
 ./deploy.sh <commit>     # a commit of main, e.g. the newest: git fetch && git rev-parse origin/main
 ./deploy.sh --rollback   # the commit deployed before the current one
 ```
 
-1. It refuses to start without `IMAGE_REPOSITORY` in `.env.prod`, with uncommitted changes to tracked files in the clone, while another deploy runs, or for a commit that isn't on `origin/main`.
-2. It checks the clone out at the commit (detached), so the compose file and `db/init` match its images, and pulls them. If they aren't published yet, it switches back and nothing has changed.
+1. It refuses to start with uncommitted changes to tracked files in the clone, while another deploy runs, or for a commit that isn't on `origin/main`.
+2. It checks the clone out at the commit (detached), so the compose file and `db/init` match its code, and builds the backend and nginx images, tagged with the commit: `<project>-backend:<commit>` and `<project>-nginx:<commit>`, the full commit hash. The running app keeps serving while it builds. If the build fails, it switches back and nothing has changed.
 3. It runs `migrate`. If that fails, it switches back; the running app was never touched.
-4. It replaces the containers (`up -d --wait`) and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If either fails, it brings the previous commit back up the same way and exits with an error.
+4. It replaces the containers (`up -d --wait`) and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If either fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error.
+5. Once a deploy succeeds, it removes the app's images of every other commit but the one before, so a rollback builds nothing.
 
-`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed. Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose falls back to building its own images: `docker compose --env-file .env.prod --env-file .env.deploy ps`. Requests get a 502 or 504, or a refused connection, for a few seconds while the backend and nginx are replaced.
+A migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release).
 
-**The images stay private**, whether the repository is public or private: GitHub makes a new package private, whatever its repository's visibility, and nothing here changes that. A public image would hand its contents to anyone, which brings duties that running it on your own server does not ([Public images](#public-images)). So a server pulls with a read-only registry login, and needs one more credential only for a private repository:
+`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed. Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. Requests get a 502 or 504, or a refused connection, for a few seconds while the backend and nginx are replaced.
 
-| | Public repository | Private repository |
-|---|---|---|
-| Pulling the images | a registry login with a read-only token | the same |
-| `git fetch` | nothing | a read-only deploy key on the repository |
+**What the server needs.** Internet access while it builds (base images, Python and npm packages), and enough memory to build the frontend: a server with 1 GB can run out during the build, so add swap or pick a larger one. Docker's build cache grows with each deploy; `docker builder prune` clears it.
+
+**Building by hand** (the README's Build and Start, without `deploy.sh`): `build --provenance=false` keeps an unchanged image's ID. Under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so without the flag every rebuild gets a new ID and `up -d` replaces every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. (Compose 5.0 ignores `provenance: false` under the compose file's `build:`, so it stays a flag; older Compose versions lack it, so drop it there.) `deploy.sh` doesn't need it: each commit's images get new tags, so a deploy replaces the app containers anyway.
 
 **Setting a server up.**
 
@@ -116,14 +112,7 @@ CI's Publish job (`.github/workflows/publish.yml`) builds both images once for e
    sudo usermod -aG docker deploy
    ```
 
-2. Log in to the registry once, as the deploying user. On GitHub, create a classic personal access token with the `read:packages` scope alone (GitHub's container registry takes no fine-grained token), then paste it at the password prompt, never on the command line, where the shell's history would keep it:
-
-   ```bash
-   sudo -u deploy docker login ghcr.io -u <your GitHub user name>
-   ```
-
-   Docker keeps the login in that user's `~/.docker/config.json`, encoded but not encrypted. The token reads every package its account can see; a GitHub account of its own, with access to this repository alone, narrows it to this app's images.
-3. Clone the repository as that user. A public one:
+2. Clone the repository as that user. A public one:
 
    ```bash
    sudo -u deploy git clone https://github.com/<owner>/<repo>.git /home/deploy/app
@@ -138,31 +127,11 @@ CI's Publish job (`.github/workflows/publish.yml`) builds both images once for e
    sudo -u deploy git clone git@github.com:<owner>/<repo>.git /home/deploy/app
    ```
 
-4. Put `.env.prod` and `nginx/certs/` in the clone, owned by that user, with `chmod 600` on `.env.prod` and the key, and add `IMAGE_REPOSITORY=ghcr.io/<owner>/<repo>` to `.env.prod`, in lower case.
+3. Put `.env.prod` and `nginx/certs/` in the clone, owned by that user, with `chmod 600` on `.env.prod` and the key.
 
-Container storage on GitHub's registry is currently free, private images included; GitHub has said it will give a month's notice before that changes. Other registries (Amazon ECR, Docker Hub, a registry of your own) work too: push the same names from CI, log in to that registry instead, and set `IMAGE_REPOSITORY` to match. On ECS, the platform pulls the images itself, with the task's role and no stored login ([Deploying to a Platform](#deploying-to-a-platform)).
+On a container platform such as ECS, the platform pulls the images from a registry instead ([Deploying to a Platform](#deploying-to-a-platform)).
 
-#### Public Images
-
-Making the packages public (each package's settings on GitHub, "Change visibility") lets a server pull without logging in, but it gives the images to anyone, which running them yourself does not. Before you do:
-
-* The backend and nginx images are built on Debian and Alpine, whose packages include GPL and LGPL code (BusyBox in the nginx image, for one). Handing out those binaries brings the duty to provide their source, or a written offer of it, yourself.
-* Every license notice must ship in the image. `ordered-set`, a Flask-Limiter dependency, installs without its MIT license file, so add it.
-* Update the two entries in `.claude/skills/_audit-shared/DECISIONS.md` that rely on the images never leaving your servers ("Images are run, not distributed" and the `ordered-set` one), and run `/audit-legal`.
-
-CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script against a registry of its own: two good deploys, one whose nginx fails to start (rolled back), one whose migration fails (the running backend never replaced), a commit with no images, refusals, and `--rollback`.
-
-### Building on the Host
-
-A single `up -d --build` replaces the backend before `migrate` runs, so if `migrate` fails (a bad migration, a wrong password, an unreachable database), the app is down until it is fixed. Build and migrate first instead; the running app keeps serving through both, and each command stops the deploy if it fails:
-
-```bash
-docker compose --env-file .env.prod build --provenance=false \
-  && docker compose --env-file .env.prod up --exit-code-from migrate migrate \
-  && docker compose --env-file .env.prod up -d --wait
-```
-
-`--provenance=false` keeps an unchanged image's ID: under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so without the flag every rebuild gets a new ID and `up -d` replaces every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. (Compose 5.0 ignores `provenance: false` under the compose file's `build:`, so it stays a flag.) When the build changed an image, the last command replaces the backend and nginx, so requests get a 502 or 504, or a refused connection, for a few seconds.
+CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script on the runner: two good deploys, one whose nginx fails to start (rolled back from the images still there), one whose migration fails (the running backend never replaced), one that does not build, refusals, `--rollback`, and which images are kept.
 
 ---
 
@@ -225,7 +194,7 @@ The Compose stack is one way to run the app. The same two images also run on a c
 
 ### The Contract
 
-**Images.** CI's Publish job pushes both to GitHub's registry for every commit of `main`, for `linux/amd64` ([From the Registry](#from-the-registry)). For another registry, or `linux/arm64` (Graviton), build them for the platform's CPU and tag them with the commit, the same way:
+**Images.** Build both for the platform's CPU (`linux/amd64`, or `linux/arm64` for Graviton), tag them with the commit, and push them to a private registry the platform pulls from (Amazon ECR on ECS):
 
 ```bash
 docker build --platform linux/amd64 -t <registry>/<repo>/backend:<sha> backend

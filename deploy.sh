@@ -1,13 +1,14 @@
 #!/bin/bash
-# Deploys one commit of main from the registry, or rolls back to the one
-# before (docs/deployment.md, Redeploying):
+# Deploys one commit of main, or rolls back to the one before
+# (docs/deployment.md, Redeploying):
 #
-#   ./deploy.sh <commit>     deploy that commit's images
+#   ./deploy.sh <commit>     build that commit's images and deploy them
 #   ./deploy.sh --rollback   deploy the previously deployed commit again
 #
 # Run it as a user who can run Docker, in a clone that user owns, beside
-# .env.prod, which must set IMAGE_REPOSITORY. Nothing is built here: CI
-# publishes each commit of main as IMAGE_REPOSITORY/{backend,nginx}:<commit>.
+# .env.prod. The images are built here, from the commit, and tagged with it
+# (<project>-backend:<commit>, <project>-nginx:<commit>); the deployed and
+# previous commits' images are kept, so a rollback builds nothing.
 #
 # The checkout moves to the commit, so the compose file and db/init match its
 # images; migrate runs before anything is replaced, so a failed migration
@@ -41,6 +42,40 @@ compose() { IMAGE_TAG="$tag" docker compose --env-file .env.prod "$@"; }
 
 checkout() { git -c advice.detachedHead=false checkout --quiet --detach "$1"; }
 
+# The app's two images, without their tag
+repositories() {
+    local project
+    project=$(compose config | sed -n 's/^name: //p')
+    echo "$project-backend" "$project-nginx"
+}
+
+# Builds the checked-out commit's images, unless they are still here from
+# an earlier deploy
+build() {
+    local repository
+    for repository in $(repositories); do
+        if ! docker image inspect "$repository:$tag" > /dev/null 2>&1; then
+            log "building $tag"
+            compose build backend nginx
+            return
+        fi
+    done
+    log "using the images already built for $tag"
+}
+
+# Removes every tag of the app's images but the two commits kept
+prune() {
+    local repository image
+    for repository in $(repositories); do
+        for image in $(docker image ls --format '{{.Repository}}:{{.Tag}}' "$repository"); do
+            case "$image" in
+                "$repository:$1" | "$repository:$2") ;;
+                *) docker image rm "$image" > /dev/null || log "could not remove $image" ;;
+            esac
+        done
+    done
+}
+
 # Through nginx, as a browser arrives, at the first name it serves
 healthy() {
     local host
@@ -60,7 +95,6 @@ start() { compose up -d --no-build --wait --wait-timeout "$WAIT_SECONDS" && heal
 
 [ $# -eq 1 ] || die "usage: $0 <commit> | --rollback"
 [ -f .env.prod ] || die ".env.prod not found"
-grep -q '^IMAGE_REPOSITORY=.' .env.prod || die "set IMAGE_REPOSITORY in .env.prod"
 [ -z "$(git status --porcelain --untracked-files=no)" ] \
     || die "the clone has uncommitted changes; deploy from a clean clone"
 
@@ -91,9 +125,9 @@ tag=$target
 log "deploying $tag"
 
 checkout "$tag"
-if ! compose pull --quiet migrate backend nginx; then
+if ! build; then
     checkout "$was"
-    die "could not pull the images for $tag (not published yet?); nothing changed"
+    die "could not build the images for $tag; nothing changed"
 fi
 
 if ! compose up --no-build --exit-code-from migrate migrate; then
@@ -104,6 +138,8 @@ fi
 
 if start; then
     write_state "$tag" "$current" "$failed"
+    # The deploy succeeded whatever the cleanup does
+    prune "$tag" "$current" || log "could not remove the older images"
     log "deployed $tag"
     exit 0
 fi
@@ -118,7 +154,7 @@ fi
 log "rolling back to $current"
 checkout "$current"
 tag=$current
-if start; then
+if build && start; then
     write_state "$current" "$previous" "$target"
     die "$target failed and was rolled back; $current is serving"
 fi

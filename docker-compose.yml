@@ -30,10 +30,10 @@ x-backend-hardening: &backend-hardening
 # .env.prod if 10.217.0.0/24 is already in use on the host.
 x-backend-address: &backend-address "${EDGE_SUBNET_PREFIX:-10.217.0}.10"
 
-# The app's images: built here by default, or pulled from a registry by
-# deploy.sh, which sets IMAGE_TAG in .env.deploy (IMAGE_REPOSITORY comes from
-# .env.prod). docs/deployment.md, Redeploying.
-x-backend-image: &backend-image ${IMAGE_REPOSITORY:-app}/backend:${IMAGE_TAG:-local}
+# The app's images, named after the project and tagged with the commit
+# deploy.sh built them from (IMAGE_TAG, in .env.deploy), so the previous
+# commit's images stay for a rollback. docs/deployment.md, Redeploying.
+x-backend-image: &backend-image ${COMPOSE_PROJECT_NAME}-backend:${IMAGE_TAG:-local}
 
 # What the app reads, interpolated from --env-file .env.prod, so the root
 # and migration passwords stay out. The URLs are built from .env.prod's
@@ -251,7 +251,7 @@ services:
   nginx:
     logging: *logging
     <<: *security
-    image: ${IMAGE_REPOSITORY:-app}/nginx:${IMAGE_TAG:-local}
+    image: ${COMPOSE_PROJECT_NAME}-nginx:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: nginx/Dockerfile

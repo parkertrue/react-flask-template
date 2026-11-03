@@ -137,16 +137,17 @@ MIT (a Flask-Limiter dependency), and its wheel has no license file in
 applies to copies handed to others, and the backend image only runs on the
 operator's own server. The frontend's notices do ship
 (`third-party-licenses.txt`), since every visitor receives the bundle.
-*Revisit when:* the Publish job's packages are made public, or images are
-shipped to anyone else to run.
+*Revisit when:* images are pushed anywhere others can pull them, or shipped
+to anyone else to run.
 
 **Images are run, not distributed.** The MySQL image, and the Debian and
 Alpine userlands under the backend and nginx images, contain GPL and LGPL
 code. Running them on the operator's own servers creates no duty; only
 handing the built images to someone else would bring source-offer duties.
-Pushing them to a private registry for one's own deploys, as the Publish job
-does, is not distribution. *Revisit when:* the Publish job's packages are
-made public, or images are shipped to anyone else to run.
+`deploy.sh` builds them on the server and pushes them nowhere; pushing them
+to a private registry for one's own deploys (a platform's, such as ECR) is
+not distribution either. *Revisit when:* images are pushed anywhere others
+can pull them, or shipped to anyone else to run.
 
 **Redis 8 is used unmodified under its tri-license.** Redis 8 is licensed
 under RSALv2, SSPLv1 or AGPLv3, at the user's choice. The stack runs the
@@ -385,23 +386,21 @@ register, refresh, account deletion) count in Redis and stay exact. Exact
 limits at the edge belong to the load balancer's WAF. *Revisit when:* a
 deployment runs enough tasks that the multiplied budget matters.
 
-**Published images: one write token, and a second build of the tested
-tree.** The Publish job (`.github/workflows/publish.yml`) holds `packages:
-write`, the only write token in the workflows, in that job alone. It runs on
-pushes to `main`, never on pull requests, so no fork's code reaches it, and
-it builds without a cache another run could have written. It rebuilds
-`main`'s commit rather than publishing the images E2E tested: branch
-protection already ran every check on that same tree (the branch must be up
-to date), and publishing from the test jobs would tie the registry to the
-test stack. The packages stay private (GitHub's default for a new package,
-whatever the repository's visibility), so the images are still run, not
-distributed ("Images are run, not distributed" and the `ordered-set` entry
-hold), at the cost of a read-only
-registry login on each server (`docs/deployment.md`, "From the Registry",
-which lists what making them public would take). A base image's security patch reaches the published
-images only with the next commit on `main`; nothing republishes on a
-schedule. *Revisit when:* an image must be byte for byte the one tested, or
-a base-image fix has to ship with no commit to carry it.
+**Deploys build on the server, not in CI.** `deploy.sh` builds the
+commit it deploys on the server itself, so the images that run are a second
+build of the tree CI tested, not the images it tested: branch protection ran
+every check on that same tree, and the lockfiles pin what the build
+installs. A registry fed by CI would mean either public images (GitHub makes
+a public repository's packages public: distribution, see "Images are run,
+not distributed") or a manual, per-package setup and a registry login on
+every server. The cost is building on the server (internet access, memory
+for the frontend build, a few minutes per deploy while the old version
+serves). A base image's security patch reaches the server only with the
+next deployed commit; nothing rebuilds on a schedule, and redeploying the
+deployed commit changes nothing. *Revisit when:* an image must be byte for
+byte the one tested, servers are too small to build, a base-image fix has to
+ship with no commit to carry it, or deploys move to a platform that pulls
+from a registry.
 
 ## Deferred until the app grows
 
