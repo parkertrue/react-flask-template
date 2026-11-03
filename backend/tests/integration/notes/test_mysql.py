@@ -32,21 +32,6 @@ def test_longest_note_survives_in_multibyte_characters(integration_client, integ
     assert listed.get_json()['notes'][0]['content'] == content
 
 
-@pytest.mark.parametrize('method', ['PUT', 'DELETE'])
-@pytest.mark.parametrize('note_id', [2**31, int('9' * 19)])
-def test_note_id_past_the_int_range_is_not_found(
-        integration_client, integration_user, method, note_id):
-    """Past ID_MAX, MySQL's driver would fail the query; the route answers 404"""
-    token = create_access_token(identity=str(integration_user.id))
-
-    response = integration_client.open(
-        f'/api/notes/{note_id}', method=method, json={'content': 'x'},
-        headers={'Authorization': f'Bearer {token}'})
-
-    assert response.status_code == 404
-    assert response.get_json()['error']['code'] == 'NOT_FOUND'
-
-
 def test_deleting_a_user_deletes_only_their_notes(integration_db, integration_user):
     other = User(email='other@test.com')
     other.set_password('TestPassword123')

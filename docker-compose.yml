@@ -30,6 +30,11 @@ x-backend-hardening: &backend-hardening
 # .env.prod if 10.217.0.0/24 is already in use on the host.
 x-backend-address: &backend-address "${EDGE_SUBNET_PREFIX:-10.217.0}.10"
 
+# The app's images, named after the project and tagged with the commit
+# deploy.sh built them from (IMAGE_TAG, in .env.deploy), so the previous
+# commit's images stay for a rollback. docs/deployment.md, Redeploying.
+x-backend-image: &backend-image ${COMPOSE_PROJECT_NAME}-backend:${IMAGE_TAG:-local}
+
 # What the app reads, interpolated from --env-file .env.prod, so the root
 # and migration passwords stay out. The URLs are built from .env.prod's
 # parts unless it sets the URL itself. APP_ENV is fixed by this file.
@@ -42,7 +47,7 @@ x-backend-env: &backend-env
 services:
   # The bundled MySQL and Redis run under profiles that .env.prod.example's
   # COMPOSE_PROFILES turns on. To use an external one instead, set its URLs
-  # in .env.prod and drop its profile (README, External Database or Redis);
+  # in .env.prod and drop its profile (docs/deployment.md, External Database or Redis);
   # every depends_on on them is required: false, so nothing waits for a
   # service that isn't there.
   db:
@@ -167,7 +172,7 @@ services:
   migrate:
     logging: *logging
     <<: [*security, *backend-hardening]
-    build: ./backend
+    image: *backend-image
     command: ["flask", "db", "upgrade"]
     environment:
       <<: *backend-env
@@ -195,6 +200,7 @@ services:
   backend:
     logging: *logging
     <<: [*security, *backend-hardening]
+    image: *backend-image
     build: ./backend
     environment: *backend-env
     # Looking up a stopped container's name (Redis or MySQL during an outage)
@@ -222,12 +228,15 @@ services:
     stop_grace_period: 35s
     healthcheck:
       # start_period covers the entrypoint's wait-for-services, which gives up
-      # after the same 60s (TIMEOUT_SECONDS in backend/wait_for_services.py)
+      # after the same 60s (TIMEOUT_SECONDS in backend/wait_for_services.py);
+      # start_interval checks every second until then, so a deploy's nginx
+      # follows a new backend within a second of it serving
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 60s
+      start_interval: 1s
     # Sized for gunicorn's default 2 workers x 4 threads (backend/Dockerfile).
     # To scale, add WEB_CONCURRENCY to this service's environment (merge it
     # with <<: *backend-env) at about one worker per CPU, and raise cpus to
@@ -245,6 +254,7 @@ services:
   nginx:
     logging: *logging
     <<: *security
+    image: ${COMPOSE_PROJECT_NAME}-nginx:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: nginx/Dockerfile

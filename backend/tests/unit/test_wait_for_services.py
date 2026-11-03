@@ -324,8 +324,8 @@ def test_production_refuses_an_app_user_that_may_change_the_schema(production, c
     assert logged(capsys)[-1] == ('ERROR', (
         "DATABASE_URL's user may do more than read and write rows in its own database: "
         "GRANT ALL PRIVILEGES ON `app`.* TO `app`@`%`. Give the app a user with "
-        "SELECT, INSERT, UPDATE and DELETE on its database alone (README, External "
-        "Database or Redis)"))
+        "SELECT, INSERT, UPDATE and DELETE on its database alone (docs/deployment.md, "
+        "External Database or Redis)"))
 
 
 def test_the_migrate_job_checks_the_app_user_not_its_own(production, monkeypatch):

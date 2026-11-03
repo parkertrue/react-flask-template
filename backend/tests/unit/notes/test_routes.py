@@ -165,7 +165,7 @@ class TestNotesPagination:
 
     @pytest.mark.parametrize('query', [
         '?limit=0', '?limit=101', '?limit=abc', '?before=0', '?before=x',
-        # Past the largest INT id (ID_MAX), which the driver would overflow
+        # Past the largest INT id (ID_MAX); 19 nines is past SQLite's 2**63 too
         f'?before={2**31}', f'?before={"9" * 19}',
         # Unknown keys, a typo or a guess at someone else's notes
         '?befor=5', '?user_id=1'])
@@ -512,6 +512,8 @@ class TestDeleteNote:
 class TestNoteIds:
     """The id in /api/notes/<id> is a positive INT, or the route is not found"""
 
+    # 19 nines is past SQLite's 2**63, which would fail the query without
+    # get_own_note_or_404's ID_MAX check
     @pytest.mark.parametrize('note_id', ['0', '-1', 'abc', '1.5', str(2**31), '9' * 19])
     @pytest.mark.parametrize('method, body', [('PUT', {'content': 'x'}), ('DELETE', None)])
     def test_out_of_range_id_is_not_found(

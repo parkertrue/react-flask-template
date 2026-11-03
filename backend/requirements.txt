@@ -77,7 +77,7 @@ pymysql==1.2.3
     # via -r requirements.in
 redis==8.1.0
     # via -r requirements.in
-sqlalchemy==2.1.4
+sqlalchemy==2.1.5
     # via
     #   -r requirements.in
     #   alembic

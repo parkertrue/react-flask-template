@@ -3,7 +3,8 @@
   max-width: 600px;
 }
 
-.home-content p {
+/* The page's own paragraphs, not those of a component inside it */
+.home-content > p {
   margin-bottom: 2rem;
 }
 

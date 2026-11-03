@@ -4,7 +4,7 @@
 # /docker-entrypoint-initdb.d, which runs it once, when the data volume is
 # first created: after the image has made MYSQL_DATABASE and MYSQL_USER (the
 # migration user, which owns the schema) and before it accepts connections
-# from outside. To change a user later, see README, "Changing a value later".
+# from outside. To change a user later, see docs/deployment.md, "Changing a Value Later".
 #
 # The image sources this file, or runs it when it is executable (as files
 # mounted from Windows are), so it relies on none of the image's own shell

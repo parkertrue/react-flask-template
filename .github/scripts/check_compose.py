@@ -4,8 +4,8 @@ CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins the
-production backend's wait for `migrate` to succeed, which README's deploy
-(migrate first, then `up -d`) relies on. Each file is read as
+production backend's wait for `migrate` to succeed, which the deploy in
+docs/deployment.md (migrate first, then `up -d`) relies on. Each file is read as
 `docker compose config` resolves it, anchors and merges applied.
 """
 import json

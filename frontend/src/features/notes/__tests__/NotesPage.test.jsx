@@ -87,7 +87,7 @@ describe('NotesPage', () => {
       expect(createNote).toHaveBeenCalledWith('Fresh')
       expect(listed()[0]).toContain('Fresh')
       expect(screen.getByLabelText('New note')).toHaveValue('')
-      expect(announced()).toHaveTextContent('Note #2 added')
+      expect(announced()).toHaveTextContent('Note added')
     })
 
     it('announces the error and keeps the text when saving fails', async () => {
@@ -155,9 +155,9 @@ describe('NotesPage', () => {
 
       expect(await screen.findByText('Older')).toBeInTheDocument()
       expect(fetchNotes).toHaveBeenLastCalledWith(2)
-      expect(listed().map(text => text.replace(/\(#\d+\)$/, ''))).toEqual(['Newer', 'Older'])
+      expect(listed()).toEqual(['Newer', 'Older'])
       expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Edit note #1' })).toHaveFocus()
+      expect(screen.getByRole('button', { name: 'Edit', description: 'Older' })).toHaveFocus()
       expect(announced()).toHaveTextContent('All notes loaded')
     })
 
@@ -177,9 +177,9 @@ describe('NotesPage', () => {
     // The rest were deleted in another tab, say
     it.each([
       ['the last note', async () => {},
-        () => screen.getByRole('button', { name: 'Edit note #2' })],
+        () => screen.getByRole('button', { name: 'Edit', description: 'Only' })],
       ['the heading once no note is left', async user => {
-        await user.click(screen.getByRole('button', { name: 'Delete note #2' }))
+        await user.click(screen.getByRole('button', { name: 'Delete', description: 'Only' }))
         await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
         await noNotesYet()
       }, () => screen.getByRole('heading', { level: 1, name: 'My notes' })],
@@ -229,12 +229,16 @@ describe('NotesPage', () => {
   })
 
   describe('editing a note', () => {
-    const editButton = id => screen.getByRole('button', { name: `Edit note #${id}` })
-    const editField = id => screen.getByRole('textbox', { name: `Edit note #${id}` })
+    // A row's buttons are told apart by the note's text, which describes them
+    const editButton = text => screen.getByRole('button', { name: 'Edit', description: text })
+    // The one note open for editing
+    const editField = () => screen.getByRole('textbox', { name: 'Edit note' })
 
-    async function startEditing(user, id) {
-      await user.click(await screen.findByRole('button', { name: `Edit note #${id}` }))
-      return editField(id)
+    async function startEditing(user, text) {
+      const button = await screen.findByRole('button', { name: 'Edit', description: text })
+      const row = rowOf(button)
+      await user.click(button)
+      return within(row).getByRole('textbox', { name: 'Edit note' })
     }
 
     beforeEach(() => {
@@ -245,7 +249,7 @@ describe('NotesPage', () => {
       updateNote.mockResolvedValue(note({ id: 1, content: 'First, edited' }))
       const user = renderPage()
 
-      const field = await startEditing(user, 1)
+      const field = await startEditing(user, 'First')
       expect(field).toHaveValue('First')
       expect(field).toHaveFocus()
 
@@ -254,10 +258,10 @@ describe('NotesPage', () => {
 
       expect(await screen.findByText('First, edited')).toBeInTheDocument()
       expect(updateNote).toHaveBeenCalledWith(1, 'First, edited')
-      expect(screen.queryByRole('textbox', { name: 'Edit note #1' })).not.toBeInTheDocument()
-      expect(editButton(1)).toHaveFocus()
-      expect(listed()).toEqual(['Second(#2)', 'First, edited(#1)'])
-      expect(announced()).toHaveTextContent('Note #1 saved')
+      expect(screen.queryByRole('textbox', { name: 'Edit note' })).not.toBeInTheDocument()
+      expect(editButton('First, edited')).toHaveFocus()
+      expect(listed()).toEqual(['Second', 'First, edited'])
+      expect(announced()).toHaveTextContent('Note saved')
     })
 
     it.each([
@@ -265,19 +269,19 @@ describe('NotesPage', () => {
       ['Escape', user => user.keyboard('{Escape}')],
     ])('drops the change on %s and returns focus to Edit', async (_, cancel) => {
       const user = renderPage()
-      await user.type(await startEditing(user, 1), ' changed')
+      await user.type(await startEditing(user, 'First'), ' changed')
 
       await cancel(user)
 
-      expect(screen.queryByRole('textbox', { name: 'Edit note #1' })).not.toBeInTheDocument()
-      expect(editButton(1)).toHaveFocus()
-      expect(listed()).toEqual(['Second(#2)', 'First(#1)'])
+      expect(screen.queryByRole('textbox', { name: 'Edit note' })).not.toBeInTheDocument()
+      expect(editButton('First')).toHaveFocus()
+      expect(listed()).toEqual(['Second', 'First'])
       expect(updateNote).not.toHaveBeenCalled()
     })
 
     it('refuses an empty note, explaining why on the field', async () => {
       const user = renderPage()
-      const field = await startEditing(user, 1)
+      const field = await startEditing(user, 'First')
 
       await user.clear(field)
       await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -291,14 +295,14 @@ describe('NotesPage', () => {
     it('announces a failed save in its row and keeps the edit open with the text', async () => {
       updateNote.mockRejectedValue(failure('Could not save'))
       const user = renderPage()
-      await user.type(await startEditing(user, 1), ' changed')
+      await user.type(await startEditing(user, 'First'), ' changed')
 
       await user.click(screen.getByRole('button', { name: 'Save' }))
 
       const alert = await screen.findByRole('alert')
       expect(alert).toHaveTextContent('Could not save')
-      expect(rowOf(editField(1))).toContainElement(alert)
-      expect(editField(1)).toHaveValue('First changed')
+      expect(rowOf(editField())).toContainElement(alert)
+      expect(editField()).toHaveValue('First changed')
       expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'false')
 
       await user.keyboard('{Escape}')
@@ -309,20 +313,21 @@ describe('NotesPage', () => {
       let finish
       updateNote.mockImplementation(() => new Promise(resolve => { finish = resolve }))
       const user = renderPage()
-      await startEditing(user, 1)
+      await startEditing(user, 'First')
       await user.click(screen.getByRole('button', { name: 'Save' }))
 
-      const other = await startEditing(user, 2)
+      const other = await startEditing(user, 'Second')
       await act(async () => finish(note({ id: 1, content: 'First' })))
 
-      expect(screen.queryByRole('textbox', { name: 'Edit note #1' })).not.toBeInTheDocument()
+      // Only the other note's edit is left open
+      expect(screen.getAllByRole('textbox', { name: 'Edit note' })).toEqual([other])
       expect(other).toHaveFocus()
     })
 
     it('holds the edit open while saving: no second save, no cancel', async () => {
       updateNote.mockReturnValue(new Promise(() => {}))
       const user = renderPage()
-      await startEditing(user, 1)
+      await startEditing(user, 'First')
 
       await user.click(screen.getByRole('button', { name: 'Save' }))
       await user.click(screen.getByRole('button', { name: 'Saving...' }))
@@ -331,17 +336,17 @@ describe('NotesPage', () => {
 
       expect(screen.getByRole('button', { name: 'Saving...' })).toHaveAttribute('aria-disabled', 'true')
       expect(screen.getByRole('button', { name: 'Cancel' })).toHaveAttribute('aria-disabled', 'true')
-      expect(editField(1)).toHaveAttribute('readonly')
+      expect(editField()).toHaveAttribute('readonly')
       expect(updateNote).toHaveBeenCalledTimes(1)
     })
   })
 
   describe('deleting a note', () => {
-    const deleteButton = id => screen.getByRole('button', { name: `Delete note #${id}` })
+    const deleteButton = text => screen.getByRole('button', { name: 'Delete', description: text })
     const dialog = () => screen.getByRole('dialog', { name: 'Delete this note?' })
 
-    async function confirmDelete(user, id) {
-      await user.click(await screen.findByRole('button', { name: `Delete note #${id}` }))
+    async function confirmDelete(user, text) {
+      await user.click(await screen.findByRole('button', { name: 'Delete', description: text }))
       await user.click(within(dialog()).getByRole('button', { name: 'Delete' }))
     }
 
@@ -349,7 +354,7 @@ describe('NotesPage', () => {
       fetchNotes.mockResolvedValue(notesPage([{ id: 1, content: 'Maybe' }]))
       const user = renderPage()
 
-      await user.click(await screen.findByRole('button', { name: 'Delete note #1' }))
+      await user.click(await screen.findByRole('button', { name: 'Delete', description: 'Maybe' }))
 
       expect(dialog()).toHaveAccessibleDescription('“Maybe” This cannot be undone.')
       expect(within(dialog()).getByRole('button', { name: 'Cancel' })).toHaveFocus()
@@ -362,31 +367,31 @@ describe('NotesPage', () => {
     ])('keeps the note on %s and returns focus to Delete', async (_, cancel) => {
       fetchNotes.mockResolvedValue(notesPage([{ id: 1, content: 'Kept' }]))
       const user = renderPage()
-      await user.click(await screen.findByRole('button', { name: 'Delete note #1' }))
+      await user.click(await screen.findByRole('button', { name: 'Delete', description: 'Kept' }))
 
       await cancel(user)
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(screen.getByText('Kept')).toBeInTheDocument()
-      expect(deleteButton(1)).toHaveFocus()
+      expect(deleteButton('Kept')).toHaveFocus()
       expect(deleteNote).not.toHaveBeenCalled()
     })
 
     it.each([
-      ['the next note', 2, 'Edit note #1'],
-      ['the previous note once the last row goes', 1, 'Edit note #2'],
+      ['the next note', 2, 'Note 1'],
+      ['the previous note once the last row goes', 1, 'Note 2'],
     ])('removes it once confirmed and moves focus to %s', async (_, id, focused) => {
       fetchNotes.mockResolvedValue(notesPage([3, 2, 1].map(n => ({ id: n, content: `Note ${n}` }))))
       deleteNote.mockResolvedValue()
       const user = renderPage()
 
-      await confirmDelete(user, id)
+      await confirmDelete(user, `Note ${id}`)
 
       expect(screen.queryByText(`Note ${id}`)).not.toBeInTheDocument()
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(deleteNote).toHaveBeenCalledWith(id)
-      expect(screen.getByRole('button', { name: focused })).toHaveFocus()
-      expect(announced()).toHaveTextContent(`Note #${id} deleted`)
+      expect(screen.getByRole('button', { name: 'Edit', description: focused })).toHaveFocus()
+      expect(announced()).toHaveTextContent('Note deleted')
     })
 
     it('moves focus to the heading once no note is left', async () => {
@@ -394,7 +399,7 @@ describe('NotesPage', () => {
       deleteNote.mockResolvedValue()
       const user = renderPage()
 
-      await confirmDelete(user, 1)
+      await confirmDelete(user, 'Only')
 
       expect(await noNotesYet()).toBeInTheDocument()
       expect(screen.getByRole('heading', { level: 1, name: 'My notes' })).toHaveFocus()
@@ -405,13 +410,13 @@ describe('NotesPage', () => {
       deleteNote.mockRejectedValue(failure('Could not delete'))
       const user = renderPage()
 
-      await confirmDelete(user, 1)
+      await confirmDelete(user, 'Kept')
 
       const alert = await screen.findByRole('alert')
       expect(alert).toHaveTextContent('Could not delete')
       expect(rowOf(screen.getByText('Kept'))).toContainElement(alert)
-      expect(deleteButton(1)).toHaveAttribute('aria-disabled', 'false')
-      expect(deleteButton(1)).toHaveFocus()
+      expect(deleteButton('Kept')).toHaveAttribute('aria-disabled', 'false')
+      expect(deleteButton('Kept')).toHaveFocus()
     })
 
     it('leaves focus where it is if the user moved to another note while deleting', async () => {
@@ -420,9 +425,9 @@ describe('NotesPage', () => {
       deleteNote.mockImplementation(() => new Promise(resolve => { finish = resolve }))
       const user = renderPage()
 
-      await confirmDelete(user, 1)
-      await user.click(screen.getByRole('button', { name: 'Edit note #2' }))
-      const other = screen.getByRole('textbox', { name: 'Edit note #2' })
+      await confirmDelete(user, 'Going')
+      await user.click(screen.getByRole('button', { name: 'Edit', description: 'Stays' }))
+      const other = screen.getByRole('textbox', { name: 'Edit note' })
       await act(async () => finish())
 
       expect(screen.queryByText('Going')).not.toBeInTheDocument()
@@ -434,16 +439,15 @@ describe('NotesPage', () => {
       deleteNote.mockReturnValue(new Promise(() => {}))
       const user = renderPage()
 
-      await confirmDelete(user, 1)
-      const busy = screen.getByRole('button', { name: 'Deleting note #1' })
+      await confirmDelete(user, 'Going')
+      const busy = screen.getByRole('button', { name: 'Deleting...', description: 'Going' })
       await user.click(busy)
-      await user.click(screen.getByRole('button', { name: 'Edit note #1' }))
+      await user.click(screen.getByRole('button', { name: 'Edit', description: 'Going' }))
 
       expect(busy).toHaveAttribute('aria-disabled', 'true')
-      expect(busy).toHaveTextContent('Deleting...')
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Edit note #1' })).toHaveAttribute('aria-disabled', 'true')
-      expect(screen.queryByRole('textbox', { name: 'Edit note #1' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Edit', description: 'Going' })).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.queryByRole('textbox', { name: 'Edit note' })).not.toBeInTheDocument()
       expect(deleteNote).toHaveBeenCalledTimes(1)
     })
   })

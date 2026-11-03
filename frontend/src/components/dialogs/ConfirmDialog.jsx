@@ -32,14 +32,14 @@ export default function ConfirmDialog({ title, children, confirmLabel, onConfirm
   return (
     <dialog
       ref={dialogRef}
-      className="confirm-dialog"
+      className="dialog"
       aria-labelledby={titleId}
       aria-describedby={bodyId}
       onClose={handleClose}
     >
       <h2 id={titleId}>{title}</h2>
-      <div id={bodyId} className="confirm-dialog-body">{children}</div>
-      <div className="confirm-dialog-actions">
+      <div id={bodyId} className="dialog-body">{children}</div>
+      <div className="dialog-actions">
         <button
           ref={cancelRef}
           type="button"

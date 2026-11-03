@@ -26,8 +26,8 @@ COPY nginx/servers /etc/nginx/servers
 # NGINX_MODE and trusts NGINX_TRUSTED_PROXIES' X-Forwarded-For (see the script)
 COPY --chmod=755 nginx/server-mode.sh /docker-entrypoint.d/25-server-mode.sh
 # tls: nginx is the edge and serves HTTPS with nginx/certs/. behind-proxy: a
-# load balancer terminates TLS and NGINX_TRUSTED_PROXIES must name it (README,
-# Deploying to a Platform).
+# load balancer terminates TLS and NGINX_TRUSTED_PROXIES must name it
+# (docs/deployment.md, Deploying to a Platform).
 ENV NGINX_MODE=tls
 # Production rate limits, per client IP; see templates/
 # The auth rate covers login and register together. Flask's own limits are

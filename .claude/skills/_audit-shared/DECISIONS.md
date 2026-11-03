@@ -16,7 +16,7 @@ when `DATABASE_URL`'s user holds more than row rights (`wait_for_services.py`),
 with no opt-out, so a provider that offers a single database user is
 unsupported (user's decision, 2026-10-21). TLS is required for any host but
 `db` and `redis`, the bundled services' names, so renaming those services
-means editing `config.py` too (README, "External Database or Redis"). One gap
+means editing `config.py` too (`docs/deployment.md`, "External Database or Redis"). One gap
 stays: a `MIGRATION_DATABASE_URL` set on the backend itself wins over
 `DATABASE_URL`, and the app then runs as the schema's owner; only the
 compose file's `environment:` lists keep it on `migrate`.
@@ -137,16 +137,17 @@ MIT (a Flask-Limiter dependency), and its wheel has no license file in
 applies to copies handed to others, and the backend image only runs on the
 operator's own server. The frontend's notices do ship
 (`third-party-licenses.txt`), since every visitor receives the bundle.
-*Revisit when:* images are pushed to a public registry or shipped to anyone
-else to run.
+*Revisit when:* images are pushed anywhere others can pull them, or shipped
+to anyone else to run.
 
 **Images are run, not distributed.** The MySQL image, and the Debian and
 Alpine userlands under the backend and nginx images, contain GPL and LGPL
 code. Running them on the operator's own servers creates no duty; only
 handing the built images to someone else would bring source-offer duties.
-Pushing them to a private registry for one's own deploys is not
-distribution. *Revisit when:* images are pushed to a public registry or
-shipped to anyone else to run.
+`deploy.sh` builds them on the server and pushes them nowhere; pushing them
+to a private registry for one's own deploys (a platform's, such as ECR) is
+not distribution either. *Revisit when:* images are pushed anywhere others
+can pull them, or shipped to anyone else to run.
 
 **Redis 8 is used unmodified under its tri-license.** Redis 8 is licensed
 under RSALv2, SSPLv1 or AGPLv3, at the user's choice. The stack runs the
@@ -169,7 +170,7 @@ attribution from derived apps.
 **Legal placeholders are not enforced at build.** Nothing stops a
 production image from serving the placeholder `OPERATOR` values in
 `frontend/src/legal.js`, `contact@example.com` in `security.txt`, or the
-"Placeholder" banner on the legal pages. README's "Before launch" list is
+"Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before launch" list is
 the only safeguard: a build check would have to tell the production image
 apart from the test stack's, which serves the same placeholders on purpose
 (LEGAL-21). *Revisit when:* the first real deployment is prepared.
@@ -378,12 +379,35 @@ its CPU limit instead. A managed platform's load balancer does this job there.
 *Revisit when:* one backend container is no longer enough (then several
 fixed addresses in the upstream, or a reload of nginx after every deploy).
 
+**A deploy is not zero-downtime.** With one backend, `deploy.sh` stops the old
+one before the new one starts: the old nginx keeps serving the page, but the
+API answers a JSON 502 or 504 until the new backend listens (measured on a
+4 GB VM: 8.5 s), and connections are refused for about a second while nginx
+itself is replaced. *Revisit when:* a deploy's API gap matters to users (then
+two backends, as above, started one after the other).
+
 **nginx's per-IP limits are per nginx.** On a platform, each task runs its
 own nginx beside its backend, so three tasks give one client three times the
 budget of `limit_req`/`limit_conn`. The backend's own limits (login,
 register, refresh, account deletion) count in Redis and stay exact. Exact
 limits at the edge belong to the load balancer's WAF. *Revisit when:* a
 deployment runs enough tasks that the multiplied budget matters.
+
+**Deploys build on the server, not in CI.** `deploy.sh` builds the
+commit it deploys on the server itself, so the images that run are a second
+build of the tree CI tested, not the images it tested: branch protection ran
+every check on that same tree, and the lockfiles pin what the build
+installs. A registry fed by CI would mean either public images (GitHub makes
+a public repository's packages public: distribution, see "Images are run,
+not distributed") or a manual, per-package setup and a registry login on
+every server. The cost is building on the server (internet access, memory
+for the frontend build, a few minutes per deploy while the old version
+serves). A base image's security patch reaches the server only with the
+next deployed commit; nothing rebuilds on a schedule, and redeploying the
+deployed commit changes nothing. *Revisit when:* an image must be byte for
+byte the one tested, servers are too small to build, a base-image fix has to
+ship with no commit to carry it, or deploys move to a platform that pulls
+from a registry.
 
 ## Deferred until the app grows
 
@@ -414,13 +438,15 @@ recovery check is blocked by the missing backups). They are not new findings.
   `AccountPage`.
 - **No deployment yet**, so these don't exist: automated backups and a
   restore procedure, server hardening (SSH, firewall, Fail2ban), certificate
-  auto-renewal, CD, monitoring, centralized logging, a CDN.
-- **README's production section waits for the first server.** The Let's
+  auto-renewal, an automatic deploy trigger (`deploy.sh` deploys one commit
+  when someone runs it), monitoring, centralized logging, a CDN.
+- **The production docs wait for the first server.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
-  nginx template (which breaks CI and the test stack if followed), README
-  doesn't list what production lacks, and there is no operator runbook
-  (detached start, status, rollback, TLS key rotation, a failed `up -d`;
-  README's Logs section covers reading logs). All three get written and
+  nginx template (which breaks CI and the test stack if followed), the docs
+  don't list what production lacks, and there is no operator runbook
+  (detached start, status, TLS key rotation, a failed `up -d`;
+  `docs/deployment.md` covers deploying and rolling back, in Redeploying,
+  and reading logs). All three get written and
   tried on a real server rather than on paper. Until then the docs and
   recovery checks don't report them.
 - **TLS between containers** is not needed while every service shares one

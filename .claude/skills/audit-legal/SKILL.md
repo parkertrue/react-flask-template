@@ -9,7 +9,7 @@ context: fork
 # /audit-legal
 
 First read `.claude/skills/_audit-shared/RULES.md` and follow it throughout.
-Then read `CLAUDE.md`, `README.md`, and `DECISIONS.md` from the same folder
+Then read `CLAUDE.md`, `README.md`, `docs/personal-data.md`, and `DECISIONS.md` from the same folder
 as RULES.md.
 
 **Scope:** `$ARGUMENTS`, one or more part names. If empty, run all six parts.

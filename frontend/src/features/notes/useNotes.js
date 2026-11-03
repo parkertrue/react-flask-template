@@ -82,7 +82,7 @@ export function useNotes() {
       // new one never turns up again on a later page.
       setNotes(prev => [newNote, ...prev])
       setError(null)
-      setStatus(`Note #${newNote.id} added`)
+      setStatus('Note added')
     } catch (err) {
       const failed = failure(err)
       setError(failed.message)
@@ -99,7 +99,7 @@ export function useNotes() {
     try {
       const updated = await updateNote(id, content)
       setNotes(prev => prev.map(note => note.id === id ? updated : note))
-      setStatus(`Note #${id} saved`)
+      setStatus('Note saved')
     } catch (err) {
       throw failure(err)
     }
@@ -112,7 +112,7 @@ export function useNotes() {
     try {
       await deleteNote(id)
       setNotes(prev => prev.filter(note => note.id !== id))
-      setStatus(`Note #${id} deleted`)
+      setStatus('Note deleted')
     } catch (err) {
       throw failure(err)
     }

@@ -59,7 +59,7 @@ Audits are **read-only** with respect to the repository:
     (persistent volumes, restart policies): `docker-compose.yml` with
     `-p app_audit`, an env file written to the scratch directory from
     `.env.prod.example` (keep its `COMPOSE_PROFILES` line: without it `db`
-    and `redis` don't start), with fresh random secrets (`python -c "import secrets; print(secrets.token_urlsafe(48))"`),
+    and `redis` don't start), with fresh random secrets (`openssl rand -hex 32`),
     `SERVER_NAME=localhost` and `EDGE_SUBNET_PREFIX=10.217.9` (the default
     `10.217.0` clashes with a local production stack's edge network, and
     the test stack uses `10.217.1`), plus a scratch override file that rebinds

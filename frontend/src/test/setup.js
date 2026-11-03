@@ -26,7 +26,7 @@ afterEach(() => {
 })
 
 // jsdom has <dialog> but none of its methods. This stands in for the part
-// ConfirmDialog uses: open, close with a return value (firing "close"), and
+// the dialogs use: open, close with a return value (firing "close"), and
 // Escape, which fires "cancel" and then closes. Playwright runs the real one.
 HTMLDialogElement.prototype.showModal = function () {
   this.returnValue = ''
