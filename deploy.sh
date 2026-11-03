@@ -56,7 +56,7 @@ build() {
     for repository in $(repositories); do
         if ! docker image inspect "$repository:$tag" > /dev/null 2>&1; then
             log "building $tag"
-            compose build --provenance=false backend nginx
+            compose build backend nginx
             return
         fi
     done
