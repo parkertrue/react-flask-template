@@ -381,8 +381,8 @@ fixed addresses in the upstream, or a reload of nginx after every deploy).
 
 **A deploy is not zero-downtime.** With one backend, `deploy.sh` stops the old
 one before the new one starts: the old nginx keeps serving the page, but the
-API answers a JSON 502 or 504 until the new backend listens (about 15 s on a
-small server), and connections are refused for a second or two while nginx
+API answers a JSON 502 or 504 until the new backend listens (measured on a
+4 GB VM: 8.5 s), and connections are refused for about a second while nginx
 itself is replaced. *Revisit when:* a deploy's API gap matters to users (then
 two backends, as above, started one after the other).
 
