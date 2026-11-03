@@ -116,7 +116,7 @@ E2E needs a [certificate](#https-certificate). Locally, Playwright reuses an E2E
 
 ### Continuous Integration
 
-GitHub Actions runs lint, every test suite and config checks on each push and pull request to `main`, and the integration and E2E suites nightly too. Each commit that lands on `main` is also published as the backend and nginx images, tagged by commit, to GitHub's container registry, as private packages, for a server to [deploy from](docs/deployment.md#from-the-registry) with a read-only login. Dependabot opens weekly update PRs; for security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under Settings > Advanced Security, and turn off "Dismiss low impact alerts" under Dependabot rules.
+GitHub Actions runs lint, every test suite and config checks on each push and pull request to `main`, and the integration and E2E suites nightly too. Dependabot opens weekly update PRs; for security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under Settings > Advanced Security, and turn off "Dismiss low impact alerts" under Dependabot rules.
 
 To stop a failing check from merging, require these status checks on `main` (Settings > Branches): Backend unit, Frontend unit, Scaffold, Compose files, Workflows, Dockerfiles, Nginx config, Backend integration, Platform smoke, Deploy smoke and Playwright E2E.
 
@@ -154,7 +154,7 @@ docker compose --env-file .env.prod build --provenance=false
 docker compose --env-file .env.prod up
 ```
 
-The app is at `https://<SERVER_NAME>`. This builds the images on the host. On a server, deploy the images CI publishes instead, with `deploy.sh`, which rolls back by itself when a deploy fails: see [Redeploying](docs/deployment.md#redeploying).
+The app is at `https://<SERVER_NAME>`. On a server, deploy with `deploy.sh` instead, which builds one commit of `main`, migrates first, and rolls back by itself when a deploy fails: see [Redeploying](docs/deployment.md#redeploying).
 
 **Stop:** `docker compose --env-file .env.prod down`. **Full reset** (⚠️ deletes the database): add `--volumes --remove-orphans`.
 

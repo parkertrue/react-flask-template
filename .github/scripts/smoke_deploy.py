@@ -1,13 +1,13 @@
-"""Deploy, fail and roll back with deploy.sh, against a registry of its own.
+"""Deploy, fail and roll back with deploy.sh.
 
 CI's Deploy smoke job runs this. It copies the working tree into a fresh
-clone of a throwaway origin, commits a few versions to its main (a good one,
-a second good one, one whose nginx stops at start, one whose migration
-fails), builds each commit's images and pushes them to a registry on
-localhost, as CI's Publish job does to GHCR. Then it runs deploy.sh through
-each case and checks what it left running, the checkout and .env.deploy.
-Every failed check is printed, then it exits 1. Needs Docker, git, bash,
-curl, and a certificate pair in nginx/certs/; ports 80 and 443 must be free.
+clone of a throwaway origin and commits a few versions to its main (a good
+one, a second good one, one whose nginx stops at start, one whose migration
+fails, one that does not build). Then it runs deploy.sh through each case
+and checks what it left running, the images it kept, the checkout and
+.env.deploy. Every failed check is printed, then it exits 1. Needs Docker,
+git, bash, curl, and a certificate pair in nginx/certs/; ports 80 and 443
+must be free.
 """
 import secrets
 import shutil
@@ -18,12 +18,8 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-REGISTRY_PORT = 5057
-REGISTRY_IMAGE = ('registry:3.0.0@sha256:'
-                  '6c5666b861f3505b116bb9aa9b25175e71210414bd010d92035ff64018f9457e')
-REGISTRY_NAME = 'deploy-smoke-registry'
-IMAGE_REPOSITORY = f'localhost:{REGISTRY_PORT}/app'
-# Its own subnet, so it can run beside a local test stack
+# Its own project and subnet, so it can run beside a local stack
+PROJECT = 'deploy_smoke'
 EDGE_SUBNET_PREFIX = '10.217.8'
 
 failures = []
@@ -82,15 +78,6 @@ class Clone:
         assert text.count(old) == 1, f'{name}: {old!r}'
         self.write(name, text.replace(old, new))
 
-    def publish(self, sha):
-        """Build sha's images and push them, as the Publish job does"""
-        self.git('checkout', '--quiet', '--detach', sha)
-        for name, args in (('backend', ['backend']), ('nginx', ['-f', 'nginx/Dockerfile', '.'])):
-            image = f'{IMAGE_REPOSITORY}/{name}:{sha}'
-            run('docker', 'build', '--quiet', '-t', image, *args, cwd=self.path)
-            run('docker', 'push', '--quiet', image)
-        self.git('checkout', '--quiet', 'main')
-
     def deploy(self, *args):
         # By PATH: Windows would run System32's bash (WSL) for a bare name
         result = run(shutil.which('bash'), 'deploy.sh', *args, cwd=self.path, check=False)
@@ -124,13 +111,13 @@ def env_file():
         elif value.startswith('your_'):
             value = secrets.token_hex(32)
         lines.append(f'{key}={value}')
-    lines += [f'IMAGE_REPOSITORY={IMAGE_REPOSITORY}', f'EDGE_SUBNET_PREFIX={EDGE_SUBNET_PREFIX}']
+    lines += [f'COMPOSE_PROJECT_NAME={PROJECT}', f'EDGE_SUBNET_PREFIX={EDGE_SUBNET_PREFIX}']
     return '\n'.join(lines) + '\n'
 
 
 def running(service):
     """(image, container id) of the stack's container for service"""
-    name = f'app-{service}-1'
+    name = f'{PROJECT}-{service}-1'
     out = run('docker', 'inspect', '-f', '{{.Config.Image}} {{.Id}}', name, check=False).stdout.split()
     return tuple(out) if len(out) == 2 else (None, None)
 
@@ -138,11 +125,17 @@ def running(service):
 def serving(clone, sha):
     """Whether sha's images run and answer through nginx"""
     images = (running('backend')[0], running('nginx')[0])
-    want = (f'{IMAGE_REPOSITORY}/backend:{sha}', f'{IMAGE_REPOSITORY}/nginx:{sha}')
+    want = (f'{PROJECT}-backend:{sha}', f'{PROJECT}-nginx:{sha}')
     health = run('curl', '-fsS', '-k', '--max-time', '5', '--resolve', 'localhost:443:127.0.0.1',
                  'https://localhost/api/health', check=False)
     ok = images == want and health.returncode == 0 and clone.git('rev-parse', 'HEAD') == sha
     return ok, f'{images}, health {health.returncode}, HEAD {clone.git("rev-parse", "HEAD")}'
+
+
+def kept():
+    """The commits whose images are left, per image"""
+    return {name: set(run('docker', 'image', 'ls', '--format', '{{.Tag}}', f'{PROJECT}-{name}')
+                      .stdout.split()) for name in ('backend', 'nginx')}
 
 
 def scenario(clone):
@@ -157,15 +150,15 @@ def scenario(clone):
     clone.write('backend/migrations/env.py', "raise SystemExit('broken on purpose')\n" + migrations)
     broken_migration = clone.commit('D: the migration fails')
     clone.write('backend/migrations/env.py', migrations)
-    unpublished = clone.commit('E: no images yet')
+    dockerfile = clone.read('nginx/Dockerfile')
+    clone.write('nginx/Dockerfile', dockerfile + 'RUN exit 1\n')
+    unbuildable = clone.commit('E: the build fails')
+    clone.write('nginx/Dockerfile', dockerfile)
     unpushed = clone.commit('F: never pushed', push=False)
     clone.git('checkout', '--quiet', '--detach', good)
-    for sha in (good, second, broken_nginx, broken_migration):
-        print(f'publishing {sha[:12]}')
-        clone.publish(sha)
-    clone.git('checkout', '--quiet', '--detach', good)
 
-    clone.deploy(good)
+    result = clone.deploy(good)
+    check('the first deploy builds A', f'building {good}' in result.stdout, result.stdout)
     check('the first deploy serves A', *serving(clone, good))
     check('.env.deploy records A', clone.state().get('IMAGE_TAG') == good, clone.state())
 
@@ -180,6 +173,8 @@ def scenario(clone):
 
     result = clone.deploy(broken_nginx)
     check('a deploy that does not come up fails', result.returncode == 1, result.stderr)
+    check("the rollback reuses B's images", f'using the images already built for {second}'
+          in result.stdout, result.stdout)
     check('it is rolled back to B', *serving(clone, second))
     check('.env.deploy records C as failed', (clone.state().get('IMAGE_TAG'),
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_nginx), clone.state())
@@ -193,11 +188,11 @@ def scenario(clone):
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_migration), clone.state())
 
     before = clone.state()
-    result = clone.deploy(unpublished)
-    check('a commit without images is refused', result.returncode == 1
+    result = clone.deploy(unbuildable)
+    check('a commit that does not build is refused', result.returncode == 1
           and 'nothing changed' in result.stderr, result.stderr)
-    check('nothing changed for it', clone.state() == before and serving(clone, second)[0],
-          clone.state())
+    check('nothing changed for it, nor is it recorded as failed',
+          clone.state() == before and serving(clone, second)[0], clone.state())
 
     result = clone.deploy(unpushed)
     check('a commit not on origin/main is refused', result.returncode == 1
@@ -215,16 +210,18 @@ def scenario(clone):
           and 'another deploy is running' in result.stderr, result.stderr)
     (clone.path / '.deploy.lock').rmdir()
 
-    clone.deploy('--rollback')
+    result = clone.deploy('--rollback')
+    check('--rollback builds nothing', f'using the images already built for {good}'
+          in result.stdout and 'building' not in result.stdout, result.stdout)
     check('--rollback serves A again', *serving(clone, good))
     check('.env.deploy records A, then B', (clone.state().get('IMAGE_TAG'),
           clone.state().get('PREVIOUS_IMAGE_TAG')) == (good, second), clone.state())
+    check("only the deployed and previous commits' images are kept",
+          kept() == {'backend': {good, second}, 'nginx': {good, second}}, kept())
 
 
 def main():
     base = Path(tempfile.mkdtemp(prefix='deploy-smoke-'))
-    run('docker', 'run', '-d', '--name', REGISTRY_NAME, '-p', f'127.0.0.1:{REGISTRY_PORT}:5000',
-        REGISTRY_IMAGE)
     clone = None
     started = time.monotonic()
     try:
@@ -235,10 +232,11 @@ def main():
             print(clone.compose('logs', '--no-color', '--tail', '50', check=False).stdout)
         if clone:
             clone.compose('down', '-v', check=False)
-        images = run('docker', 'images', '-q', f'{IMAGE_REPOSITORY}/*', check=False).stdout.split()
+        images = [image for name in ('backend', 'nginx') for image in run(
+            'docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}', f'{PROJECT}-{name}',
+            check=False).stdout.split()]
         if images:
-            run('docker', 'image', 'rm', '-f', *set(images), check=False)
-        run('docker', 'rm', '-f', '-v', REGISTRY_NAME, check=False)
+            run('docker', 'image', 'rm', '-f', *images, check=False)
         shutil.rmtree(base, ignore_errors=True)
     print(f'{time.monotonic() - started:.0f} s')
     if failures:
