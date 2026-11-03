@@ -436,18 +436,19 @@ recovery check is blocked by the missing backups). They are not new findings.
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.
-- **No deployment yet**, so these don't exist: automated backups and a
+- **Not built yet** (the deploy, restart and restore work on a test server
+  will bring the first ones): automated backups and a
   restore procedure, server hardening (SSH, firewall, Fail2ban), certificate
   auto-renewal, an automatic deploy trigger (`deploy.sh` deploys one commit
   when someone runs it), monitoring, centralized logging, a CDN.
-- **The production docs wait for the first server.** The Let's
+- **The production docs wait for the work on the test server.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
   nginx template (which breaks CI and the test stack if followed), the docs
   don't list what production lacks, and there is no operator runbook
   (detached start, status, TLS key rotation, a failed `up -d`;
   `docs/deployment.md` covers deploying and rolling back, in Redeploying,
   and reading logs). All three get written and
-  tried on a real server rather than on paper. Until then the docs and
+  tried on that server rather than on paper. Until then the docs and
   recovery checks don't report them.
 - **TLS between containers** is not needed while every service shares one
   host: the bundled MySQL and Redis traffic stays on the `internal` network,
