@@ -379,6 +379,13 @@ its CPU limit instead. A managed platform's load balancer does this job there.
 *Revisit when:* one backend container is no longer enough (then several
 fixed addresses in the upstream, or a reload of nginx after every deploy).
 
+**A deploy is not zero-downtime.** With one backend, `deploy.sh` stops the old
+one before the new one starts: the old nginx keeps serving the page, but the
+API answers a JSON 502 or 504 until the new backend listens (about 15 s on a
+small server), and connections are refused for a second or two while nginx
+itself is replaced. *Revisit when:* a deploy's API gap matters to users (then
+two backends, as above, started one after the other).
+
 **nginx's per-IP limits are per nginx.** On a platform, each task runs its
 own nginx beside its backend, so three tasks give one client three times the
 budget of `limit_req`/`limit_conn`. The backend's own limits (login,

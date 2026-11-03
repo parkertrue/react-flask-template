@@ -176,6 +176,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+      start_interval: 1s  # as production's, so nginx follows within a second
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 128

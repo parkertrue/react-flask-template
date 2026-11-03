@@ -87,12 +87,12 @@ Frontend and backend code are both copied into their images, so a code change ne
 1. It refuses to start with uncommitted changes to tracked files in the clone, while another deploy runs, or for a commit that isn't on `origin/main`.
 2. It checks the clone out at the commit (detached), so the compose file and `db/init` match its code, and builds the backend and nginx images, tagged with the commit: `<project>-backend:<commit>` and `<project>-nginx:<commit>`, the full commit hash. The running app keeps serving while it builds. If the build fails, it switches back and nothing has changed.
 3. It runs `migrate`. If that fails, it switches back; the running app was never touched.
-4. It replaces the containers (`up -d --wait`) and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If either fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error.
+4. It replaces the backend, waits for it to pass its health check, then replaces nginx, and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If any of that fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error.
 5. Once a deploy succeeds, it removes the app's images of every other commit but the one before, so a rollback builds nothing.
 
 A migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release).
 
-`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed. Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. Requests get a 502 or 504, or a refused connection, for a few seconds while the backend and nginx are replaced.
+`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed. Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. While the new backend starts, the old nginx keeps serving the page, and API requests get a JSON 502 or 504 (about 15 seconds on a small server); then connections are refused for a second or two while nginx is replaced.
 
 **What the server needs.** Internet access while it builds (base images, Python and npm packages), and enough memory to build the frontend: a server with 1 GB can run out during the build, so add swap or pick a larger one. Docker's build cache grows with each deploy; `docker builder prune` clears it.
 
@@ -101,7 +101,7 @@ A migration must keep the code before it working: the old backend serves after i
 **Setting a server up.**
 
 1. Choose who deploys. The script runs `git` and `docker`, in a clone that user owns. Anyone who can run Docker can control the whole host (a container can mount `/`), so the `docker` group is as good as root:
-   * **A dedicated deploy user** (recommended): in the `docker` group, with no password and no SSH login, owning the clone. People deploy with `sudo -u deploy ./deploy.sh <commit>`, so their own accounts still need `sudo`'s password for root.
+   * **A dedicated deploy user** (recommended): in the `docker` group, with no password and no SSH login, owning the clone. People deploy with `sudo -u deploy /home/deploy/app/deploy.sh <commit>` (by its full path: the deploy user's home is usually closed to other users, so they cannot `cd` into the clone first), so their own accounts still need `sudo`'s password for root.
    * **root**, with a clone root owns: `sudo ./deploy.sh <commit>`.
    * **Your own account in the `docker` group**: the simplest, but anyone who gets your login gets root without a password.
 

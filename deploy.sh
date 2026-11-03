@@ -90,8 +90,12 @@ healthy() {
     return 1
 }
 
-# Replaces the running containers with the checked-out commit's
-start() { compose up -d --no-build --wait --wait-timeout "$WAIT_SECONDS" && healthy; }
+# Replaces the running containers with the checked-out commit's, the backend
+# first, while the old nginx keeps serving the page (and the API's JSON 502
+# or 504 until the new backend listens), then nginx. --no-deps: migrate has
+# already run, and would otherwise run again with the app stopped.
+replace() { compose up -d --no-build --no-deps --wait --wait-timeout "$WAIT_SECONDS" "$1"; }
+start() { replace backend && replace nginx && healthy; }
 
 [ $# -eq 1 ] || die "usage: $0 <commit> | --rollback"
 [ -f .env.prod ] || die ".env.prod not found"

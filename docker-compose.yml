@@ -228,12 +228,15 @@ services:
     stop_grace_period: 35s
     healthcheck:
       # start_period covers the entrypoint's wait-for-services, which gives up
-      # after the same 60s (TIMEOUT_SECONDS in backend/wait_for_services.py)
+      # after the same 60s (TIMEOUT_SECONDS in backend/wait_for_services.py);
+      # start_interval checks every second until then, so a deploy's nginx
+      # follows a new backend within a second of it serving
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 60s
+      start_interval: 1s
     # Sized for gunicorn's default 2 workers x 4 threads (backend/Dockerfile).
     # To scale, add WEB_CONCURRENCY to this service's environment (merge it
     # with <<: *backend-env) at about one worker per CPU, and raise cpus to
