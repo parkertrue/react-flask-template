@@ -75,7 +75,8 @@ Checks: <check>: <verdict> (<report file>), ...
 ## High
 ## Medium
 ## Low and nits
-(one line each: ID, location, finding, fix; link the check's report)
+(one line each: ID, location, finding, fix; link the check's report; keep
+each finding's `(open: ...)` tag, RULES.md)
 
 ## Cross-check themes
 Problems reported by more than one check, merged into one item, and patterns
@@ -103,5 +104,6 @@ run at all.
 
 Then reply to the user with: the verdict, counts by severity, the blockers and
 high findings (one line each), the top proposed guards, and the path to the
-consolidated report. Do not fix anything. Ask which findings to address, and
+consolidated report. Lead with findings recorded nowhere yet; give the ones
+tagged `(open: ...)` as a count and their IDs. A known blocker still blocks. Do not fix anything. Ask which findings to address, and
 whether to record the proposed DECISIONS.md entries.

@@ -31,6 +31,11 @@ bulletproof. In priority order:
 - **`DECISIONS.md`** (next to this file) lists accepted trade-offs and known
   gaps. Do not report them as findings. Report an entry only if its *Revisit
   when* condition has come true or the code no longer matches it.
+- **`temp/HANDOFF-open-issues.md`**, if it exists (gitignored: the
+  maintainer's running list of open work). Check every finding against it. A
+  finding it already lists is still reported, since this run may show it is
+  worse or bring new evidence: write `(open: <handoff item>)` after its
+  Finding text, and rate its severity yourself.
 - **Read files from disk.** A copy of CLAUDE.md or any other file already in
   your context may be older than the working tree. Read it again before
   relying on it.
@@ -69,9 +74,10 @@ Audits are **read-only** with respect to the repository:
     template's defaults. In an app built from the template, read the real
     names from each compose file's `name:` and use those instead.
     Tear down with the same `-p app_audit` and `-f` flags plus `down -v`.
-- There is no deployed server (see DECISIONS.md, Known gaps). Never scan, SSH
-  into, or load-test anything other than localhost. A step that needs a real
-  deployment is reported under *Skipped* with the reason.
+- The audits never touch a deployed server, the maintainer's test server
+  included. Never scan, SSH into, or load-test anything other than
+  localhost. A step that needs a real deployment is reported under *Skipped*
+  with the reason.
 - "No Docker" (when the orchestrator says so) means starting no containers.
   Docker commands that only read or validate (`docker info`, `docker ps`,
   `docker compose ... config --quiet`) are always allowed.
@@ -197,8 +203,10 @@ Timings: start HH:MM, first container HH:MM, last teardown HH:MM, end HH:MM
 ## Compared with last run
 Read the most recent earlier report for this check in `temp/audits/`; if
 there is none, write "First run." and nothing else here.
-New: IDs. Resolved: the earlier findings that are now fixed. Recurring: IDs
-also in the last report (call out any reported three times or more).
+New: IDs in neither the last report nor the handoff. Already open: IDs
+tagged `(open: ...)`. Resolved: the earlier findings that are now fixed.
+Recurring: IDs also in the last report (call out any reported three times or
+more).
 
 ## Proposed DECISIONS.md entries
 Findings that look deliberate: the entry you would add, for the user to accept or reject.

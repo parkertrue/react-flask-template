@@ -39,8 +39,7 @@ as RULES.md.
 - **Rate by what's true today, then say what would raise it.** Notes are
   private, there is no email, payment or analytics yet; a risk that only
   arrives with such a feature is **low** with its trigger named in the Fix.
-  Known gaps in DECISIONS.md (data export, no deployment and so no
-  centralized logging) are
+  Known gaps in DECISIONS.md (data export, no centralized logging) are
   not new findings, but say when the law makes one more urgent than recorded.
 
 ### Severity for legal findings

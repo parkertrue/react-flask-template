@@ -1,7 +1,7 @@
 ---
 name: audit-infra
 description: Review config and infrastructure at every layer (env, nginx, Docker/Compose, Flask, MySQL, Redis, React build, CI) for correctness, security, simplicity and template-readiness, plus performance bottlenecks. The daily check.
-argument-hint: "[layer: env|nginx|docker|flask|mysql|redis|frontend|ci|perf]"
+argument-hint: "[layer: env|nginx|docker|deploy|flask|mysql|redis|frontend|ci|perf]"
 disable-model-invocation: true
 context: fork
 ---
@@ -97,6 +97,26 @@ Files: `backend/Dockerfile`, `backend/entrypoint.sh`, `nginx/Dockerfile`,
   (not end-of-life) releases?
 - Are dev, test and production consistent in naming (CLAUDE.md table) and
   image versions?
+
+### deploy: deploys and rollbacks
+Files: `deploy.sh`, `.github/scripts/smoke_deploy.py`, the Deploy smoke job
+in `.github/workflows/integration-e2e.yml`, `docs/deployment.md`
+("Redeploying").
+- **Never run `deploy.sh` in the main working tree:** it checks out commits
+  in the clone it lives in. Read the latest Deploy smoke run instead; if it
+  is red or missing for HEAD, run `python .github/scripts/smoke_deploy.py`,
+  which makes its own clone and project (`deploy_smoke`, ports 80 and 443).
+- Does the script do what CLAUDE.md and its header say: refuse a dirty
+  clone, a commit not on `origin/main` and a second run at once; run
+  `migrate` before replacing anything; roll back on its own when the new
+  commit is unhealthy; record the deployed, previous and failed commit in
+  `.env.deploy`; keep only those two commits' images?
+- A deploy stopped halfway (killed, a dropped SSH session, a full disk, a
+  reboot): what does it leave behind (the lock, the checkout, `.env.deploy`,
+  the running containers), and can the next run recover from each without a
+  hand fix that `docs/deployment.md` doesn't give?
+- Does Deploy smoke pin each of these behaviors with a check that can fail?
+  Which one does nothing pin?
 
 ### flask: application
 Files: `backend/app/__init__.py`, `config.py`, `features.py`, each feature's `routes.py`, `utils/`, `wsgi.py`,

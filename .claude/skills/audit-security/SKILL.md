@@ -1,6 +1,6 @@
 ---
 name: audit-security
-description: Security review against OWASP ASVS Level 2 and the Cheat Sheets (code, config, containers), dependency vulnerabilities and unused packages, and a local scan of the running test stack. Live checks against a deployment are skipped until one exists.
+description: Security review against OWASP ASVS Level 2 and the Cheat Sheets (code, config, containers), dependency vulnerabilities and unused packages, and a local scan of the running test stack. Live checks against a deployed server are skipped: the audits never touch one.
 argument-hint: "[code|deps|scan]"
 disable-model-invocation: true
 context: fork
@@ -61,6 +61,12 @@ this app and record what each one turns up:
   networks (can nginx reach MySQL? should it?), exposed ports, the Redis ACL,
   and the MySQL privileges of the app's and the migration user
   (`db/init/01-app-user.sh`), checked live.
+- **Deploys:** `deploy.sh` builds and runs any commit on `origin/main`, as a
+  user who can run Docker (root on the host, in effect). Who can put a
+  commit there (branch protection, required checks, workflow permissions,
+  Dependabot), and so reach the server? Does the script trust anything it
+  shouldn't (the commit argument, `.env.prod`'s `SERVER_NAME`,
+  `.env.deploy`)?
 - **Denial of service:** body limits, connection limits, hashing slots, slow
   clients, unbounded queries or lists, Redis memory growth.
 - **What is missing:** ASVS 5.0 L2 requirements the app neither meets nor has
@@ -168,7 +174,8 @@ same hourly per-account budget as failed logins (`account_password_limit`),
 so failed logins plus wrong deletion passwords reaching 100 answer 429 on
 both routes. Tear it down.
 
-**Skipped until deployed** (list under *Skipped*): Observatory and SSL Labs
+**Skipped, since the audits never touch a server** (RULES.md; list under
+*Skipped*): Observatory and SSL Labs
 against the real domain, Docker Bench and CIS on the host, SSH, firewall and
 Fail2ban drift. The OWASP Testing Checklist and WSTG items that need a real
 deployment go here too.

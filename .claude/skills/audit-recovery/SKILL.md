@@ -89,13 +89,13 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   session at once?
 - **Operator documentation:** do README and `docs/deployment.md` tell an operator how to restart,
   roll back a bad deploy, rotate secrets, and read logs? The runbook waits
-  for the first server (DECISIONS.md, Known gaps, "The production docs
+  for the work on the test server (DECISIONS.md, Known gaps, "The production docs
   wait"), so a missing runbook step is a finding only where they
   present the step as covered, or gives one that is wrong.
 
 ## Out of scope
-Fixing anything. Live production drills: there is no deployment, and drills
-never run against production even once there is.
+Fixing anything. Live production drills: drills never run against a
+deployed server (RULES.md).
 
 Write the report as RULES.md describes, with ID prefix `REC`. Include a table
 of the drills with columns: drill, during, recovered (yes/no, time), data
