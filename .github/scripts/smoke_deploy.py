@@ -168,7 +168,9 @@ def scenario(clone):
 
     result = clone.deploy(second)
     check('the second deploy serves B', *serving(clone, second))
-    starts = (result.stdout + result.stderr).count(f'{PROJECT}-migrate-1 Started')
+    # The deploy creates migrate's container afresh; each start of it logs this
+    log = run('docker', 'logs', f'{PROJECT}-migrate-1', check=False)
+    starts = (log.stdout + log.stderr).count('Database and Redis are up')
     check('migrate runs once per deploy', starts == 1, f'{starts} starts')
     check('.env.deploy records B, then A', (clone.state().get('IMAGE_TAG'),
           clone.state().get('PREVIOUS_IMAGE_TAG')) == (second, good), clone.state())
