@@ -4,6 +4,7 @@ import { useAuth } from '@/auth/useAuth'
 import { useLogout } from '@/auth/useLogout'
 import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
 import { getErrorMessage } from '@/api/errors'
+import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import FormDialog from '@/components/dialogs/FormDialog'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
@@ -16,6 +17,7 @@ export default function AccountPage() {
   const navigate = useNavigate()
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [askingLogoutAll, setAskingLogoutAll] = useState(false)
   const [account, setAccount] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const deletion = useFormFields({ 'delete-password': '' })
@@ -29,8 +31,13 @@ export default function AccountPage() {
       .catch(err => setLoadError(getErrorMessage(err)))
   }, [])
 
+  // Not while a request is in flight: its button is busy
+  const askToLogoutAll = () => {
+    if (!submitting) setAskingLogoutAll(true)
+  }
+
   const handleLogoutAll = async () => {
-    if (submitting) return
+    setAskingLogoutAll(false)
     setError(null)
     setSubmitting(true)
     try {
@@ -111,12 +118,25 @@ export default function AccountPage() {
         {error && <div className="error-message" role="alert">{error}</div>}
         <button
           type="button"
-          onClick={handleLogoutAll}
+          onClick={askToLogoutAll}
           aria-disabled={submitting}
           className="btn btn-danger"
         >
           {submitting ? 'Logging out...' : 'Log out all devices'}
         </button>
+        {askingLogoutAll && (
+          <ConfirmDialog
+            title="Log out all devices?"
+            confirmLabel="Log out all devices"
+            onConfirm={handleLogoutAll}
+            onCancel={() => setAskingLogoutAll(false)}
+          >
+            <p>
+              Every device signed in to this account, this browser included,
+              will have to log in again.
+            </p>
+          </ConfirmDialog>
+        )}
       </section>
 
       <section aria-labelledby="delete-heading">

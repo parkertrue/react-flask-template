@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
-  askToDeleteAccount, expectNoCspViolations, expectNoViolations, expectReflow, expectTargetSize,
-  expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
+  askToDeleteAccount, askToLogoutAll, expectNoCspViolations, expectNoViolations, expectReflow,
+  expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
   register, registerAndLogin, serviceUnavailable, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName.js'
@@ -163,12 +163,28 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
     })
 
-    test('logging out all devices, busy and then failed, has no violations', async ({ page }) => {
+    // ConfirmDialog, checked here so that no feature's spec has to keep it
+    test('logging out all devices, asking, busy and then failed, has no violations', async ({ page }) => {
       await page.goto('/account')
       await expect(memberSince(page)).toBeVisible()
-      const release = await holdRequests(page, 'POST', '**/api/auth/logout-all', serviceUnavailable)
-      await page.getByRole('button', { name: 'Log out all devices' }).click()
 
+      let dialog = await askToLogoutAll(page)
+      await expectNoViolations(page)
+      await expectReflow(page)
+      await expectTargetSize(page)
+
+      // Escape keeps the session, and focus goes back to the button that asked
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Log out all devices' })).toBeFocused()
+      await expect(memberSince(page)).toBeVisible()
+
+      dialog = await askToLogoutAll(page)
+      const release = await holdRequests(page, 'POST', '**/api/auth/logout-all', serviceUnavailable)
+      await dialog.getByRole('button', { name: 'Log out all devices' }).click()
+
+      // The dialog closes on the answer; the page's button is busy, focused
+      await expect(dialog).toBeHidden()
       await expect(page.getByRole('button', { name: 'Logging out...' })).toBeFocused()
       await expectNoViolations(page)
 
@@ -177,8 +193,7 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
     })
 
-    // FormDialog, checked here so that no feature's spec has to keep it.
-    // ConfirmDialog shares its styles; the notes spec checks its behavior
+    // FormDialog, checked here so that no feature's spec has to keep it
     test('deleting the account, asking, busy and then failed, has no violations', async ({ page }) => {
       await page.goto('/account')
       await expect(memberSince(page)).toBeVisible()

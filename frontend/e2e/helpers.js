@@ -72,10 +72,22 @@ export async function openAccount(page) {
 /** The account page's line once GET /api/account has answered */
 export const memberSince = page => page.getByText(/^Member since /)
 
+/**
+ * On the account page, ask to log out all devices; returns the dialog that
+ * opens, for its Log out all devices button
+ */
+export async function askToLogoutAll(page) {
+  await page.getByRole('button', { name: 'Log out all devices' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Log out all devices?' })
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  return dialog
+}
+
 /** Sign every device out from the account page, reached by the navbar's email */
 export async function logoutAllDevices(page) {
   await page.getByRole('link', { name: /\(account\)$/ }).click()
-  await page.getByRole('button', { name: 'Log out all devices' }).click()
+  const dialog = await askToLogoutAll(page)
+  await dialog.getByRole('button', { name: 'Log out all devices' }).click()
   await expectHomeReached(page)
 }
 
