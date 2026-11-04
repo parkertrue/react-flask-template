@@ -6,14 +6,16 @@ import {
 } from './helpers'
 import { APP_NAME } from '../src/appName.js'
 
+// Path, title, h1, and how many Tab stops the page has (its navbar's three
+// and the footer's three included)
 const VISITOR_PAGES = [
-  ['/', APP_NAME, `Welcome to ${APP_NAME}`],
-  ['/login', `Log in | ${APP_NAME}`, 'Log in'],
-  ['/register', `Register | ${APP_NAME}`, 'Register'],
-  ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice'],
-  ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service'],
-  ['/contact', `Contact | ${APP_NAME}`, 'Contact'],
-  ['/no-such-page', `Page not found | ${APP_NAME}`, 'Page not found'],
+  ['/', APP_NAME, `Welcome to ${APP_NAME}`, 8],
+  ['/login', `Log in | ${APP_NAME}`, 'Log in', 10],
+  ['/register', `Register | ${APP_NAME}`, 'Register', 14],
+  ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice', 9],
+  ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service', 8],
+  ['/contact', `Contact | ${APP_NAME}`, 'Contact', 10],
+  ['/no-such-page', `Page not found | ${APP_NAME}`, 'Page not found', 7],
 ]
 
 /** Fill in the login form and submit it, without waiting */
@@ -29,7 +31,7 @@ test.describe('Accessibility', () => {
   expectNoCspViolations(test)
 
   test.describe('a visitor', () => {
-    for (const [path, title, heading] of VISITOR_PAGES) {
+    for (const [path, title, heading, stopCount] of VISITOR_PAGES) {
       test(`${path} has a title, a heading and no violations`, async ({ page }) => {
         await page.goto(path)
 
@@ -43,7 +45,7 @@ test.describe('Accessibility', () => {
         await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible()
 
         await expectReflow(page)
-        await expectVisibleFocus(page)
+        await expectVisibleFocus(page, stopCount)
         await expectTargetSize(page)
       })
     }
@@ -145,7 +147,7 @@ test.describe('Accessibility', () => {
       await expect(memberSince(page)).toBeVisible()
 
       await expectReflow(page)
-      await expectVisibleFocus(page)
+      await expectVisibleFocus(page, 9)
       await expectTargetSize(page)
     })
 
@@ -229,7 +231,7 @@ test.describe('Accessibility', () => {
         .toBeFocused()
       await expectNoViolations(page)
       await expectReflow(page)
-      await expectVisibleFocus(page)
+      await expectVisibleFocus(page, 8)
       await expectTargetSize(page)
     })
 

@@ -1,6 +1,11 @@
 import { afterEach } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
+
+// findBy* and waitFor give up after 3 s, not 1: a file's first render can
+// take over a second on a busy machine (a cold Vite cache under coverage).
+// A passing test is no slower, since they return as soon as the page settles
+configure({ asyncUtilTimeout: 3000 })
 
 // React warns when state changes outside act(): the test asserted, or ended,
 // before the component settled, which is how flaky tests start. Fail the

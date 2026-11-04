@@ -34,6 +34,10 @@ describe('import rules', () => {
     ['src/features/notes/x.js', "import '@/pages/HomePage'", 'no-restricted-imports'],
     ['src/features/notes/x.js', "import '@/routes'", 'no-restricted-imports'],
     ['src/features/notes/__tests__/x.js', "import '@/features/health/useHealth'", 'no-restricted-imports'],
+    ['src/legal.js', "import '@/features/notes/useNotes'", 'no-restricted-imports'],
+    ['src/styles/__tests__/x.test.js', "import '@/pages/HomePage'", 'no-restricted-imports'],
+    ['src/test/x.js', "import '@/features/notes/useNotes'", 'no-restricted-imports'],
+    ['src/test/integration/x.test.jsx', "import '@/pages/HomePage'", 'no-restricted-imports'],
   ])('refuses %s: %s', async (filePath, code, ruleId) => {
     expect(await ruleIds(filePath, code)).toContain(ruleId)
   })
@@ -45,6 +49,8 @@ describe('import rules', () => {
     ['src/features/notes/__tests__/x.js', "import '@/routes'"],
     ['src/components/layout/x.js', "import '../forms/FormField'"],
     ['src/test/integration/x.js', "import '../fixtures'"],
+    // A shared integration test renders the whole app
+    ['src/test/integration/x.js', "import '@/routes'"],
     ['src/__tests__/x.js', "import '../routes'"],
     ['src/pages/x.js', "import '@/features/notes/NotesPage'"],
   ])('allows %s: %s', async (filePath, code) => {
@@ -62,6 +68,7 @@ describe('code rules', () => {
     ['src/pages/x.jsx', 'export const X = () => <p dangerouslySetInnerHTML={{ __html: x }} />', 'no-restricted-syntax'],
     ['src/pages/x.jsx', 'export const X = () => <p data-testid="x" />', 'no-restricted-syntax'],
     ['src/pages/x.jsx', 'export const X = () => <button disabled />', 'no-restricted-syntax'],
+    ['src/features/notes/x.jsx', 'export const X = () => <form onSubmit={f} />', 'no-restricted-syntax'],
     ['src/components/forms/x.jsx', 'export const X = () => <input disabled />', 'no-restricted-syntax'],
     ['src/pages/__tests__/x.test.jsx', "screen.getByTestId('x')", 'no-restricted-syntax'],
     ['src/pages/__tests__/x.test.jsx', "expect(x).toHaveClass('x')", 'no-restricted-syntax'],
@@ -86,6 +93,7 @@ describe('code rules', () => {
   it.each([
     ['src/components/forms/x.jsx', 'export const X = () => <input />'],
     ['src/pages/x.jsx', 'export const X = () => <button aria-disabled="true" />'],
+    ['src/pages/x.jsx', 'export const X = f => <form noValidate onSubmit={f} />'],
     ['src/pages/__tests__/x.test.jsx', "import { vi } from 'vitest'; vi.mock('@/api/api')"],
     ['src/auth/storage.js', "localStorage.getItem('x')"],
     ['src/test/x.js', 'window.localStorage.clear()'],
@@ -125,6 +133,14 @@ describe('test rules', () => {
     ['e2e/helpers.js', 'export const check = x => (x.ok ? expect(x).toBe(1) : run())', 'no-restricted-syntax'],
     ['src/x/__tests__/a.test.js', 'const check = x => x.ok && expect(x.status).toBe(1)', 'no-restricted-syntax'],
     ['e2e/x.spec.js', 'function check(x) { switch (x) { case 1: expect(x).toBe(1) } }', 'no-restricted-syntax'],
+    ['e2e/helpers.js', 'export const check = x => { while (x.more()) expect(x.next()).toBe(1) }', 'no-restricted-syntax'],
+    ['src/test/x.js', 'export const check = x => { do { expect(x.next()).toBe(1) } while (x.more()) }', 'no-restricted-syntax'],
+    // An assertion on a constant, or on a choice the test makes itself
+    ['src/x/__tests__/a.test.js', "it('a', () => { run(); expect(true).toBe(true) })", 'no-restricted-syntax'],
+    ['e2e/x.spec.js', "test('a', async () => { await run(); expect('x').toBe('x') })", 'no-restricted-syntax'],
+    ['src/x/__tests__/a.test.js', "it('a', () => { expect(c ? x : 1).toBe(1) })", 'no-restricted-syntax'],
+    ['e2e/helpers.js', 'export const check = (c, x) => expect(c ? x : 1).toBe(1)', 'no-restricted-syntax'],
+    ['src/x/__tests__/a.test.js', `it('a', () => { expect(x).toMatchInlineSnapshot(\`${'\n'.repeat(60)}\`) })`, 'vitest/no-large-snapshots'],
     // End-to-end tests
     ['e2e/x.spec.js', "test('a', async ({ page }) => { await page.goto('/') })", 'playwright/expect-expect'],
     ['e2e/x.spec.js', "test('a', async ({ page }) => { if (x) await expect(page).toHaveURL('/') })", 'playwright/no-conditional-in-test'],

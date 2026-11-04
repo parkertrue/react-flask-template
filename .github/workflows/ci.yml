@@ -43,6 +43,10 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      # Each ruff rule the backend relies on still fires on a planted case
+      - name: Lint rules
+        run: python ../.github/scripts/check_lint_rules.py
+
       # The same command as locally: fails under the coverage floor in
       # backend/.coveragerc, in total or for any one package of app/
       - name: Run unit tests

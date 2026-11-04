@@ -311,6 +311,11 @@ class TestRefreshLimit:
         assert statuses == {401}
 
 
+def refuse_revoking(app, monkeypatch):
+    """The token store cannot revoke sessions, so account deletion answers 503"""
+    monkeypatch.setattr(app.extensions['redis_service'], 'revoke_all_user_tokens', lambda user_id: None)
+
+
 class TestDeleteAccountLimit:
     """Deleting an account asks for the password, so it is limited like a
     login: per user, counting wrong passwords only, and hourly per account in
@@ -406,6 +411,42 @@ class TestDeleteAccountLimit:
         assert statuses == [403, 401] * 50
         assert self.delete(client, headers).status_code == 429
         assert login(client, '10.0.1.1', email='owner@example.com').status_code == 429
+
+    @pytest.mark.parametrize('body, arrange, status', [
+        ({}, lambda app, monkeypatch: None, 422),  # no password
+        ({'password': 'TestPassword123'}, refuse_revoking, 503),
+    ])
+    def test_only_wrong_passwords_count(self, owner_app, monkeypatch, body, arrange, status):
+        """An owner retrying through an outage, or a client sending a bad
+        request, must not lock themselves out"""
+        client = owner_app.test_client()
+        headers = self.headers(owner_app, 'owner@example.com')
+        with monkeypatch.context() as patched:
+            arrange(owner_app, patched)
+            statuses = [client.post('/api/account/delete', headers=headers, json=body).status_code
+                        for _ in range(6)]
+
+        response = self.delete(client, headers, 'TestPassword123')
+
+        assert statuses == [status] * 6
+        assert response.status_code == 200
+
+    def test_outages_leave_the_login_budget_alone(self, owner_app, monkeypatch):
+        """Six deletions the token store refused, then the whole hourly budget
+        of wrong logins: none of the six used any of it"""
+        client = owner_app.test_client()
+        headers = self.headers(owner_app, 'owner@example.com')
+        with monkeypatch.context() as patched:
+            refuse_revoking(owner_app, patched)
+            deletions = [self.delete(client, headers, 'TestPassword123').status_code
+                         for _ in range(6)]
+        monkeypatch.setattr('app.auth.routes.verify_password', lambda stored, given: False)
+
+        logins = [login(client, f'10.0.{i // 250}.{i % 250}', email='owner@example.com').status_code
+                  for i in range(100)]
+
+        assert deletions == [503] * 6
+        assert logins == [401] * 100
 
     def test_a_database_outage_answers_503_without_touching_the_limiter(
             self, owner_app, monkeypatch, logged):
