@@ -66,7 +66,12 @@ this app and record what each one turns up:
   commit there (branch protection, required checks, workflow permissions,
   Dependabot), and so reach the server? Does the script trust anything it
   shouldn't (the commit argument, `.env.prod`'s `SERVER_NAME`,
-  `.env.deploy`)?
+  `.env.deploy`)? Compare the checks GitHub requires on `main`
+  (`gh api repos/{owner}/{repo}/branches/main/protection --jq
+  '.required_status_checks.contexts'`) with README's list of status checks
+  to require, and report any it names that GitHub doesn't require: CI's
+  read-only token can't read branch protection, so nothing else checks
+  it. If `gh` lacks admin access, list it under *Unverified*.
 - **Denial of service:** body limits, connection limits, hashing slots, slow
   clients, unbounded queries or lists, Redis memory growth.
 - **What is missing:** ASVS 5.0 L2 requirements the app neither meets nor has
