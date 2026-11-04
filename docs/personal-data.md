@@ -17,7 +17,7 @@ Every app built from the template collects personal data from its first sign-up,
 | Every write, deleted rows included | MySQL's binary log | 30 days (MySQL's default) |
 | Refresh-token ids, at most 10 per user | Redis | Until the session expires (7 days idle, 30 at most), logs out or deletes the account |
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
-| Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until Docker's 3 × 10 MB rotate out |
+| Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
 | Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
 | Refresh token | Cookie `__Secure-refresh_token` (HttpOnly) | Up to 30 days |
@@ -28,7 +28,7 @@ No analytics, no third-party requests and no email: the template itself sends no
 
 **Before launch:**
 1. Fill in `legal.js`, then write the three pages for your app from the table above and your own features.
-2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped ([Logs](deployment.md#logs)). Decide the MySQL binary log together with backups: keep it for point-in-time recovery, or turn it off.
+2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped ([Logs](deployment.md#logs)). On the Compose path, save or ship the logs before each deploy, or the deploy erases them. Decide the MySQL binary log together with backups: keep it for point-in-time recovery, or turn it off.
 3. Name every provider that processes personal data for you (the host, a log service, a CDN, an email service) in the privacy notice, and sign each one's data processing agreement. If one processes EU or UK users' data outside the EU/EEA or UK, note the transfer safeguard in the notice (an adequacy decision, or the standard contractual clauses in its agreement), or choose a region inside.
 4. Set `security.txt`'s `Contact` to the email in `legal.js` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year (the same test fails from 30 days before it lapses).
 5. Ask the lawyer whether your markets need a checkbox or whether a sentence beside the button would do, and whether a German audience needs the contact page labelled "Impressum" with more details on it.

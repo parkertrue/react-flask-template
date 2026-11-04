@@ -11,9 +11,12 @@
 # previous commits' images are kept, so a rollback builds nothing.
 #
 # The checkout moves to the commit, so the compose file and db/init match its
-# images; migrate runs before anything is replaced, so a failed migration
-# leaves the running app serving; and if the new app does not come up
-# healthy, the previous commit is brought back. Migrations are never undone:
+# images. The bundled db and redis that are enabled come up first, on the
+# commit's settings: one that changed restarts under the running app, and one
+# that fails to start is put back on the previous commit's. migrate runs
+# before the app is replaced, so a failed migration leaves it serving; and if
+# the new app does not come up healthy, the previous commit is brought back.
+# A db or redis that came up healthy stays, and migrations are never undone:
 # each must keep the code before it working. .env.deploy records the
 # deployed, previous and last failed commit; pass it to every docker compose
 # command after .env.prod, so a hand-typed one runs the deployed images.
@@ -56,7 +59,9 @@ build() {
     for repository in $(repositories); do
         if ! docker image inspect "$repository:$tag" > /dev/null 2>&1; then
             log "building $tag"
-            compose build backend nginx
+            # --pull, or the base images stay as first pulled, without
+            # their upstream fixes
+            compose build --pull backend nginx
             return
         fi
     done
@@ -76,10 +81,23 @@ prune() {
     done
 }
 
-# Through nginx, as a browser arrives, at the first name it serves
+# Whether the backend and nginx running are the checked-out commit's
+running() {
+    local containers images repository
+    containers=$(compose ps -q backend nginx)
+    [ -n "$containers" ] || return 1
+    # shellcheck disable=SC2086 # one word per container
+    images=$(docker inspect --format '{{.Config.Image}}' $containers)
+    for repository in $(repositories); do
+        grep -qx "$repository:$tag" <<< "$images" || return 1
+    done
+}
+
+# Through nginx, as a browser arrives, at the first name it serves, as
+# Compose reads it from .env.prod (which may quote it)
 healthy() {
     local host
-    host=$(sed -n 's/^SERVER_NAME=//p' .env.prod | tail -n 1 | cut -d ' ' -f 1)
+    host=$(compose config nginx | sed -n 's/^ *NGINX_SERVER_NAME: //p' | tr -d "\"'" | cut -d ' ' -f 1)
     for _ in $(seq 10); do
         if curl -fsS -k --max-time 5 --resolve "$host:443:127.0.0.1" \
             "https://$host/api/health" > /dev/null; then
@@ -97,6 +115,16 @@ healthy() {
 replace() { compose up -d --no-build --no-deps --wait --wait-timeout "$WAIT_SECONDS" "$1"; }
 start() { replace backend && replace nginx && healthy; }
 
+# Brings the bundled db and redis up to the checked-out commit's settings,
+# naming only those whose profile is on: a service named on the command line
+# starts whatever its profile, and an external one has none here
+services() {
+    local bundled
+    bundled=$(compose config --services | grep -x -e db -e redis) || return 0
+    # shellcheck disable=SC2086 # one word per service
+    compose up -d --no-build --wait --wait-timeout "$WAIT_SECONDS" $bundled
+}
+
 [ $# -eq 1 ] || die "usage: $0 <commit> | --rollback"
 [ -f .env.prod ] || die ".env.prod not found"
 [ -z "$(git status --porcelain --untracked-files=no)" ] \
@@ -113,19 +141,28 @@ if [ "$1" = --rollback ]; then
     [ -n "$previous" ] || die "no previous deploy to roll back to"
     target=$previous
 else
+    # A local branch is wherever the clone left it: git fetch moves only
+    # origin's
+    ! git show-ref --verify --quiet "refs/heads/$1" \
+        || die "$1 is a local branch, which is not kept up to date; pass a commit, e.g. origin/$BRANCH"
     git fetch --quiet origin "$BRANCH"
     target=$(git rev-parse --verify --quiet "$1^{commit}") || die "unknown commit: $1"
     git merge-base --is-ancestor "$target" "origin/$BRANCH" \
         || die "$target is not on origin/$BRANCH"
 fi
 
-if [ "$target" = "$current" ]; then
+tag=$target
+# .env.deploy is written only once a deploy ends, so after one that was cut
+# off, the running containers may be another commit's than it records
+if [ "$target" = "$current" ] && running; then
     log "$target is already deployed"
     exit 0
 fi
+# Redeploying the recorded commit keeps the one before it for a rollback
+before=$current
+[ "$target" != "$current" ] || before=$previous
 
 was=$(git rev-parse HEAD)
-tag=$target
 log "deploying $tag"
 
 checkout "$tag"
@@ -134,16 +171,30 @@ if ! build; then
     die "could not build the images for $tag; nothing changed"
 fi
 
-if ! compose up --no-build --exit-code-from migrate migrate; then
+if ! services; then
+    if [ -z "$current" ]; then
+        checkout "$was"
+        write_state "" "" "$tag"
+        die "db or redis did not come up for $tag, and there is no earlier deploy to restore"
+    fi
+    checkout "$current"
+    tag=$current
+    services || die "db or redis did not come up for $target, nor again for $current: the app is down"
+    write_state "$current" "$previous" "$target"
+    die "db or redis did not come up for $target; they are back on $current's settings, and $current is serving"
+fi
+
+# --no-deps: db and redis are up already, and an external one is not here
+if ! compose up --no-build --no-deps --exit-code-from migrate migrate; then
     checkout "$was"
     write_state "$current" "$previous" "$tag"
     die "migrate failed for $tag; the running app is unchanged"
 fi
 
 if start; then
-    write_state "$tag" "$current" "$failed"
+    write_state "$tag" "$before" "$failed"
     # The deploy succeeded whatever the cleanup does
-    prune "$tag" "$current" || log "could not remove the older images"
+    prune "$tag" "$before" || log "could not remove the older images"
     log "deployed $tag"
     exit 0
 fi

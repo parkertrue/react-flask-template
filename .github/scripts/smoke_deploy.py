@@ -3,12 +3,14 @@
 CI's Deploy smoke job runs this. It copies the working tree into a fresh
 clone of a throwaway origin and commits a few versions to its main (a good
 one, a second good one, one whose nginx stops at start, one whose migration
-fails, one that does not build). Then it runs deploy.sh through each case
-and checks what it left running, the images it kept, the checkout and
-.env.deploy. Every failed check is printed, then it exits 1. Needs Docker,
-git, bash, curl, and a certificate pair in nginx/certs/; ports 80 and 443
-must be free.
+fails, one that does not build, one whose db does not start, one built on a
+base image no registry has, one that changes redis). Then it runs deploy.sh
+through each case, and after a deploy cut off halfway, and checks what it
+left running, the images it kept, the checkout and .env.deploy. Every
+failed check is printed, then it exits 1. Needs Docker, git, bash, curl,
+and a certificate pair in nginx/certs/; ports 80 and 443 must be free.
 """
+import os
 import secrets
 import shutil
 import subprocess
@@ -21,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # Its own project and subnet, so it can run beside a local stack
 PROJECT = 'deploy_smoke'
 EDGE_SUBNET_PREFIX = '10.217.8'
+# A base image only this host has, which a build that pulls cannot find
+STALE_BASE = f'{PROJECT}-stale-base:1'
 
 failures = []
 
@@ -31,8 +35,10 @@ def check(name, ok, detail=''):
         failures.append(name)
 
 
-def run(*args, cwd=None, check=True, input=None):
-    return subprocess.run(args, cwd=cwd, check=check, capture_output=True, text=True, input=input)
+def run(*args, cwd=None, check=True, input=None, env=None):
+    # UTF-8 whatever the locale: Windows' default can't decode the build's output
+    return subprocess.run(args, cwd=cwd, check=check, capture_output=True, encoding='utf-8',
+                          errors='replace', input=input, env=env and {**os.environ, **env})
 
 
 class Clone:
@@ -90,8 +96,9 @@ class Clone:
         lines = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
         return dict(line.split('=', 1) for line in lines)
 
-    def compose(self, *args, check=True):
-        return run('docker', 'compose', '--env-file', '.env.prod', *args, cwd=self.path, check=check)
+    def compose(self, *args, check=True, env=None):
+        return run('docker', 'compose', '--env-file', '.env.prod', *args, cwd=self.path, check=check,
+                   env=env)
 
 
 def env_file():
@@ -99,7 +106,8 @@ def env_file():
     values = {
         'DB_USER': 'app',
         'DB_MIGRATION_USER': 'app_migrate',
-        'SERVER_NAME': 'localhost',
+        # Quoted, as Compose allows: the health check must read it as Compose does
+        'SERVER_NAME': '"localhost www.localhost"',
     }
     lines = []
     for line in (ROOT / '.env.prod.example').read_text(encoding='utf-8').splitlines():
@@ -120,6 +128,12 @@ def running(service):
     name = f'{PROJECT}-{service}-1'
     out = run('docker', 'inspect', '-f', '{{.Config.Image}} {{.Id}}', name, check=False).stdout.split()
     return tuple(out) if len(out) == 2 else (None, None)
+
+
+def db():
+    """The bundled db's command and health"""
+    return run('docker', 'inspect', '-f', '{{json .Config.Cmd}} {{.State.Health.Status}}',
+               f'{PROJECT}-db-1', check=False).stdout.strip()
 
 
 def serving(clone, sha):
@@ -154,6 +168,16 @@ def scenario(clone):
     clone.write('nginx/Dockerfile', dockerfile + 'RUN exit 1\n')
     unbuildable = clone.commit('E: the build fails')
     clone.write('nginx/Dockerfile', dockerfile)
+    db_command = 'command: ["--innodb-buffer-pool-size=512M"]'
+    clone.edit('docker-compose.yml', db_command, db_command[:-1] + ', "--no-such-option"]')
+    broken_db = clone.commit('G: db does not start')
+    clone.edit('docker-compose.yml', db_command[:-1] + ', "--no-such-option"]', db_command)
+    clone.edit('nginx/Dockerfile', 'FROM nginx:1.31-alpine', f'FROM {STALE_BASE}')
+    stale_base = clone.commit('H: built on a base image no registry has')
+    clone.write('nginx/Dockerfile', dockerfile)
+    redis_image = 'image: redis:8.10-alpine'
+    clone.edit('docker-compose.yml', redis_image, f'{redis_image}\n    labels: [smoke.changed=1]')
+    changed_redis = clone.commit("I: redis's settings change")
     unpushed = clone.commit('F: never pushed', push=False)
     clone.git('checkout', '--quiet', '--detach', good)
 
@@ -198,6 +222,39 @@ def scenario(clone):
     check('nothing changed for it, nor is it recorded as failed',
           clone.state() == before and serving(clone, second)[0], clone.state())
 
+    # What a deploy of A killed halfway leaves, once the operator has removed
+    # its lock: A's backend running, A checked out, and .env.deploy still
+    # naming B. The operator then deploys B, the commit it records.
+    clone.compose('up', '-d', '--no-build', '--no-deps', '--wait', 'backend', env={'IMAGE_TAG': good})
+    clone.git('checkout', '--quiet', '--detach', good)
+    result = clone.deploy(second)
+    check('after a deploy cut off halfway, the recorded commit deploys again',
+          'already deployed' not in result.stdout and serving(clone, second)[0],
+          f'{result.stdout} {serving(clone, second)[1]}')
+    check('.env.deploy still records B, then A', (clone.state().get('IMAGE_TAG'),
+          clone.state().get('PREVIOUS_IMAGE_TAG')) == (second, good), clone.state())
+
+    healthy_db = db()
+    result = clone.deploy(broken_db)
+    check('a db that does not start fails the deploy', result.returncode == 1
+          and 'did not come up' in result.stderr, result.stderr)
+    check("db is back on B's settings, healthy", db() == healthy_db, db())
+    check('B still serves after the db failed', *serving(clone, second))
+    check('.env.deploy records G as failed', (clone.state().get('IMAGE_TAG'),
+          clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_db), clone.state())
+
+    run('docker', 'tag', 'nginx:1.31-alpine', STALE_BASE)
+    before = clone.state()
+    result = clone.deploy(stale_base)
+    check('the build pulls its base images', result.returncode == 1
+          and 'could not build' in result.stderr, result.stderr)
+    check('nothing changed for the stale base', clone.state() == before
+          and serving(clone, second)[0], clone.state())
+
+    result = clone.deploy('main')
+    check('a local branch name is refused', result.returncode == 1
+          and 'is a local branch' in result.stderr, result.stderr)
+
     result = clone.deploy(unpushed)
     check('a commit not on origin/main is refused', result.returncode == 1
           and 'is not on origin/main' in result.stderr, result.stderr)
@@ -223,6 +280,18 @@ def scenario(clone):
     check("only the deployed and previous commits' images are kept",
           kept() == {'backend': {good, second}, 'nginx': {good, second}}, kept())
 
+    # Redis external: its profile off, the bundled one's container (still
+    # answering as redis) stands in for it, and a deploy must leave it alone
+    env = clone.read('.env.prod')
+    (clone.path / '.env.prod').write_text(env.replace(
+        'COMPOSE_PROFILES=bundled-db,bundled-redis', 'COMPOSE_PROFILES=bundled-db'), newline='\n')
+    redis = running('redis')
+    result = clone.deploy(changed_redis)
+    check('a deploy with redis external serves I', *serving(clone, changed_redis))
+    check('it leaves redis alone, though its settings changed', running('redis') == redis,
+          running('redis'))
+    (clone.path / '.env.prod').write_text(env, newline='\n')
+
 
 def main():
     base = Path(tempfile.mkdtemp(prefix='deploy-smoke-'))
@@ -241,6 +310,7 @@ def main():
             check=False).stdout.split()]
         if images:
             run('docker', 'image', 'rm', '-f', *images, check=False)
+        run('docker', 'image', 'rm', STALE_BASE, check=False)
         shutil.rmtree(base, ignore_errors=True)
     print(f'{time.monotonic() - started:.0f} s')
     if failures:

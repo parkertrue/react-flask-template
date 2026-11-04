@@ -343,7 +343,9 @@ service (CloudWatch, Cloud Logging) ships each line off the host as it is
 written and keeps it for a set period. The template builds no log shipping of
 its own, which would tie it to the self-hosted Docker path. On the bundled
 Compose deployment, Docker's 3 × 10 MB per container is all there is: it caps
-by size, not age, and enough traffic can push older lines out. nginx cuts the
+by size, not age, and enough traffic can push older lines out. It also goes
+with its container, and every deploy replaces the backend and nginx, so the
+logs reach back to the last deploy at most. nginx cuts the
 client's text in each access line short, rate-limits the page as well as the
 API per address, and logs only a sample of what it refuses (below), which
 makes that slow for one client but not impossible for many. Measured on
@@ -383,7 +385,9 @@ fixed addresses in the upstream, or a reload of nginx after every deploy).
 one before the new one starts: the old nginx keeps serving the page, but the
 API answers a JSON 502 or 504 until the new backend listens (measured on a
 4 GB VM: 8.5 s), and connections are refused for about a second while nginx
-itself is replaced. *Revisit when:* a deploy's API gap matters to users (then
+itself is replaced. A commit that changes the bundled `db` or `redis` (its
+image, command or values) restarts it under the running app, which answers
+503 meanwhile. *Revisit when:* a deploy's API gap matters to users (then
 two backends, as above, started one after the other).
 
 **nginx's per-IP limits are per nginx.** On a platform, each task runs its
@@ -402,12 +406,22 @@ a public repository's packages public: distribution, see "Images are run,
 not distributed") or a manual, per-package setup and a registry login on
 every server. The cost is building on the server (internet access, memory
 for the frontend build, a few minutes per deploy while the old version
-serves). A base image's security patch reaches the server only with the
-next deployed commit; nothing rebuilds on a schedule, and redeploying the
-deployed commit changes nothing. *Revisit when:* an image must be byte for
+serves). The build pulls its base images (`build --pull`), so a base
+image's security patch reaches the server with the next deployed commit;
+nothing rebuilds on a schedule, and a rollback, or a redeploy of a commit
+whose images are still there, reuses its images. *Revisit when:* an image must be byte for
 byte the one tested, servers are too small to build, a base-image fix has to
 ship with no commit to carry it, or deploys move to a platform that pulls
 from a registry.
+
+**The bundled MySQL and Redis images change only with a tag bump.**
+`deploy.sh` doesn't pull `db`'s and `redis`'s images: upstream rebuilds of a
+pinned tag are not taken, so they are recreated only by a commit that
+changes their tag (Dependabot's `docker-compose` entry) or their settings.
+Pulling would restart MySQL or Redis under the running app whenever
+upstream rebuilt the tag, and most real deployments replace both with
+managed services, whose providers patch them. *Revisit when:* a reachable
+CVE in either is fixed by a same-tag rebuild.
 
 ## Deferred until the app grows
 
