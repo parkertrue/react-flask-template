@@ -25,7 +25,8 @@ Read every page, layout and form component in `frontend/src/` (`pages/`,
 - Every page: one `h1`, a `<PageTitle>`, a sensible heading order, landmarks
   (`header`, `nav`, `main`), and a skip link or equivalent.
 - Forms: every field through `FormField` (label, hint and message tied by
-  `aria-describedby`, `autoComplete` set), `noValidate`, focus on the first
+  `aria-describedby`, `autoComplete` set; lint refuses a form without
+  `noValidate`), focus on the first
   invalid field after a failed submit, errors announced (`role="alert"`),
   success announced (`role="status"`), `aria-invalid` on invalid fields.
 - Busy states: `aria-disabled` or `readOnly` rather than `disabled`, with

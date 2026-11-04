@@ -46,8 +46,12 @@ const FORM_CONTROL = {
   selector: 'JSXOpeningElement[name.name=/^(input|textarea|select)$/]',
   message: 'Use FormField (src/components/forms) instead of a raw form control.',
 }
+const NO_NATIVE_VALIDATION = {
+  selector: "JSXOpeningElement[name.name='form']:not(:has(JSXAttribute[name.name='noValidate']))",
+  message: "Forms are noValidate, so the app's own messages show.",
+}
 const restrictSyntax = (...selectors) => ({
-  'no-restricted-syntax': ['error', NO_TEXT_AS_HTML, ...NO_TEST_IDS, NO_DISABLED, NO_MOCKED_STORAGE, ...selectors],
+  'no-restricted-syntax': ['error', NO_TEXT_AS_HTML, ...NO_TEST_IDS, NO_DISABLED, NO_MOCKED_STORAGE, NO_NATIVE_VALIDATION, ...selectors],
 })
 
 // Assertions that accept several answers, in unit and E2E tests alike
@@ -61,6 +65,15 @@ const NO_HEDGES = [
     selector: "CallExpression[callee.name='expect'][arguments.0.type='LogicalExpression'][arguments.0.operator='||']",
     message: 'Pin the one answer the code gives.',
   },
+  {
+    selector: "CallExpression[callee.name='expect'][arguments.0.type='ConditionalExpression']",
+    message: 'Pin the one answer the code gives.',
+  },
+  {
+    // expect(true).toBe(true) passes whatever the code does
+    selector: "CallExpression[callee.name='expect'][arguments.0.type='Literal']",
+    message: 'Assert on what the code returns, not on a constant.',
+  },
 ]
 
 // An assertion that may not run, in a shared helper or a spec's own function,
@@ -68,7 +81,7 @@ const NO_HEDGES = [
 // test's callback, miss (backend: test_assertions.py scans conftest.py too).
 // A try with only a finally is allowed: what fails in it still fails the test
 const NO_CONDITIONAL_EXPECT = {
-  selector: ":matches(IfStatement, ConditionalExpression, TryStatement[handler], SwitchCase, LogicalExpression) CallExpression[callee.name='expect']",
+  selector: ":matches(IfStatement, ConditionalExpression, TryStatement[handler], SwitchCase, LogicalExpression, WhileStatement, DoWhileStatement) CallExpression[callee.name='expect']",
   message: 'Assert unconditionally: collect what to check, then assert once.',
 }
 
@@ -176,10 +189,19 @@ export default defineConfig([
   {
     // Shared code never depends on a feature or a page, so deleting a
     // feature folder cannot break it
-    files: ['src/{api,auth,components,utils}/**'],
+    files: ['src/{api,auth,components,utils,styles}/**', 'src/{appName,legal}.js'],
     rules: restrictImports({
       group: ['@/features/*', '@/pages/*', '@/routes'],
       message: 'Shared code must not import a feature or a page.',
+    }),
+  },
+  {
+    // Nor do the shared test helpers and tests, which may render the whole
+    // app through the routes (src/test/integration/)
+    files: ['src/test/**'],
+    rules: restrictImports({
+      group: ['@/features/*', '@/pages/*'],
+      message: 'Shared tests must not import a feature or a page.',
     }),
   },
   {
@@ -238,6 +260,7 @@ export default defineConfig([
       'vitest/no-restricted-matchers': ['error', WEAK_MATCHERS],
       // A run checks one branch only, even when the assert comes after it
       'vitest/no-conditional-in-test': 'error',
+      'vitest/no-large-snapshots': 'error',
     },
   },
   {

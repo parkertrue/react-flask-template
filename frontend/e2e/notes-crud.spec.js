@@ -150,7 +150,7 @@ test.describe('Notes accessibility', () => {
     await expect(page.getByRole('textbox', { name: 'Edit note', exact: true })).toBeFocused()
     await expectNoViolations(page)
     await expectReflow(page)
-    await expectVisibleFocus(page)
+    await expectVisibleFocus(page, 12)
     await expectTargetSize(page)
   })
 
@@ -172,7 +172,7 @@ test.describe('Notes accessibility', () => {
     await addNote(page, 'A note to tab past')
 
     await expectReflow(page)
-    await expectVisibleFocus(page)
+    await expectVisibleFocus(page, 11)
     await expectTargetSize(page)
   })
 
