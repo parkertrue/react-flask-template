@@ -243,6 +243,8 @@ def scenario(clone):
     check('.env.deploy records G as failed', (clone.state().get('IMAGE_TAG'),
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_db), clone.state())
 
+    # Pulled first: a build's base images need not be in the image list
+    run('docker', 'pull', '--quiet', 'nginx:1.31-alpine')
     run('docker', 'tag', 'nginx:1.31-alpine', STALE_BASE)
     before = clone.state()
     result = clone.deploy(stale_base)
