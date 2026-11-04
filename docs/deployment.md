@@ -53,6 +53,8 @@ sudo apt install certbot  # Ubuntu/Debian
 sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
 ```
 
+These steps edit tracked files, so on a server that deploys with `deploy.sh` the clone is then dirty and every later deploy refuses to start; certificate renewal without editing tracked files is not yet provided.
+
 3. In `docker-compose.yml`, replace the nginx volume `./nginx/certs:/etc/nginx/certs:ro` with the whole Certbot directory. Its `live/` files are relative symlinks into `archive/`, so mounting only `live/` breaks them.
 
    ```yaml
@@ -67,7 +69,7 @@ sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
    ssl_certificate_key  /etc/letsencrypt/live/yourdomain.com/privkey.pem;
    ```
 
-5. Rebuild and restart: `docker compose --env-file .env.prod up -d --build`
+5. Rebuild and restart: `docker compose --env-file .env.prod up -d --build` (on a server that deploys with `deploy.sh`, see the warning above)
 
 Let's Encrypt certificates expire after 90 days. Renew with `certbot renew` (the standalone method needs port 80 free, so stop nginx first), then restart nginx.
 

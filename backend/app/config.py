@@ -318,9 +318,9 @@ def trusted_proxy_count():
     behind a load balancer: it takes the client's address from the
     balancer's header itself (NGINX_TRUSTED_PROXIES) and forwards that alone.
     A deployment without nginx counts the proxies that append to the header:
-    1 for a load balancer, 2 with a CDN before it. Too
-    low, and every user shares the proxy's address and one rate-limit
-    bucket; too high, and a client picks its own address.
+    1 for a load balancer, 2 with a CDN before it. Too low, and every user
+    shares the proxy's address and one rate-limit bucket; too high, and a
+    client picks its own address.
     """
     value = os.getenv('TRUSTED_PROXY_COUNT', '1')
     if not (value.isascii() and value.isdigit()):

@@ -221,9 +221,22 @@ for every limited field. Chosen while planning PR #25. *Revisit when:* users
 report losing pasted text, or a field's limit is one people often reach.
 
 **`/api/health` is liveness only.** It answers 200 while MySQL or Redis is
-down; the routes that need them answer 503 instead. Compose uses it only to
-order startup, so a readiness check of the database and Redis would change
-nothing. *Revisit when:* an orchestrator or load balancer acts on health.
+down; the routes that need them answer 503 instead. Compose orders startup
+on it, `deploy.sh` rolls back when it fails through nginx, and a platform's
+load balancer routes on it. A readiness check would add little to any of
+them: the backend does not start serving until `wait_for_services.py` has
+reached MySQL and Redis and checked its grants, and a load balancer that
+drops every task during a database outage turns 503s into 502s. *Revisit
+when:* a deploy needs to catch a commit that starts but cannot serve (then
+a smoke request after the health check, in `deploy.sh`), or a platform must
+stop routing to a task that lost its database.
+
+**`email-validator` is called directly, not through Pydantic's
+`EmailStr`.** `EmailStr` accepts a display name (`Name <a@b.c>`), allows
+SMTPUTF8 local parts, and returns the Unicode `normalized` form.
+`normalize_email` needs `allow_smtputf8=False` and the `ascii_email` form,
+which keeps one mailbox per account and is the login limit's key.
+*Revisit when:* Pydantic's email type gains those options.
 
 **No `engines` field, the `react-router-dom` shim, unhashed Python locks.**
 CI and Docker pin Node 24, the shim costs nothing at runtime, and Dependabot

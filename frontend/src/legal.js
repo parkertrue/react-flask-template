@@ -1,7 +1,7 @@
 // Who runs the app, as the contact page, the privacy notice and the terms
-// name them. Placeholders: docs/personal-data.md lists
-// what to fill in. public/.well-known/security.txt can't import this, so a
-// test checks that its Contact matches the email.
+// name them. Placeholders: docs/personal-data.md lists what to fill in.
+// public/.well-known/security.txt can't import this, so a test checks
+// that its Contact matches the email.
 export const OPERATOR = {
   name: '[Your name or company]',
   address: '[Street and number, postcode and city, country]',

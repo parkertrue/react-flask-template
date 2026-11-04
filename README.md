@@ -108,7 +108,7 @@ ruff check .                 # Lint
 npm run lint
 npm run test:run             # Unit tests once (npm run test for watch mode)
 npm run test:coverage        # What CI runs
-npx playwright install chromium   # E2E, first time only
+npx playwright install chromium   # E2E: first time, and after each Playwright update
 npm run test:e2e             # E2E against the full Docker stack at https://localhost:8443
 ```
 

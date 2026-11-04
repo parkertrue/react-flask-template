@@ -53,8 +53,8 @@ Audits are **read-only** with respect to the repository:
   report (below).
 - Do not touch `.env.prod`, or the dev (`app_dev`) and production (`app`)
   Compose projects or their volumes. They hold the user's data.
-- Checks that need running services use one of two throwaway stacks, never
-  both at once. Only one check may run Docker at a time (the `/audit`
+- Checks that need running services use one of two throwaway stacks (plus
+  `/audit-infra`'s Deploy smoke run, below), never two at once. Only one check may run Docker at a time (the `/audit`
   orchestrator runs them one after another), and each tears its stack down
   when done, volumes included.
   - The **test stack**: `docker-compose.test.yml`, project `app_test`, ports
@@ -70,6 +70,13 @@ Audits are **read-only** with respect to the repository:
     the test stack uses `10.217.1`), plus a scratch override file that rebinds
     nginx to `127.0.0.1` (`ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]`),
     so nothing listens on the network. Never use the bare project name `app`.
+  - **Deploy smoke** (`python .github/scripts/smoke_deploy.py`,
+    `/audit-infra`'s deploy layer only): its own clone and project
+    `deploy_smoke`, subnet `10.217.8`, nginx on ports 80 and 443 of
+    **every** interface while it runs, so not beside the production-config
+    stack or a local production stack. It tears itself down, images
+    included; check `docker ps -a --filter name=deploy_smoke` is empty
+    afterwards.
   - Project names here (`app_test`, `app_dev`, `app_audit`) are the
     template's defaults. In an app built from the template, read the real
     names from each compose file's `name:` and use those instead.
@@ -123,7 +130,7 @@ Audits are **read-only** with respect to the repository:
   suites with coverage, the same again after `remove_examples.py` (the
   Scaffold job), compose validation, zizmor, a license, required-checks,
   toolchain-version and whitespace check, hadolint and gixy-ng.
-  Integration, E2E and the Platform smoke job run on `main`, on pull
+  Integration, E2E, Platform smoke and Deploy smoke run on `main`, on pull
   requests, and daily. Check the
   `on:` blocks in `.github/workflows/` if in doubt. **Read CI results instead
   of re-running them:** `gh run list --commit $(git rev-parse HEAD)` first,
