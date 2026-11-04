@@ -363,7 +363,8 @@ picked by `request_id` (`split_clients` in `nginx.conf`); refusals leave the
 error log entirely (`limit_req_log_level info`). Logging every refusal let one
 client roll Docker's 30 MB over in about 4 seconds, erasing everything older,
 the flood's own start and other users' requests included; the error-log
-lines also kept the query string and Referer, which the access log drops.
+lines also kept the whole query string and Referer, which the access log
+cuts at the query.
 Logging none was rejected too: nginx's 429s never reach Flask, so no
 `rate_limited` event would show that a flood happened or where it came from.
 The sample keeps the flood's address, timing and paths (multiply by 100 for

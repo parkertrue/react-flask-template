@@ -25,7 +25,7 @@ SERVICE_ENV = {
 # Read by app/config.py, but not set by SERVICE_ENV
 OPTIONAL_VARS = (
     'MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD', 'MIGRATION_DATABASE_PASSWORD',
-    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT')
+    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT', 'DB_QUERY_TIMEOUT')
 
 
 @pytest.fixture(autouse=True)
@@ -481,8 +481,6 @@ class TestConfigValues:
     def test_database_calls_time_out(self, config_class, monkeypatch):
         """A hung database must not hold request threads forever.
         tests/integration/test_mysql_timeouts.py shows it working."""
-        monkeypatch.delenv('DB_QUERY_TIMEOUT', raising=False)
-
         args = config_class().SQLALCHEMY_ENGINE_OPTIONS['connect_args']
 
         assert (args['connect_timeout'], args['read_timeout'], args['write_timeout']) == (5, 15, 15)
@@ -495,6 +493,14 @@ class TestConfigValues:
 
         assert 'read_timeout' not in args and 'write_timeout' not in args
         assert args['connect_timeout'] == 5
+
+    @pytest.mark.parametrize('value', ['-1', 'abc', '', '1.5', '٢'])
+    def test_query_timeout_refuses_anything_but_a_whole_number(self, monkeypatch, value):
+        """The error names the variable, which a bare int() would not"""
+        monkeypatch.setenv('DB_QUERY_TIMEOUT', value)
+
+        with pytest.raises(ValueError, match='DB_QUERY_TIMEOUT must be a whole number of seconds'):
+            DevelopmentConfig()
 
 
 class TestConfigInheritance:
