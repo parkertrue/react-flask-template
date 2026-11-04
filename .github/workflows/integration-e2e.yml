@@ -93,9 +93,10 @@ jobs:
           docker compose --env-file .env.test -f docker-compose.test.yml \
             -f .github/smoke/platform.yml --profile platform down -v
 
-  # deploy.sh against a registry on the runner: good deploys, a failed start
-  # rolled back, a failed migration that leaves the running app alone, and
-  # its refusals (.github/scripts/smoke_deploy.py)
+  # deploy.sh on the runner, building each commit as a server does: good
+  # deploys, a failed start rolled back, a failed migration, build or db
+  # start that leaves the running app alone, its refusals, and the images it
+  # keeps (.github/scripts/smoke_deploy.py)
   deploy:
     name: Deploy smoke
     runs-on: ubuntu-latest
