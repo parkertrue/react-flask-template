@@ -83,7 +83,8 @@ Frontend and backend code are both copied into their images, so a code change ne
 
 ```bash
 ./deploy.sh <commit>     # a commit of main; origin/main deploys the newest (the script fetches first)
-./deploy.sh --rollback   # the commit deployed before the current one
+./deploy.sh --latest     # the newest commit of main, unless it is deployed or failed last (for a timer)
+./deploy.sh --rollback   # the commit deployed before the current one, recording the current one as failed
 ```
 
 1. It refuses to start with uncommitted changes to tracked files in the clone, while another deploy runs, for a commit that isn't on `origin/main`, or for a local branch name such as `main`, which nothing keeps up to date (pass `origin/main`).
@@ -94,7 +95,7 @@ Frontend and backend code are both copied into their images, so a code change ne
 
 A migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release). A `db` or `redis` that came up healthy in step 3 stays too, through a failed `migrate` or a rollback, so MySQL is never downgraded; the previous code must run on it, and a MySQL upgrade that crashes partway can leave its data to repair by hand, which no rollback undoes. Take a backup before a commit that changes `db`'s image.
 
-`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed. Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. While the new backend starts, the old nginx keeps serving the page, and API requests get a JSON 502 or 504 (about 10 seconds on a small server); then connections are refused for about a second while nginx is replaced. A commit that changes `db` or `redis` adds a gap of its own in step 3: the running backend answers 503 until MySQL or Redis is back.
+`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed or was rolled back from (cleared once that commit deploys by name). Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. While the new backend starts, the old nginx keeps serving the page, and API requests get a JSON 502 or 504 (about 10 seconds on a small server); then connections are refused for about a second while nginx is replaced. A commit that changes `db` or `redis` adds a gap of its own in step 3: the running backend answers 503 until MySQL or Redis is back.
 
 **An interrupted deploy.** Run the script under `nohup` or `tmux`, so a dropped SSH session cannot cut it off. One that is cut off anyway (killed, or the server rebooted) leaves `.deploy.lock` beside the script, which refuses every later deploy, and `.env.deploy` still names the commit before it, while the new commit's backend may already run. Remove the lock (`rmdir .deploy.lock`), then deploy the commit you want, even the one `.env.deploy` names: the script checks what is running, not only what it recorded. Not `--rollback`, which counts back from the recorded commit, one further than you mean.
 
@@ -135,7 +136,60 @@ A migration must keep the code before it working: the old backend serves after i
 
 On a container platform such as ECS, the platform pulls the images from a registry instead ([Deploying to a Platform](#deploying-to-a-platform)).
 
-CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script on the runner: two good deploys, one whose nginx fails to start (rolled back from the images still there), one whose migration fails (the running backend never replaced), one that does not build, refusals, `--rollback`, and which images are kept.
+CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script on the runner: two good deploys, one whose nginx fails to start (rolled back from the images still there), one whose migration fails (the running backend never replaced), one that does not build, refusals, `--rollback`, which images are kept, and `--latest` through commits pushed between its runs.
+
+### Deploying Automatically
+
+`deploy.sh --latest`, run on a schedule, deploys every new commit of `main` within minutes of its merge. The server connects out to fetch it, so nothing has to reach the server from outside. Each run fetches `origin/main` and then:
+
+* does nothing when its newest commit is already deployed;
+* leaves it alone when it is the last commit that failed (a failed deploy, or one rolled back from with `--rollback`), until a newer commit lands on `main` or someone deploys it by name;
+* otherwise deploys it as `deploy.sh <commit>` would, with the same rollback. A build that fails is not recorded, so the next run tries again (a registry or the network may have been down).
+
+Every merge to `main` then reaches the server: the required status checks are the gate, Deploy smoke included, and anyone who can push to `main` runs code on the server as the deploy user, which can control the whole host (the `docker` group). Protect `main` accordingly.
+
+Any scheduler works. With systemd, as the deploy user from [Setting a server up](#redeploying), these two units check every 5 minutes, starting 5 minutes after boot so the stack can come up first:
+
+```ini
+# /etc/systemd/system/app-deploy.service
+[Unit]
+Description=Deploy the newest commit of main
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/home/deploy/app/deploy.sh --latest
+```
+
+```ini
+# /etc/systemd/system/app-deploy.timer
+[Unit]
+Description=Check main for a new commit every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now app-deploy.timer
+systemctl list-timers app-deploy.timer   # when it runs next
+journalctl -u app-deploy.service         # what each run did
+sudo systemctl start app-deploy.service  # run it now
+```
+
+With cron instead, in the deploy user's crontab (`sudo crontab -u deploy -e`), keeping the output, which grows until rotated: `*/5 * * * * /home/deploy/app/deploy.sh --latest >> /home/deploy/deploy.log 2>&1`.
+
+* **Pausing it.** `sudo systemctl disable --now app-deploy.timer` (or comment out the cron line). Do this before deploying an older commit by name: the next run would deploy the newest one again. `--rollback` needs no pause, since it records the commit it leaves as failed.
+* **A run that overlaps another deploy** is refused ("another deploy is running") and the next run tries again; systemd never starts a second run of the same unit while one is going.
+* **An interrupted deploy** leaves `.deploy.lock`, and every run fails until it is removed ([Redeploying](#redeploying), "An interrupted deploy"). A failed run shows as a failed unit (`systemctl --failed`) or in the log; nothing alerts you to it.
 
 ---
 

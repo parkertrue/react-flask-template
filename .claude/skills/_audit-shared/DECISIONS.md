@@ -437,6 +437,19 @@ upstream rebuilt the tag, and most real deployments replace both with
 managed services, whose providers patch them. *Revisit when:* a reachable
 CVE in either is fixed by a same-tag rebuild.
 
+**Deploys trust GitHub's `main`.** `deploy.sh` deploys any commit on
+`origin/main`, and `--latest` on a timer does so unattended, so whoever can
+push or merge to `main` (a stolen GitHub session or token included) runs
+code on the server as the deploy user, who can control the host through
+Docker. Branch protection and its required checks are the only gate. A
+signature check on the server would only help with commits signed by a key
+GitHub never holds: merges made in GitHub's UI, Dependabot's included, are
+signed by GitHub's own key, which a stolen session uses too, so every merge
+would have to be made and signed locally. *Revisit when:* the timer runs on
+a host with real data (then signed merges and `git verify-commit` against an
+`allowed_signers` file on the server, or a deploy that waits for a person's
+approval).
+
 ## Deferred until the app grows
 
 **TanStack Query.** It would replace the hand-written loading, error and
@@ -467,8 +480,7 @@ recovery check is blocked by the missing backups). They are not new findings.
 - **Not built yet** (the deploy, restart and restore work on a test server
   will bring the first ones): automated backups and a
   restore procedure, server hardening (SSH, firewall, Fail2ban), certificate
-  auto-renewal, an automatic deploy trigger (`deploy.sh` deploys one commit
-  when someone runs it), monitoring, centralized logging, a CDN.
+  auto-renewal, monitoring, centralized logging, a CDN.
 - **The production docs wait for the work on the test server.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
   nginx template (which breaks CI and the test stack if followed), the docs

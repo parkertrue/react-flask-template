@@ -95,8 +95,8 @@ jobs:
 
   # deploy.sh on the runner, building each commit as a server does: good
   # deploys, a failed start rolled back, a failed migration, build or db
-  # start that leaves the running app alone, its refusals, and the images it
-  # keeps (.github/scripts/smoke_deploy.py)
+  # start that leaves the running app alone, its refusals, the images it
+  # keeps, and --latest as a timer runs it (.github/scripts/smoke_deploy.py)
   deploy:
     name: Deploy smoke
     runs-on: ubuntu-latest
