@@ -4,7 +4,7 @@ name: app_dev
 
 services:
   db:
-    image: mysql:8.4.11
+    image: mysql:8.4.13
     # Only the variables MySQL needs, interpolated from the --env-file passed
     # to docker compose, so SECRET_KEY and the Redis password stay out. The
     # image makes MYSQL_USER, the migration user, owner of MYSQL_DATABASE;

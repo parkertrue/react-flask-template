@@ -8,7 +8,7 @@ x-backend-address: &backend-address "${EDGE_SUBNET_PREFIX:-10.217.1}.10"
 
 services:
   db:
-    image: mysql:8.4.11
+    image: mysql:8.4.13
     # Production's hardening, so E2E catches an image that breaks under it
     # (.github/scripts/check_compose.py compares the two)
     security_opt:
