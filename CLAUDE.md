@@ -74,7 +74,7 @@ pytest tests/unit/auth/test_routes.py::TestClassName::test_method_name -v
 
 ## Audits
 
-Skills in `.claude/skills/` that audit the template, run on demand only, never automatically. Each check runs in its own subagent, changes nothing, and writes its findings to `temp/audits/YYYY-MM-DD-<check>.md`, comparing them with its previous report.
+Skills in `.claude/skills/` that audit the template, run on demand only, never automatically. Each check runs in its own subagent, changes nothing, and writes its findings to `temp/audits/YYYY-MM-DD-<check>.md`, comparing them with its previous report. Each report also proposes the PRs that would fix every finding, nits included, the decisions the user must make, and where each finding is to be recorded (the handoff's open issues or `DECISIONS.md`), which the main conversation does once the user approves.
 
 | Command | Covers | When to run |
 |---|---|---|
