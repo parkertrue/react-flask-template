@@ -656,7 +656,7 @@ class TestLogoutEndpoint:
         assert response.get_json()['message'] == 'Logged out'
         assert fake_redis.tokens == set()
         cleared = response.headers.getlist('Set-Cookie')
-        assert any(c.startswith('__Secure-refresh_token=;') for c in cleared)
+        assert [c.split(';')[0] for c in cleared] == ['__Secure-refresh_token=']
 
     def test_refresh_after_logout_is_rejected(self, client, sample_user, fake_redis):
         csrf = login(client)
@@ -677,7 +677,7 @@ class TestLogoutEndpoint:
 
         assert response.status_code == 200
         cleared = response.headers.getlist('Set-Cookie')
-        assert any(c.startswith('__Secure-refresh_token=;') for c in cleared)
+        assert [c.split(';')[0] for c in cleared] == ['__Secure-refresh_token=']
         assert client.get_cookie('__Secure-refresh_token', path='/api/auth') is None
 
     def test_clear_cookies_needs_no_token(self, client):
@@ -710,7 +710,7 @@ class TestLogoutEndpoint:
         assert response.get_json()['message'] == 'Logged out from 2 device(s)'
         assert fake_redis.tokens == set()
         cleared = response.headers.getlist('Set-Cookie')
-        assert any(c.startswith('__Secure-refresh_token=;') for c in cleared)
+        assert [c.split(';')[0] for c in cleared] == ['__Secure-refresh_token=']
 
     def test_logout_all_leaves_other_users_sessions(self, client, app, sample_user, second_user, fake_redis):
         other_user = app.test_client()
@@ -933,8 +933,8 @@ class TestUnusualRefreshTokens:
         response = client.post('/api/auth/logout', headers=csrf)
 
         assert response.status_code == 200
-        assert any(c.startswith('__Secure-refresh_token=;')
-                   for c in response.headers.getlist('Set-Cookie'))
+        assert [c.split(';')[0] for c in response.headers.getlist('Set-Cookie')] == [
+            '__Secure-refresh_token=']
 
 
 class TestSecurityEvents:

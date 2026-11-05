@@ -86,6 +86,7 @@ def create_app():
         created after the backup would work as the next one registered.
         """
         user = db.session.get(User, int(identity))
+        # A test may mint a token for no account; the user loader refuses it anyway
         return {'user_created_at': user.created_timestamp} if user else {}
 
     @jwt.user_lookup_loader

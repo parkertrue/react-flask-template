@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, make_response, request
-from flask_jwt_extended import current_user, jwt_required, unset_jwt_cookies
+from flask_jwt_extended import current_user, jwt_required, unset_refresh_cookies
 from sqlalchemy import delete
 
 from app import db, limiter
@@ -74,5 +74,5 @@ def delete_account():
 
     security_event('account_deleted', user_id=user_id)
     response = make_response(jsonify({'message': 'Account deleted'}), 200)
-    unset_jwt_cookies(response)
+    unset_refresh_cookies(response)
     return response

@@ -12,7 +12,7 @@ from flask_jwt_extended import (
     jwt_required,
     get_jwt,
     set_refresh_cookies,
-    unset_jwt_cookies,
+    unset_refresh_cookies,
     get_csrf_token,
     decode_token
 )
@@ -281,7 +281,7 @@ def logout():
     security_event('logout', user_id=user_id)
 
     response = make_response(jsonify({'message': 'Logged out'}), 200)
-    unset_jwt_cookies(response)
+    unset_refresh_cookies(response)
     return response
 
 
@@ -297,7 +297,7 @@ def clear_cookies():
         abort(415)
 
     response = make_response(jsonify({'message': 'Cookies cleared'}), 200)
-    unset_jwt_cookies(response)
+    unset_refresh_cookies(response)
     return response
 
 
@@ -316,5 +316,5 @@ def logout_all():
     security_event('logout_all', user_id=current_user.id, sessions=count)
     message = f'Logged out from {count} device(s)' if count > 0 else 'No active sessions found'
     response = make_response(jsonify({'message': message}), 200)
-    unset_jwt_cookies(response)
+    unset_refresh_cookies(response)
     return response
