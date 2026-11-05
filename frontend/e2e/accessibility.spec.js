@@ -172,6 +172,8 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
       await expectReflow(page)
       await expectTargetSize(page)
+      // The modal keeps Tab inside it: its two buttons
+      await expectVisibleFocus(page, 2)
 
       // Escape keeps the session, and focus goes back to the button that asked
       await page.keyboard.press('Escape')
@@ -202,6 +204,8 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
       await expectReflow(page)
       await expectTargetSize(page)
+      // The password field and the two buttons
+      await expectVisibleFocus(page, 3)
       // Centered, not pinned to a corner by the CSS reset's margin: 0
       const box = await dialog.boundingBox()
       expect(Math.abs(box.x + box.width / 2 - page.viewportSize().width / 2)).toBeLessThan(2)

@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 
 import wait_for_services as wait
-from app.config import database_url, redis_url
+from app.config import database_url, read_redis_url
 
 ENV = {
     'DATABASE_URL': 'mysql+pymysql://app:db-secret@db:3306/app',
@@ -129,8 +129,9 @@ def test_checks_the_urls_the_app_will_use(env, clock, monkeypatch):
     wait.main()
 
     assert [str(url) for url in checked] == [
-        'mysql+pymysql://owner:***@db/app', 'redis://app:other-secret@redis:6379/0']
+        'mysql+pymysql://owner:***@db/app', 'redis://app:***@redis:6379/0']
     assert checked[0].password == 'owner-secret'
+    assert checked[1].password == 'other-secret'
 
 
 def test_returns_once_both_services_answer(env, clock, monkeypatch, capsys):
@@ -204,7 +205,7 @@ def test_a_check_that_raises_reports_why(env, monkeypatch):
 
     mysql = wait.mysql_error(database_url(), [])
     assert mysql.startswith("(pymysql.err.OperationalError) (1045, \"Access denied for user 'app'\")")
-    assert wait.redis_error(redis_url(), []) == 'invalid username-password pair'
+    assert wait.redis_error(read_redis_url(), []) == 'invalid username-password pair'
 
 
 def test_an_error_without_a_message_is_named_by_its_type(env, monkeypatch):
@@ -212,7 +213,7 @@ def test_an_error_without_a_message_is_named_by_its_type(env, monkeypatch):
         raise redis.TimeoutError()
     monkeypatch.setattr(redis.Redis, 'ping', time_out)
 
-    assert wait.redis_error(redis_url(), []) == 'TimeoutError'
+    assert wait.redis_error(read_redis_url(), []) == 'TimeoutError'
 
 
 def test_a_check_that_connects_reports_no_error(env, monkeypatch):
@@ -222,7 +223,7 @@ def test_a_check_that_connects_reports_no_error(env, monkeypatch):
     monkeypatch.setattr(redis.Redis, 'ping', lambda self: True)
 
     assert wait.mysql_error(database_url(), []) is None
-    assert wait.redis_error(redis_url(), []) is None
+    assert wait.redis_error(read_redis_url(), []) is None
 
 
 def test_the_mysql_check_gives_up_on_a_connection_quickly(env, monkeypatch):

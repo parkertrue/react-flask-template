@@ -25,7 +25,7 @@ describe('Navbar', () => {
     expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument()
   })
 
-  it('offers a signed-in user their notes, account and logout', () => {
+  it("offers a signed-in user the app's pages, their account and logout", () => {
     signIn('user@example.com')
     renderNavbar('/')
 

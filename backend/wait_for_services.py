@@ -64,7 +64,8 @@ def mysql_error(url, secrets):
 def redis_error(url, secrets):
     """None once Redis accepts this login, else why it does not"""
     try:
-        client = redis.Redis.from_url(url, socket_connect_timeout=2)
+        client = redis.Redis.from_url(url.render_as_string(hide_password=False),
+                                      socket_connect_timeout=2)
         client.ping()
         client.close()
         return None
@@ -128,7 +129,6 @@ def main():
         log.error(f"Missing required environment variables: {', '.join(missing)}")
         sys.exit(1)
     secrets = [url.password for url in (database, app_database, redis_) if url]
-    redis_ = redis_.render_as_string(hide_password=False)
 
     deadline = time.monotonic() + TIMEOUT_SECONDS
     shown = None

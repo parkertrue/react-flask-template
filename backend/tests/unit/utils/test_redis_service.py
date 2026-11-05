@@ -22,7 +22,7 @@ class TestRedisServiceInitialization:
 
             service = RedisService(URL, max_connections=50)
 
-            assert service._client is not None
+            assert service._client is mock_client
             mock_client.ping.assert_called_once()
 
     def test_connects_with_the_url(self):

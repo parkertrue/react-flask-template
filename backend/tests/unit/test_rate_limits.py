@@ -440,7 +440,7 @@ class TestDeleteAccountLimit:
             refuse_revoking(owner_app, patched)
             deletions = [self.delete(client, headers, 'TestPassword123').status_code
                          for _ in range(6)]
-        monkeypatch.setattr('app.auth.routes.verify_password', lambda stored, given: False)
+        monkeypatch.setattr('app.auth.models.verify_password', lambda stored, given: False)
 
         logins = [login(client, f'10.0.{i // 250}.{i % 250}', email='owner@example.com').status_code
                   for i in range(100)]
