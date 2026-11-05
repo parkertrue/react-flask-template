@@ -116,7 +116,7 @@ E2E needs a [certificate](#https-certificate). Locally, Playwright reuses an E2E
 
 ### Continuous Integration
 
-GitHub Actions runs lint, every test suite and config checks on each push and pull request to `main`, and the integration and E2E suites nightly too. Dependabot opens weekly update PRs; for security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under Settings > Advanced Security, and turn off "Dismiss low impact alerts" under Dependabot rules.
+GitHub Actions runs lint, every test suite and config checks on each push and pull request to `main`, and the integration, E2E and smoke jobs nightly too. Dependabot opens weekly update PRs; for security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under Settings > Advanced Security, and turn off "Dismiss low impact alerts" under Dependabot rules.
 
 To stop a failing check from merging, require these status checks on `main` (Settings > Branches): Backend unit, Frontend unit, Scaffold, Compose files, Workflows, Dockerfiles, Nginx config, Backend integration, Platform smoke, Deploy smoke and Playwright E2E.
 
@@ -126,7 +126,7 @@ To stop a failing check from merging, require these status checks on `main` (Set
 
 Everything runs in Docker; only Nginx is published (ports 80 and 443). [docs/deployment.md](docs/deployment.md) covers the details: database users, changing secrets later, Let's Encrypt, external MySQL or Redis, container platforms such as ECS, logs, backups and restoring.
 
-**Not included:** alerts, log shipping, scheduled off-host backups, host hardening and certificate renewal are left to the tools made for them; [Operating in Production](docs/deployment.md#operating-in-production) says which to reach for. Set them up before the server holds real data.
+**Not included:** alerts, log shipping, scheduled off-host backups, disk encryption and host hardening are left to the tools made for them, and certificate renewal is not provided yet; [Operating in Production](docs/deployment.md#operating-in-production) says which to reach for. Set them up before the server holds real data.
 
 ### Environment File
 
@@ -152,7 +152,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 ### Build and Start
 
 ```bash
-docker compose --env-file .env.prod build --provenance=false
+docker compose --env-file .env.prod build --pull --provenance=false
 docker compose --env-file .env.prod up
 ```
 
@@ -178,7 +178,7 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
 
 1. Rename the Compose projects (`name:` at the top of each compose file: `app_dev`, `app_test`, `app`) and the databases in `.env.dev` and `.env.test` (`appdb_dev`, `appdb_test`). Two apps built from this template then never share containers or volumes, and your dev and test stacks start with empty databases.
 2. Replace notes with your first feature, in one of two ways:
-   - **Rename it** into your feature, the quickest start when that feature is also a list of things a user owns: `backend/app/notes/`, `frontend/src/features/notes/` and their tests (`backend/tests/unit/notes/`, `backend/tests/integration/notes/`, `frontend/e2e/notes-crud.spec.js`).
+   - **Rename it** into your feature, the quickest start when that feature is also short text items a user adds, edits and deletes: `backend/app/notes/`, `frontend/src/features/notes/` and their tests (`backend/tests/unit/notes/`, `backend/tests/integration/notes/`, `frontend/e2e/notes-crud.spec.js`).
    - **Delete it**, and build your feature in the same shape: delete those folders and files.
 
    Either way, delete `backend/migrations/versions/0002_notes.py` (step 4 generates yours) and update the wiring points above. Then delete `.github/scripts/remove_examples.py` and the Scaffold job in `.github/workflows/ci.yml`, and remove `Scaffold` from the list of required status checks under [CI](#continuous-integration) (the Workflows job fails while that list names a job that doesn't exist) and from Settings > Branches: they only prove that the template's examples can be removed, and the import rules keep shared code off your features.
