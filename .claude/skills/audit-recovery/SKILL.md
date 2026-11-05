@@ -1,6 +1,6 @@
 ---
 name: audit-recovery
-description: Break a throwaway production-config stack on purpose (crashes, outages, full storage, restarts) and check the app fails safe and recovers on its own; review backup/restore and compromised-host readiness. Restore drills run once backups exist.
+description: Break a throwaway production-config stack on purpose (crashes, outages, full storage, restarts) and check the app fails safe and recovers on its own; review backup/restore and compromised-host readiness. Runs the documented restore drill.
 argument-hint: "[drills|review]"
 disable-model-invocation: true
 context: fork
@@ -74,24 +74,28 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
 
 ## 2. review: readiness on paper
 
-- **Backups and restore:** DECISIONS.md lists backups as a known gap. Until a
-  backup procedure exists, report "Restore drill: blocked, no backups" under
-  *Skipped*, and review only what a backup would need: which volumes hold
-  state (MySQL, Redis AOF), what can be lost without harm (rate-limit
-  counters), consistent MySQL dumps (`--single-transaction`), and the 3-2-1
-  rule. Once a backup procedure exists in the repo or `docs/`, this part must
-  instead restore the most recent backup into a fresh `app_audit` stack and run
-  the driver script against it.
+- **Backups and restore:** `docs/deployment.md`, "Backups and Restoring",
+  gives the dump and both restores; scheduling and off-host copies are left
+  to other tools (DECISIONS.md, "Generic server operations are out of
+  scope"). Follow it exactly on the `app_audit` stack, with `-p app_audit`
+  and the scratch env file added to each command: seed data through the
+  driver script, dump, change data, restore into the running stack, then
+  `down -v` and restore into a fresh volume, running the driver script
+  after each. Does each restore bring back the dump's rows and only those,
+  and is a token of an account created after the dump refused, even once
+  the next account registered takes its id? Review the rest on paper: what Redis loses
+  (sessions, rate-limit counters), the dump's handling (it holds emails and
+  password hashes), and the 3-2-1 rule.
 - **Compromised host:** if an attacker gets a shell in each container (nginx,
   backend, db, redis) or on the host, what can they reach and what must be
   rotated? Is the rotation procedure documented (SECRET_KEY invalidates all
   tokens; DB and Redis passwords; TLS key)? Is there a way to revoke every
   session at once?
 - **Operator documentation:** do README and `docs/deployment.md` tell an operator how to restart,
-  roll back a bad deploy, rotate secrets, and read logs? The runbook waits
-  for the work on the test server (DECISIONS.md, Known gaps, "The production docs
-  wait"), so a missing runbook step is a finding only where they
-  present the step as covered, or gives one that is wrong.
+  roll back a bad deploy, back up and restore, rotate secrets, and read
+  logs? Certificate renewal waits for the work on the test server
+  (DECISIONS.md, Known gaps), so a missing renewal step is a finding only
+  where the docs present it as covered, or give one that is wrong.
 
 ## Out of scope
 Fixing anything. Live production drills: drills never run against a

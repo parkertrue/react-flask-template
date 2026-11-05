@@ -77,20 +77,35 @@ def create_app():
     # Imported here for the same reason as the routes below
     from app.auth.models import User
 
+    @jwt.additional_claims_loader
+    def add_account_claims(identity):
+        """Every token names its account by id and creation time.
+
+        An id alone can name another account: a restored backup hands out
+        ids again from where the dump left off, so a token of an account
+        created after the backup would work as the next one registered.
+        """
+        user = db.session.get(User, int(identity))
+        return {'user_created_at': user.created_timestamp} if user else {}
+
     @jwt.user_lookup_loader
     def load_user(jwt_header, jwt_payload):
-        """Runs on every @jwt_required request: the token's user must exist.
+        """Runs on every @jwt_required request: the token's account must exist.
 
         A deleted account's access token stays valid until it expires; this
         turns it away on every route at the cost of one primary-key lookup,
-        rather than each route remembering to check. Routes read the user
-        as flask_jwt_extended.current_user.
+        rather than each route remembering to check, and turns away a token
+        whose id now names a different account (add_account_claims). Routes
+        read the user as flask_jwt_extended.current_user.
         """
-        return db.session.get(User, int(jwt_payload['sub']))
+        user = db.session.get(User, int(jwt_payload['sub']))
+        if user is None or jwt_payload.get('user_created_at') != user.created_timestamp:
+            return None
+        return user
 
     @jwt.user_lookup_error_loader
     def user_not_found(jwt_header, jwt_payload):
-        security_event('token_invalid', reason='User not found',
+        security_event('token_invalid', reason='User not found or replaced',
                        user_id=int(jwt_payload['sub']))
         # Answered as a bad token, so the frontend signs the user out
         return token_invalid()

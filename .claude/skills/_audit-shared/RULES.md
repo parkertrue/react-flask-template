@@ -50,7 +50,9 @@ Audits are **read-only** with respect to the repository:
 
 - Do not edit, create or delete tracked files, and do not commit, push, or
   change branches in the main working tree. The only file you write is your
-  report (below).
+  report (below). That includes `temp/HANDOFF-open-issues.md` and
+  `DECISIONS.md`: the report's *Recording plan* proposes what goes in them,
+  and the main conversation records it once the user approves.
 - Do not touch `.env.prod`, or the dev (`app_dev`) and production (`app`)
   Compose projects or their volumes. They hold the user's data.
 - Checks that need running services use one of two throwaway stacks (plus
@@ -215,6 +217,27 @@ tagged `(open: ...)`. Resolved: the earlier findings that are now fixed.
 Recurring: IDs also in the last report (call out any reported three times or
 more).
 
+## Proposed PRs
+Every finding not tagged `(open: ...)` and not proposed for DECISIONS.md
+goes into exactly one PR, lows and nits included.
+### PR 1: <title>
+Fixes: <IDs>
+Changes: <file by file, from the Fix column>
+Guards: <from the Prevent column, or "—">
+Tests: <suites to run, tests to add and mutation-check>
+
+## Decisions for you
+One entry per finding whose fix needs the user's choice now (which option,
+whether to fix or record it, a wording): the question, the options with
+the recommended one first, and what each changes. "None." if there are none.
+
+## Recording plan
+| ID | Sev | Goes to |
+|---|---|---|
+| INFRA-1 | high | PR 1 |
+| INFRA-2 | low | handoff: <existing item it merges into>, or new item under <group> |
+| INFRA-3 | nit | DECISIONS.md: new entry (below), or amends "<entry title>" |
+
 ## Proposed DECISIONS.md entries
 Findings that look deliberate: the entry you would add, for the user to accept or reject.
 
@@ -224,6 +247,17 @@ Short bullets of important claims you checked and found true (one line each).
 ## Unverified / Skipped
 What you could not check, and why (no deployment, Docker unavailable, ...).
 ```
+
+**Proposed PRs:** group findings that touch the same files or would be
+fixed together, keep a risky change (auth, data, deploy) apart from
+routine ones, and order the PRs by severity, then by what depends on
+what. A finding tagged `(open: ...)` stays with its handoff item and gets
+no PR, unless this run's evidence makes it more urgent; say why if so.
+
+**Recording plan:** one row per finding, every ID in *Findings* exactly
+once; check the count matches the Counts line. A finding in a PR is
+recorded with that PR; one that overlaps a handoff item or a DECISIONS.md
+entry is combined with it rather than added beside it.
 
 **Timings:** run `date +%H:%M` when you start, just before your first
 container starts, just after your last teardown, and when you finish, and
@@ -246,6 +280,8 @@ ID prefixes: `INFRA`, `TEST`, `SEC`, `REC`, `CODE`, `A11Y`, `DOCS`, `SCAF`,
 `LEGAL`.
 Order findings by severity. Give each one a precise `file:line`.
 
-When done, reply with **only**: the verdict, the counts, the top five
-findings (ID, severity, one line each), and the report path. The report holds
-the detail.
+When done, reply with **only**: the verdict, the counts, one line per
+proposed PR (title and the IDs it fixes), the IDs going to the handoff or
+DECISIONS.md, the *Decisions for you* in full, and the report path. End by
+asking the user to answer the decisions, so the findings can be recorded
+as the *Recording plan* says. The report holds the detail.

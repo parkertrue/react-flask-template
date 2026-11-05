@@ -450,6 +450,17 @@ a host with real data (then signed merges and `git verify-commit` against an
 `allowed_signers` file on the server, or a deploy that waits for a person's
 approval).
 
+**Generic server operations are out of scope.** The template documents what
+depends on how it is built (restarts, its MySQL volume's dump and restore,
+what its init script and secrets do on rotation, `deploy.sh`), and leaves
+what any Docker host needs to the tools made for it: alerts and uptime
+checks, host metrics, log shipping, scheduled and off-host backups,
+point-in-time recovery (a managed database), host hardening and its audits
+(Lynis, Docker Bench, CIS). `docs/deployment.md`, "Operating in
+Production", says what is not included and which tool to reach for; audits
+report a missing one only where those docs fail to name it. *Revisit when:*
+a gap's answer comes to depend on how this template is built.
+
 ## Deferred until the app grows
 
 **TanStack Query.** It would replace the hand-written loading, error and
@@ -466,8 +477,9 @@ when:* the app adopts a server-rendering framework.
 
 ## Known gaps (open work, not new findings)
 
-A check mentions these only when its findings bear on one (for example, the
-recovery check is blocked by the missing backups). They are not new findings.
+A check mentions these only when its findings bear on one (for example, a
+docs check that finds the certificate steps wrong). They are not new
+findings.
 
 - **Email verification**; **data export** (GDPR Art. 15, 20) and **email
   change** (Art. 16), which the privacy notice handles by email meanwhile.
@@ -477,19 +489,12 @@ recovery check is blocked by the missing backups). They are not new findings.
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.
-- **Not built yet** (the deploy, restart and restore work on a test server
-  will bring the first ones): automated backups and a
-  restore procedure, server hardening (SSH, firewall, Fail2ban), certificate
-  auto-renewal, monitoring, centralized logging, a CDN.
-- **The production docs wait for the work on the test server.** The Let's
+- **Certificate renewal waits for the work on the test server.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
-  nginx template (which breaks CI and the test stack if followed), the docs
-  don't list what production lacks, and there is no operator runbook
-  (detached start, status, TLS key rotation, a failed `up -d`;
-  `docs/deployment.md` covers deploying and rolling back, in Redeploying,
-  and reading logs). All three get written and
-  tried on that server rather than on paper. Until then the docs and
-  recovery checks don't report them.
+  nginx template (which breaks CI and the test stack if followed, and leaves
+  a `deploy.sh` clone dirty), and renewal is manual. It gets written and
+  tried on that server rather than on paper; until then the docs and
+  recovery checks don't report it. A CDN is not set up either.
 - **TLS between containers** is not needed while every service shares one
   host: the bundled MySQL and Redis traffic stays on the `internal` network,
   and anyone who can sniff that bridge already has root on the host. Off-host
