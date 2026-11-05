@@ -82,8 +82,8 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   driver script, dump, change data, restore into the running stack, then
   `down -v` and restore into a fresh volume, running the driver script
   after each. Does each restore bring back the dump's rows and only those,
-  and does a token issued after the dump stop working once `SECRET_KEY` is
-  replaced as the docs say? Review the rest on paper: what Redis loses
+  and is a token of an account created after the dump refused, even once
+  the next account registered takes its id? Review the rest on paper: what Redis loses
   (sessions, rate-limit counters), the dump's handling (it holds emails and
   password hashes), and the 3-2-1 rule.
 - **Compromised host:** if an attacker gets a shell in each container (nginx,
