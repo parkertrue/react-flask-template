@@ -249,7 +249,7 @@ mismatch, React Router drops the shim, or a supply-chain incident touches
 PyPI.
 
 **A write the client was told failed may still have committed.** When a
-commit stalls inside MySQL (a full disk, a hung server), the query timeout or
+commit stalls inside MySQL (a hung server), the query timeout or
 nginx's 60s gives up and the client gets a 503 or 504, but MySQL can finish
 the commit later. Retrying then repeats the write: a duplicate note, or a 409
 for an account that was in fact created. This is the general ambiguous-failure

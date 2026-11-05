@@ -14,7 +14,6 @@ Every app built from the template collects personal data from its first sign-up,
 |---|---|---|
 | Email, password hash, when registered, terms version and when accepted | MySQL `users` | Until the user deletes the account (Account page) |
 | Users' content (the notes example) | The feature's tables | Until the user deletes it or the account |
-| Every write, deleted rows included | MySQL's binary log | 30 days (MySQL's default) |
 | Refresh-token ids, at most 10 per user | Redis | Until the session expires (7 days idle, 30 at most), logs out or deletes the account |
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
@@ -22,13 +21,13 @@ Every app built from the template collects personal data from its first sign-up,
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
 | Refresh token | Cookie `__Secure-refresh_token` (HttpOnly) | Up to 30 days |
 
-Deleting an account (the Account page asks for the password) deletes its `users` row, every feature's rows that reference it, and its sessions in Redis, at once. What the logs and MySQL's binary log hold about it goes as they age out, and so would its copies in backups, by their own retention: state that in the privacy notice.
+Deleting an account (the Account page asks for the password) deletes its `users` row, every feature's rows that reference it, and its sessions in Redis, at once. What the logs hold about it goes as they age out, and so would its copies in backups, by their own retention: state that in the privacy notice.
 
 No analytics, no third-party requests and no email: the template itself sends nothing to a third party, though your host and any managed service you add are processors. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.
 
 **Before launch:**
 1. Fill in `legal.js`, then write the three pages for your app from the table above and your own features.
-2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped ([Logs](deployment.md#logs)). On the Compose path, save or ship the logs before each deploy, or the deploy erases them: they also hold the only record of which accounts were deleted, which a restore brings back and you must delete again ([Deleted accounts come back](deployment.md#deleted-accounts-come-back)). A restore that loses data (the accounts and writes since the backup) is a personal data breach to record (GDPR Art. 33(5)). Decide the MySQL binary log together with backups: keep it for point-in-time recovery, or turn it off.
+2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped ([Logs](deployment.md#logs)). On the Compose path, save or ship the logs before each deploy, or the deploy erases them: they also hold the only record of which accounts were deleted, which a restore brings back and you must delete again ([Deleted accounts come back](deployment.md#deleted-accounts-come-back)). A restore that loses data (the accounts and writes since the backup) is a personal data breach to record (GDPR Art. 33(5)). The bundled MySQL keeps no binary log; turning it back on (for point-in-time recovery) keeps every write, deleted rows included, for its retention: state that in the notice.
 3. Name every provider that processes personal data for you (the host, a log service, a CDN, an email service) in the privacy notice, and sign each one's data processing agreement. If one processes EU or UK users' data outside the EU/EEA or UK, note the transfer safeguard in the notice (an adequacy decision, or the standard contractual clauses in its agreement), or choose a region inside. Encrypt the server's disk ([Not Included](deployment.md#not-included)), and name it in the notice and the record of processing as one of your security measures.
 4. Set `security.txt`'s `Contact` to the email in `legal.js` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year (the same test fails from 30 days before it lapses).
 5. Ask the lawyer whether your markets need a checkbox or whether a sentence beside the button would do, and whether a German audience needs the contact page labelled "Impressum" with more details on it.
