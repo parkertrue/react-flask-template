@@ -5,7 +5,8 @@ clone of a throwaway origin and commits a few versions to its main (a good
 one, a second good one, one whose nginx stops at start, one whose migration
 fails, one that does not build, one whose db does not start, one built on a
 base image no registry has, one that changes redis). Then it runs deploy.sh
-through each case, and after a deploy cut off halfway, and checks what it
+through each case, and after a deploy cut off halfway, then --latest as a
+timer would, through commits pushed meanwhile, and checks what it
 left running, the images it kept, the checkout and .env.deploy. Every
 failed check is printed, then it exits 1. Needs Docker, git, bash, curl,
 and a certificate pair in nginx/certs/; ports 80 and 443 must be free.
@@ -293,6 +294,37 @@ def scenario(clone):
     check('it leaves redis alone, though its settings changed', running('redis') == redis,
           running('redis'))
     (clone.path / '.env.prod').write_text(env, newline='\n')
+
+    # --latest, as a timer runs it: I is origin/main's newest commit
+    backend = running('backend')
+    result = clone.deploy('--latest')
+    check('--latest on the deployed commit changes nothing', result.returncode == 0
+          and 'already deployed' in result.stdout and running('backend') == backend, result.stdout)
+
+    clone.write('README.md', clone.read('README.md') + 'A version the timer finds.\n')
+    newest = clone.commit('J: pushed after the last deploy')
+    result = clone.deploy('--latest')
+    check('--latest deploys a newer commit', *serving(clone, newest))
+
+    result = clone.deploy('--rollback')
+    check('--rollback records the commit it leaves as failed', (clone.state().get('IMAGE_TAG'),
+          clone.state().get('FAILED_IMAGE_TAG')) == (changed_redis, newest), clone.state())
+
+    backend = running('backend')
+    result = clone.deploy('--latest')
+    check('--latest leaves the failed commit alone', result.returncode == 0
+          and 'failed last' in result.stdout and running('backend') == backend, result.stdout)
+
+    # On main's newest, J, not the I the rollback checked out
+    clone.git('checkout', '--quiet', '--detach', newest)
+    clone.write('README.md', clone.read('README.md') + 'A fix.\n')
+    fixed = clone.commit('K: pushed after the failed one')
+    result = clone.deploy('--latest')
+    check('--latest deploys the commit after a failed one', *serving(clone, fixed))
+
+    result = clone.deploy(newest)
+    check('deploying a failed commit by name clears it', serving(clone, newest)[0]
+          and clone.state().get('FAILED_IMAGE_TAG') == '', clone.state())
 
 
 def main():

@@ -3,7 +3,10 @@
 # (docs/deployment.md, Redeploying):
 #
 #   ./deploy.sh <commit>     build that commit's images and deploy them
-#   ./deploy.sh --rollback   deploy the previously deployed commit again
+#   ./deploy.sh --latest     deploy the newest commit of main, unless it is
+#                            deployed already or failed last (for a timer)
+#   ./deploy.sh --rollback   deploy the previously deployed commit again,
+#                            recording the current one as failed
 #
 # Run it as a user who can run Docker, in a clone that user owns, beside
 # .env.prod. The images are built here, from the commit, and tagged with it
@@ -125,7 +128,7 @@ services() {
     compose up -d --no-build --wait --wait-timeout "$WAIT_SECONDS" $bundled
 }
 
-[ $# -eq 1 ] || die "usage: $0 <commit> | --rollback"
+[ $# -eq 1 ] || die "usage: $0 <commit> | --latest | --rollback"
 [ -f .env.prod ] || die ".env.prod not found"
 [ -z "$(git status --porcelain --untracked-files=no)" ] \
     || die "the clone has uncommitted changes; deploy from a clean clone"
@@ -140,15 +143,27 @@ failed=$(state FAILED_IMAGE_TAG)
 if [ "$1" = --rollback ]; then
     [ -n "$previous" ] || die "no previous deploy to roll back to"
     target=$previous
+    # Rolled back from, so --latest leaves it alone
+    failed=$current
 else
-    # A local branch is wherever the clone left it: git fetch moves only
-    # origin's
-    ! git show-ref --verify --quiet "refs/heads/$1" \
-        || die "$1 is a local branch, which is not kept up to date; pass a commit, e.g. origin/$BRANCH"
+    ref=$1
+    if [ "$1" = --latest ]; then
+        ref=origin/$BRANCH
+    else
+        # A local branch is wherever the clone left it: git fetch moves only
+        # origin's
+        ! git show-ref --verify --quiet "refs/heads/$1" \
+            || die "$1 is a local branch, which is not kept up to date; pass a commit, e.g. origin/$BRANCH"
+    fi
     git fetch --quiet origin "$BRANCH"
-    target=$(git rev-parse --verify --quiet "$1^{commit}") || die "unknown commit: $1"
+    target=$(git rev-parse --verify --quiet "$ref^{commit}") || die "unknown commit: $ref"
     git merge-base --is-ancestor "$target" "origin/$BRANCH" \
         || die "$target is not on origin/$BRANCH"
+    # A timer would otherwise deploy it, and roll it back, on every run
+    if [ "$1" = --latest ] && [ "$target" = "$failed" ]; then
+        log "$target failed last; waiting for a newer commit (or deploy it by name)"
+        exit 0
+    fi
 fi
 
 tag=$target
@@ -192,6 +207,8 @@ if ! compose up --no-build --no-deps --exit-code-from migrate migrate; then
 fi
 
 if start; then
+    # A failed commit deployed by name has stopped failing
+    [ "$failed" != "$tag" ] || failed=
     write_state "$tag" "$before" "$failed"
     # The deploy succeeded whatever the cleanup does
     prune "$tag" "$before" || log "could not remove the older images"
