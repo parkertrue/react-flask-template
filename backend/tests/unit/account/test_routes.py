@@ -81,7 +81,7 @@ class TestDeleteAccount:
 
         assert [uid for uid, _ in fake_redis.tokens] == [second_user.id]
         cleared = response.headers.getlist('Set-Cookie')
-        assert any(c.startswith('__Secure-refresh_token=;') for c in cleared)
+        assert [c.split(';')[0] for c in cleared] == ['__Secure-refresh_token=']
 
     def test_a_refresh_after_deleting_is_refused(self, client, sample_user, auth_headers):
         login = client.post('/api/auth/login', json={'email': sample_user.email, 'password': PASSWORD})
