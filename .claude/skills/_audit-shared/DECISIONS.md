@@ -221,9 +221,22 @@ for every limited field. Chosen while planning PR #25. *Revisit when:* users
 report losing pasted text, or a field's limit is one people often reach.
 
 **`/api/health` is liveness only.** It answers 200 while MySQL or Redis is
-down; the routes that need them answer 503 instead. Compose uses it only to
-order startup, so a readiness check of the database and Redis would change
-nothing. *Revisit when:* an orchestrator or load balancer acts on health.
+down; the routes that need them answer 503 instead. Compose orders startup
+on it, `deploy.sh` rolls back when it fails through nginx, and a platform's
+load balancer routes on it. A readiness check would add little to any of
+them: the backend does not start serving until `wait_for_services.py` has
+reached MySQL and Redis and checked its grants, and a load balancer that
+drops every task during a database outage turns 503s into 502s. *Revisit
+when:* a deploy needs to catch a commit that starts but cannot serve (then
+a smoke request after the health check, in `deploy.sh`), or a platform must
+stop routing to a task that lost its database.
+
+**`email-validator` is called directly, not through Pydantic's
+`EmailStr`.** `EmailStr` accepts a display name (`Name <a@b.c>`), allows
+SMTPUTF8 local parts, and returns the Unicode `normalized` form.
+`normalize_email` needs `allow_smtputf8=False` and the `ascii_email` form,
+which keeps one mailbox per account and is the login limit's key.
+*Revisit when:* Pydantic's email type gains those options.
 
 **No `engines` field, the `react-router-dom` shim, unhashed Python locks.**
 CI and Docker pin Node 24, the shim costs nothing at runtime, and Dependabot
@@ -343,7 +356,9 @@ service (CloudWatch, Cloud Logging) ships each line off the host as it is
 written and keeps it for a set period. The template builds no log shipping of
 its own, which would tie it to the self-hosted Docker path. On the bundled
 Compose deployment, Docker's 3 × 10 MB per container is all there is: it caps
-by size, not age, and enough traffic can push older lines out. nginx cuts the
+by size, not age, and enough traffic can push older lines out. It also goes
+with its container, and every deploy replaces the backend and nginx, so the
+logs reach back to the last deploy at most. nginx cuts the
 client's text in each access line short, rate-limits the page as well as the
 API per address, and logs only a sample of what it refuses (below), which
 makes that slow for one client but not impossible for many. Measured on
@@ -361,7 +376,8 @@ picked by `request_id` (`split_clients` in `nginx.conf`); refusals leave the
 error log entirely (`limit_req_log_level info`). Logging every refusal let one
 client roll Docker's 30 MB over in about 4 seconds, erasing everything older,
 the flood's own start and other users' requests included; the error-log
-lines also kept the query string and Referer, which the access log drops.
+lines also kept the whole query string and Referer, which the access log
+cuts at the query.
 Logging none was rejected too: nginx's 429s never reach Flask, so no
 `rate_limited` event would show that a flood happened or where it came from.
 The sample keeps the flood's address, timing and paths (multiply by 100 for
@@ -383,7 +399,9 @@ fixed addresses in the upstream, or a reload of nginx after every deploy).
 one before the new one starts: the old nginx keeps serving the page, but the
 API answers a JSON 502 or 504 until the new backend listens (measured on a
 4 GB VM: 8.5 s), and connections are refused for about a second while nginx
-itself is replaced. *Revisit when:* a deploy's API gap matters to users (then
+itself is replaced. A commit that changes the bundled `db` or `redis` (its
+image, command or values) restarts it under the running app, which answers
+503 meanwhile. *Revisit when:* a deploy's API gap matters to users (then
 two backends, as above, started one after the other).
 
 **nginx's per-IP limits are per nginx.** On a platform, each task runs its
@@ -402,12 +420,35 @@ a public repository's packages public: distribution, see "Images are run,
 not distributed") or a manual, per-package setup and a registry login on
 every server. The cost is building on the server (internet access, memory
 for the frontend build, a few minutes per deploy while the old version
-serves). A base image's security patch reaches the server only with the
-next deployed commit; nothing rebuilds on a schedule, and redeploying the
-deployed commit changes nothing. *Revisit when:* an image must be byte for
+serves). The build pulls its base images (`build --pull`), so a base
+image's security patch reaches the server with the next deployed commit;
+nothing rebuilds on a schedule, and a rollback, or a redeploy of a commit
+whose images are still there, reuses its images. *Revisit when:* an image must be byte for
 byte the one tested, servers are too small to build, a base-image fix has to
 ship with no commit to carry it, or deploys move to a platform that pulls
 from a registry.
+
+**The bundled MySQL and Redis images change only with a tag bump.**
+`deploy.sh` doesn't pull `db`'s and `redis`'s images: upstream rebuilds of a
+pinned tag are not taken, so they are recreated only by a commit that
+changes their tag (Dependabot's `docker-compose` entry) or their settings.
+Pulling would restart MySQL or Redis under the running app whenever
+upstream rebuilt the tag, and most real deployments replace both with
+managed services, whose providers patch them. *Revisit when:* a reachable
+CVE in either is fixed by a same-tag rebuild.
+
+**Deploys trust GitHub's `main`.** `deploy.sh` deploys any commit on
+`origin/main`, and `--latest` on a timer does so unattended, so whoever can
+push or merge to `main` (a stolen GitHub session or token included) runs
+code on the server as the deploy user, who can control the host through
+Docker. Branch protection and its required checks are the only gate. A
+signature check on the server would only help with commits signed by a key
+GitHub never holds: merges made in GitHub's UI, Dependabot's included, are
+signed by GitHub's own key, which a stolen session uses too, so every merge
+would have to be made and signed locally. *Revisit when:* the timer runs on
+a host with real data (then signed merges and `git verify-commit` against an
+`allowed_signers` file on the server, or a deploy that waits for a person's
+approval).
 
 ## Deferred until the app grows
 
@@ -436,18 +477,18 @@ recovery check is blocked by the missing backups). They are not new findings.
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.
-- **No deployment yet**, so these don't exist: automated backups and a
+- **Not built yet** (the deploy, restart and restore work on a test server
+  will bring the first ones): automated backups and a
   restore procedure, server hardening (SSH, firewall, Fail2ban), certificate
-  auto-renewal, an automatic deploy trigger (`deploy.sh` deploys one commit
-  when someone runs it), monitoring, centralized logging, a CDN.
-- **The production docs wait for the first server.** The Let's
+  auto-renewal, monitoring, centralized logging, a CDN.
+- **The production docs wait for the work on the test server.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
   nginx template (which breaks CI and the test stack if followed), the docs
   don't list what production lacks, and there is no operator runbook
   (detached start, status, TLS key rotation, a failed `up -d`;
   `docs/deployment.md` covers deploying and rolling back, in Redeploying,
   and reading logs). All three get written and
-  tried on a real server rather than on paper. Until then the docs and
+  tried on that server rather than on paper. Until then the docs and
   recovery checks don't report them.
 - **TLS between containers** is not needed while every service shares one
   host: the bundled MySQL and Redis traffic stays on the `internal` network,

@@ -72,10 +72,22 @@ export async function openAccount(page) {
 /** The account page's line once GET /api/account has answered */
 export const memberSince = page => page.getByText(/^Member since /)
 
+/**
+ * On the account page, ask to log out all devices; returns the dialog that
+ * opens, for its Log out all devices button
+ */
+export async function askToLogoutAll(page) {
+  await page.getByRole('button', { name: 'Log out all devices' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Log out all devices?' })
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+  return dialog
+}
+
 /** Sign every device out from the account page, reached by the navbar's email */
 export async function logoutAllDevices(page) {
   await page.getByRole('link', { name: /\(account\)$/ }).click()
-  await page.getByRole('button', { name: 'Log out all devices' }).click()
+  const dialog = await askToLogoutAll(page)
+  await dialog.getByRole('button', { name: 'Log out all devices' }).click()
   await expectHomeReached(page)
 }
 
@@ -200,24 +212,27 @@ export async function expectReflow(page) {
 }
 
 /**
- * WCAG 2.4.7 and 2.4.11: Tab through the whole page; every stop shows a
- * focus outline and is not hidden under anything (the navbar, a dialog).
+ * WCAG 2.4.7 and 2.4.11: Tab round the whole page, stopCount stops; every
+ * stop shows a focus outline and is not hidden under anything (the navbar, a
+ * dialog). The count catches a walk, or a page, that silently got shorter.
  */
-export async function expectVisibleFocus(page) {
+export async function expectVisibleFocus(page, stopCount) {
   // Stops are told apart by element, not by name: two links with the same
   // text (the navbar's and the footer's) are both checked
   await page.evaluate(() => {
-    document.activeElement?.blur()
     window.focusStops = new WeakSet()
   })
   const stops = []
   let roundTrip = false
+  // Tab starts from whatever had focus last, not from the top, so the walk
+  // goes past the page's end (focus leaves it) and round again until it
+  // reaches a stop already checked
   for (let press = 0; press < 200 && !roundTrip; press++) {
     await page.keyboard.press('Tab')
     const stop = await page.evaluate(() => {
       const el = document.activeElement
-      // Out of the page, or round to a stop already checked
-      if (!el || el === document.body || window.focusStops.has(el)) return null
+      if (!el || el === document.body) return 'outside'
+      if (window.focusStops.has(el)) return 'repeat'
       window.focusStops.add(el)
       const { outlineStyle, outlineWidth } = getComputedStyle(el)
       const box = el.getBoundingClientRect()
@@ -228,11 +243,11 @@ export async function expectVisibleFocus(page) {
         uncovered: el === hit || el.contains(hit),
       }
     })
-    roundTrip = stop === null
-    if (!roundTrip) stops.push(stop)
+    roundTrip = stop === 'repeat'
+    if (typeof stop === 'object') stops.push(stop)
   }
-  expect(stops.length, 'Tab reached the page\'s controls').toBeGreaterThan(0)
-  expect(roundTrip, 'Tab went round the page within 200 stops').toBe(true)
+  expect(roundTrip, 'Tab went round the page within 200 presses').toBe(true)
+  expect(stops.map(stop => stop.name), 'the page\'s Tab stops').toHaveLength(stopCount)
   expect(stops.filter(stop => !stop.outlined || !stop.uncovered), 'stops without a visible focus')
     .toEqual([])
 }

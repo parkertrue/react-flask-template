@@ -4,8 +4,8 @@ import { OPERATOR } from '@/legal'
 import PlaceholderNotice from './PlaceholderNotice'
 
 // The template's outline of a privacy notice, seeded from the data the
-// template itself keeps (docs/personal-data.md). Each
-// bracketed passage is for the app's developer to replace.
+// template itself keeps (docs/personal-data.md). Each bracketed passage
+// is for the app's developer to replace.
 export default function PrivacyPage() {
   return (
     <div className="legal-page page-column">

@@ -39,8 +39,7 @@ as RULES.md.
 - **Rate by what's true today, then say what would raise it.** Notes are
   private, there is no email, payment or analytics yet; a risk that only
   arrives with such a feature is **low** with its trigger named in the Fix.
-  Known gaps in DECISIONS.md (data export, no deployment and so no
-  centralized logging) are
+  Known gaps in DECISIONS.md (data export, no centralized logging) are
   not new findings, but say when the law makes one more urgent than recorded.
 
 ### Severity for legal findings
@@ -48,7 +47,7 @@ as RULES.md.
 | Severity | Meaning here |
 |---|---|
 | **blocker** | Publishing the template as it is would stop others from using it lawfully (no license, a dependency whose license forbids the use), or the template ships something unlawful by default (tracking without consent, a hidden third-party data transfer). |
-| **high** | Every derived app inherits a gap that a privacy, consumer or accessibility law requires closed at launch, and nothing in README tells the developer. |
+| **high** | Every derived app inherits a gap that a privacy, consumer or accessibility law requires closed at launch, and nothing in README or `docs/` tells the developer. |
 | **medium** | A gap a law requires once a common condition holds (users in the EU, a California business over the CCPA thresholds, public content), or a required notice that is missing but cheap to add. |
 | **low** | Hardening against a claim, a gap tied to a feature that doesn't exist yet, or documentation that would help a lawyer's review. |
 | **nit** | Wording. |

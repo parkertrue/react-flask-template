@@ -29,7 +29,7 @@ nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its
 
 ### Changing a Value Later
 
-The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` makes the next deploy fail at `migrate` within seconds (it logs in as the app's user to check its grants), and the app is down, answering 502 or 504, until the password is fixed; a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` too, and the running app keeps serving only if that deploy changes nothing else (see [Redeploying](#redeploying) for a deploy that keeps it serving whatever fails). Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d` (with `--env-file .env.deploy` after `.env.prod` on a server that deploys [with `deploy.sh`](#redeploying)). With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
+The database keeps its own copy of its users and passwords; `.env.prod` only tells the app what they are. Editing one in `.env.prod` alone therefore breaks something: a new `DB_PASSWORD` makes the next deploy fail at `migrate` within seconds (it logs in as the app's user to check its grants): with `deploy.sh` the old backend keeps serving, while after a hand-typed `up -d`, which has already replaced the backend, the app is down, answering 502 or 504, until the password is fixed; a new `DB_MIGRATION_PASSWORD` makes the next deploy fail at `migrate` too, and the running app keeps serving only if that deploy changes nothing else (see [Redeploying](#redeploying) for a deploy that keeps it serving whatever fails). Renaming `DB_USER`, `DB_MIGRATION_USER` or `DB_NAME` on an existing database needs more than this and is not covered here. Change it in the database first, then in `.env.prod`, then run `docker compose --env-file .env.prod up -d` (with `--env-file .env.deploy` after `.env.prod` on a server that deploys [with `deploy.sh`](#redeploying)). With the bundled MySQL, which reads the `DB_*` values only when its volume is first created, for `DB_USER` or `DB_MIGRATION_USER`:
 
 ```bash
 docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<user>'@'%' IDENTIFIED BY '<new password>'"
@@ -53,6 +53,8 @@ sudo apt install certbot  # Ubuntu/Debian
 sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
 ```
 
+These steps edit tracked files, so on a server that deploys with `deploy.sh` the clone is then dirty and every later deploy refuses to start; certificate renewal without editing tracked files is not yet provided.
+
 3. In `docker-compose.yml`, replace the nginx volume `./nginx/certs:/etc/nginx/certs:ro` with the whole Certbot directory. Its `live/` files are relative symlinks into `archive/`, so mounting only `live/` breaks them.
 
    ```yaml
@@ -67,7 +69,7 @@ sudo certbot certonly --standalone -d yourdomain.com -d www.yourdomain.com
    ssl_certificate_key  /etc/letsencrypt/live/yourdomain.com/privkey.pem;
    ```
 
-5. Rebuild and restart: `docker compose --env-file .env.prod up -d --build`
+5. Rebuild and restart: `docker compose --env-file .env.prod up -d --build` (on a server that deploys with `deploy.sh`, see the warning above)
 
 Let's Encrypt certificates expire after 90 days. Renew with `certbot renew` (the standalone method needs port 80 free, so stop nginx first), then restart nginx.
 
@@ -80,19 +82,22 @@ A one-shot `migrate` container applies migrations as the migration user and exit
 Frontend and backend code are both copied into their images, so a code change needs new images. `deploy.sh`, at the repository root, builds them on the server from the commit you name and deploys them, on any host that runs Docker:
 
 ```bash
-./deploy.sh <commit>     # a commit of main, e.g. the newest: git fetch && git rev-parse origin/main
-./deploy.sh --rollback   # the commit deployed before the current one
+./deploy.sh <commit>     # a commit of main; origin/main deploys the newest (the script fetches first)
+./deploy.sh --latest     # the newest commit of main, unless it is deployed or failed last (for a timer)
+./deploy.sh --rollback   # the commit deployed before the current one, recording the current one as failed
 ```
 
-1. It refuses to start with uncommitted changes to tracked files in the clone, while another deploy runs, or for a commit that isn't on `origin/main`.
-2. It checks the clone out at the commit (detached), so the compose file and `db/init` match its code, and builds the backend and nginx images, tagged with the commit: `<project>-backend:<commit>` and `<project>-nginx:<commit>`, the full commit hash. The running app keeps serving while it builds. If the build fails, it switches back and nothing has changed.
-3. It runs `migrate`. If that fails, it switches back; the running app was never touched.
-4. It replaces the backend, waits for it to pass its health check, then replaces nginx, and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If any of that fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error.
+1. It refuses to start with uncommitted changes to tracked files in the clone, while another deploy runs, for a commit that isn't on `origin/main`, or for a local branch name such as `main`, which nothing keeps up to date (pass `origin/main`).
+2. It checks the clone out at the commit (detached), so the compose file and `db/init` match its code, and builds the backend and nginx images, tagged with the commit: `<project>-backend:<commit>` and `<project>-nginx:<commit>`, the full commit hash. The build pulls its base images afresh, so their upstream fixes arrive with each new commit. The running app keeps serving while it builds. If the build fails, it switches back and nothing has changed.
+3. It brings the bundled `db` and `redis` whose profiles are on up to the commit's settings: one whose image, command or values changed is recreated, so MySQL or Redis restarts under the running app (an external one is left alone). If one does not come up, it puts them back on the previous commit's settings, and the previous commit keeps serving. Then it runs `migrate`. If that fails, it switches back; the backend and nginx were never touched.
+4. It replaces the backend, waits for it to pass its health check, then replaces nginx, and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If any of that fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error. On a server's first deploy there is no previous commit: it leaves the failed containers as they are, so read their logs, fix the cause and deploy again.
 5. Once a deploy succeeds, it removes the app's images of every other commit but the one before, so a rollback builds nothing.
 
-A migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release).
+A migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release). A `db` or `redis` that came up healthy in step 3 stays too, through a failed `migrate` or a rollback, so MySQL is never downgraded; the previous code must run on it, and a MySQL upgrade that crashes partway can leave its data to repair by hand, which no rollback undoes. Take a backup before a commit that changes `db`'s image.
 
-`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed. Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. While the new backend starts, the old nginx keeps serving the page, and API requests get a JSON 502 or 504 (about 10 seconds on a small server); then connections are refused for about a second while nginx is replaced.
+`.env.deploy`, which the script writes beside `.env.prod` (gitignored), records the deployed commit (`IMAGE_TAG`), the one before it, and the last one that failed or was rolled back from (cleared once that commit deploys by name). Pass it after `.env.prod` to every other `docker compose` command on that server, or Compose looks for images tagged `local` and builds its own: `docker compose --env-file .env.prod --env-file .env.deploy ps`. While the new backend starts, the old nginx keeps serving the page, and API requests get a JSON 502 or 504 (about 10 seconds on a small server); then connections are refused for about a second while nginx is replaced. A commit that changes `db` or `redis` adds a gap of its own in step 3: the running backend answers 503 until MySQL or Redis is back.
+
+**An interrupted deploy.** Run the script under `nohup` or `tmux`, so a dropped SSH session cannot cut it off. One that is cut off anyway (killed, or the server rebooted) leaves `.deploy.lock` beside the script, which refuses every later deploy, and `.env.deploy` still names the commit before it, while the new commit's backend may already run. Remove the lock (`rmdir .deploy.lock`), then deploy the commit you want, even the one `.env.deploy` names: the script checks what is running, not only what it recorded. Not `--rollback`, which counts back from the recorded commit, one further than you mean.
 
 **What the server needs.** Internet access while it builds (base images, Python and npm packages), and enough memory to build the frontend: a server with 1 GB can run out during the build, so add swap or pick a larger one. Docker's build cache grows with each deploy; `docker builder prune` clears it.
 
@@ -131,7 +136,60 @@ A migration must keep the code before it working: the old backend serves after i
 
 On a container platform such as ECS, the platform pulls the images from a registry instead ([Deploying to a Platform](#deploying-to-a-platform)).
 
-CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script on the runner: two good deploys, one whose nginx fails to start (rolled back from the images still there), one whose migration fails (the running backend never replaced), one that does not build, refusals, `--rollback`, and which images are kept.
+CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script on the runner: two good deploys, one whose nginx fails to start (rolled back from the images still there), one whose migration fails (the running backend never replaced), one that does not build, refusals, `--rollback`, which images are kept, and `--latest` through commits pushed between its runs.
+
+### Deploying Automatically
+
+`deploy.sh --latest`, run on a schedule, deploys every new commit of `main` within minutes of its merge. The server connects out to fetch it, so nothing has to reach the server from outside. Each run fetches `origin/main` and then:
+
+* does nothing when its newest commit is already deployed;
+* leaves it alone when it is the last commit that failed (a failed deploy, or one rolled back from with `--rollback`), until a newer commit lands on `main` or someone deploys it by name;
+* otherwise deploys it as `deploy.sh <commit>` would, with the same rollback. A build that fails is not recorded, so the next run tries again (a registry or the network may have been down).
+
+Every merge to `main` then reaches the server: the required status checks are the gate, Deploy smoke included, and anyone who can push to `main` runs code on the server as the deploy user, which can control the whole host (the `docker` group). Protect `main` accordingly.
+
+Any scheduler works. With systemd, as the deploy user from [Setting a server up](#redeploying), these two units check every 5 minutes, starting 5 minutes after boot so the stack can come up first:
+
+```ini
+# /etc/systemd/system/app-deploy.service
+[Unit]
+Description=Deploy the newest commit of main
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/home/deploy/app/deploy.sh --latest
+```
+
+```ini
+# /etc/systemd/system/app-deploy.timer
+[Unit]
+Description=Check main for a new commit every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now app-deploy.timer
+systemctl list-timers app-deploy.timer   # when it runs next
+journalctl -u app-deploy.service         # what each run did
+sudo systemctl start app-deploy.service  # run it now
+```
+
+With cron instead, in the deploy user's crontab (`sudo crontab -u deploy -e`), keeping the output, which grows until rotated: `*/5 * * * * /home/deploy/app/deploy.sh --latest >> /home/deploy/deploy.log 2>&1`.
+
+* **Pausing it.** `sudo systemctl disable --now app-deploy.timer` (or comment out the cron line). Do this before deploying an older commit by name: the next run would deploy the newest one again. `--rollback` needs no pause, since it records the commit it leaves as failed.
+* **A run that overlaps another deploy** is refused ("another deploy is running") and the next run tries again; systemd never starts a second run of the same unit while one is going.
+* **An interrupted deploy** leaves `.deploy.lock`, and every run fails until it is removed ([Redeploying](#redeploying), "An interrupted deploy"). A failed run shows as a failed unit (`systemctl --failed`) or in the log; nothing alerts you to it.
 
 ---
 
@@ -280,4 +338,4 @@ The backend logs errors, and security events on the `app.security` logger: `logi
 
 Two of these events have innocent causes too. `refresh_refused` is a lead, not proof: a refresh whose answer never reached the client (a 504 on `/api/auth/refresh` from the same address just before) has already rotated its token, so the client's next refresh is refused the same way. And after a `SECRET_KEY` rotation, every token signed with the old key logs `token_invalid` once.
 
-Shipping logs off the server, and how long to keep them, is up to the deployment. Until they are shipped, Docker's three files per container are all there is. Their lines pair IP addresses with user ids, which is personal data: choose how long to keep them, say so in the privacy notice, and enforce it by age where the logs are shipped ([Personal Data and Legal Pages](personal-data.md)). nginx caps each line and how fast one address can add them, pages and API alike, which makes pushing older lines out slow for one client but not impossible for many.
+Shipping logs off the server, and how long to keep them, is up to the deployment. Until they are shipped, Docker's three files per container are all there is, and they go with their container: every deploy (and rollback) replaces the backend and nginx containers, so their lines reach back to the last deploy at most. Save them before a deploy if you need them (`logs --no-log-prefix nginx backend > <file>`). Their lines pair IP addresses with user ids, which is personal data: choose how long to keep them, say so in the privacy notice, and enforce it by age where the logs are shipped ([Personal Data and Legal Pages](personal-data.md)). nginx caps each line and how fast one address can add them, pages and API alike, which makes pushing older lines out slow for one client but not impossible for many.

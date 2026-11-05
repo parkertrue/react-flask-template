@@ -92,6 +92,8 @@ def _hedges(node, guarded=False):
                 yield child.lineno, 'assert that may not run'
             if _accepts_several(child.test):
                 yield child.lineno, 'assert that accepts several answers'
+            if isinstance(child.test, ast.Constant):
+                yield child.lineno, 'assert on a constant'
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             # A nested helper is judged on its own
             yield from _hedges(child, False)
@@ -153,6 +155,9 @@ def test_no_test_hedges_its_assertions():
     ('def test_x(r):\n    if r.naive:\n        r = r.aware\n    assert r.data == 1\n', 'branches'),
     ('def test_x(r):\n    match r.kind:\n        case 1:\n            r = r.aware\n    assert r.data == 1\n',
      'branches'),
+    # Passes whatever the code does
+    ('def test_x(r):\n    r.get()\n    assert True\n', 'assert on a constant'),
+    ("def test_x(r):\n    r.get()\n    assert 'ok'\n", 'assert on a constant'),
     ('def test_x(r):\n    r.get()\n', 'test_x never asserts'),
     ('def test_x(r):\n    assert r is not None\n    assert isinstance(r, str)\n    assert r\n',
      'test_x has only weak asserts'),

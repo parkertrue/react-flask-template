@@ -31,6 +31,11 @@ bulletproof. In priority order:
 - **`DECISIONS.md`** (next to this file) lists accepted trade-offs and known
   gaps. Do not report them as findings. Report an entry only if its *Revisit
   when* condition has come true or the code no longer matches it.
+- **`temp/HANDOFF-open-issues.md`**, if it exists (gitignored: the
+  maintainer's running list of open work). Check every finding against it. A
+  finding it already lists is still reported, since this run may show it is
+  worse or bring new evidence: write `(open: <handoff item>)` after its
+  Finding text, and rate its severity yourself.
 - **Read files from disk.** A copy of CLAUDE.md or any other file already in
   your context may be older than the working tree. Read it again before
   relying on it.
@@ -48,8 +53,8 @@ Audits are **read-only** with respect to the repository:
   report (below).
 - Do not touch `.env.prod`, or the dev (`app_dev`) and production (`app`)
   Compose projects or their volumes. They hold the user's data.
-- Checks that need running services use one of two throwaway stacks, never
-  both at once. Only one check may run Docker at a time (the `/audit`
+- Checks that need running services use one of two throwaway stacks (plus
+  `/audit-infra`'s Deploy smoke run, below), never two at once. Only one check may run Docker at a time (the `/audit`
   orchestrator runs them one after another), and each tears its stack down
   when done, volumes included.
   - The **test stack**: `docker-compose.test.yml`, project `app_test`, ports
@@ -65,13 +70,21 @@ Audits are **read-only** with respect to the repository:
     the test stack uses `10.217.1`), plus a scratch override file that rebinds
     nginx to `127.0.0.1` (`ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]`),
     so nothing listens on the network. Never use the bare project name `app`.
+  - **Deploy smoke** (`python .github/scripts/smoke_deploy.py`,
+    `/audit-infra`'s deploy layer only): its own clone and project
+    `deploy_smoke`, subnet `10.217.8`, nginx on ports 80 and 443 of
+    **every** interface while it runs, so not beside the production-config
+    stack or a local production stack. It tears itself down, images
+    included; check `docker ps -a --filter name=deploy_smoke` is empty
+    afterwards.
   - Project names here (`app_test`, `app_dev`, `app_audit`) are the
     template's defaults. In an app built from the template, read the real
     names from each compose file's `name:` and use those instead.
     Tear down with the same `-p app_audit` and `-f` flags plus `down -v`.
-- There is no deployed server (see DECISIONS.md, Known gaps). Never scan, SSH
-  into, or load-test anything other than localhost. A step that needs a real
-  deployment is reported under *Skipped* with the reason.
+- The audits never touch a deployed server, the maintainer's test server
+  included. Never scan, SSH into, or load-test anything other than
+  localhost. A step that needs a real deployment is reported under *Skipped*
+  with the reason.
 - "No Docker" (when the orchestrator says so) means starting no containers.
   Docker commands that only read or validate (`docker info`, `docker ps`,
   `docker compose ... config --quiet`) are always allowed.
@@ -117,7 +130,7 @@ Audits are **read-only** with respect to the repository:
   suites with coverage, the same again after `remove_examples.py` (the
   Scaffold job), compose validation, zizmor, a license, required-checks,
   toolchain-version and whitespace check, hadolint and gixy-ng.
-  Integration, E2E and the Platform smoke job run on `main`, on pull
+  Integration, E2E, Platform smoke and Deploy smoke run on `main`, on pull
   requests, and daily. Check the
   `on:` blocks in `.github/workflows/` if in doubt. **Read CI results instead
   of re-running them:** `gh run list --commit $(git rev-parse HEAD)` first,
@@ -197,8 +210,10 @@ Timings: start HH:MM, first container HH:MM, last teardown HH:MM, end HH:MM
 ## Compared with last run
 Read the most recent earlier report for this check in `temp/audits/`; if
 there is none, write "First run." and nothing else here.
-New: IDs. Resolved: the earlier findings that are now fixed. Recurring: IDs
-also in the last report (call out any reported three times or more).
+New: IDs in neither the last report nor the handoff. Already open: IDs
+tagged `(open: ...)`. Resolved: the earlier findings that are now fixed.
+Recurring: IDs also in the last report (call out any reported three times or
+more).
 
 ## Proposed DECISIONS.md entries
 Findings that look deliberate: the entry you would add, for the user to accept or reject.

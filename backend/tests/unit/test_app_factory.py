@@ -352,6 +352,16 @@ class TestJWTErrorHandlers:
         assert data['error']['code'] == 'AUTH_MISSING_TOKEN'
         assert 'authentication required' in data['error']['message'].lower()
 
+    def test_access_token_in_a_cookie_is_not_accepted(self, client, auth_token):
+        """Only the header carries an access token: a cookie planted by a
+        sibling subdomain must not sign the browser in as someone else."""
+        client.set_cookie('access_token_cookie', auth_token)
+
+        response = client.get('/api/account')
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_MISSING_TOKEN'
+
     def test_invalid_token_handler(self, client):
         """Invalid JWT token should return 401 with AUTH_INVALID_TOKEN."""
         response = client.get(

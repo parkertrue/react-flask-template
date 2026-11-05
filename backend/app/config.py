@@ -164,7 +164,7 @@ class Config:
         # full disk, a lock) would hold a request thread long after nginx gave
         # up at 60s, until every thread is stuck. The migrate service sets 0
         # (no limit): a migration on a big table may legitimately run longer.
-        query_timeout = int(os.getenv('DB_QUERY_TIMEOUT', '15'))
+        query_timeout = db_query_timeout()
         if query_timeout:
             connect_args.update(read_timeout=query_timeout, write_timeout=query_timeout)
         self.SQLALCHEMY_ENGINE_OPTIONS = {
@@ -214,10 +214,13 @@ class Config:
         # each refresh token expires at the earlier of the two
         self.JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
         self.SESSION_IDLE_TIMEOUT = timedelta(days=7)
-        # Access tokens travel in the Authorization header, refresh tokens in
-        # an HttpOnly cookie (always, in Flask-JWT-Extended) that is only sent
-        # to the /api/auth routes.
-        self.JWT_TOKEN_LOCATION = ['headers', 'cookies']
+        # Access tokens travel in the Authorization header alone, refresh
+        # tokens in an HttpOnly cookie that is only sent to the /api/auth
+        # routes, which name that location themselves (locations=['cookies']).
+        # Accepting an access token from a cookie too would let a sibling
+        # subdomain plant its own in the browser, unprefixed, for every GET
+        # sent without the header.
+        self.JWT_TOKEN_LOCATION = ['headers']
         # __Secure- makes browsers refuse the cookie unless it is Secure and
         # set over HTTPS, so a sibling subdomain or plain-HTTP page can't
         # plant one under this name. (__Host- would also forbid the path.)
@@ -315,13 +318,22 @@ def trusted_proxy_count():
     behind a load balancer: it takes the client's address from the
     balancer's header itself (NGINX_TRUSTED_PROXIES) and forwards that alone.
     A deployment without nginx counts the proxies that append to the header:
-    1 for a load balancer, 2 with a CDN before it. Too
-    low, and every user shares the proxy's address and one rate-limit
-    bucket; too high, and a client picks its own address.
+    1 for a load balancer, 2 with a CDN before it. Too low, and every user
+    shares the proxy's address and one rate-limit bucket; too high, and a
+    client picks its own address.
     """
     value = os.getenv('TRUSTED_PROXY_COUNT', '1')
     if not (value.isascii() and value.isdigit()):
         raise ValueError(f'TRUSTED_PROXY_COUNT must be a whole number, 0 or more. Got: {value!r}')
+    return int(value)
+
+
+def db_query_timeout():
+    """Seconds each MySQL query may take, 15 by default; 0 for no limit."""
+    value = os.getenv('DB_QUERY_TIMEOUT', '15')
+    if not (value.isascii() and value.isdigit()):
+        raise ValueError(
+            f'DB_QUERY_TIMEOUT must be a whole number of seconds, 0 for none. Got: {value!r}')
     return int(value)
 
 
