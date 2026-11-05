@@ -2,8 +2,9 @@
 
 CI's Workflows job runs this. Each version is written in several files: the
 images' base, the one `lock_deps.sh` resolves the locks under, and the
-workflows' setup steps. Dependabot bumps only the Dockerfiles, so CI and the
-locks could fall behind what ships without anything failing.
+workflows' setup steps. Dependabot bumps none of them (dependabot.yml
+ignores Python's minors and Node's majors), so each is bumped by hand, and
+one file left behind would otherwise fail nothing.
 """
 import re
 import sys

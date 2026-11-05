@@ -20,14 +20,34 @@ export const handlers = [
 ]
 
 /**
+ * Throws if the test sent a request no handler matched, then forgets them.
+ * MSW's 'error' only logs and hands the client a network error, which the
+ * app shows as one, so a test with a missing handler could still pass.
+ */
+export function failOnUnhandledRequests(unhandled) {
+  const requests = unhandled.splice(0)
+  if (requests.length) {
+    throw new Error(`Unhandled request: ${requests.join(', ')}`)
+  }
+}
+
+/**
  * An MSW server for this test file, started before its tests and reset after
  * each one. A request no handler matches fails the test: an unmocked call is
  * a test bug, never something to skip past.
  */
 export function setupMswServer(...initialHandlers) {
   const server = setupServer(...initialHandlers)
+  const unhandled = []
+  server.events.on('request:unhandled', ({ request }) => {
+    unhandled.push(`${request.method} ${new URL(request.url).pathname}`)
+  })
   beforeAll(() => server.listen({ onUnhandledFrame: 'error' }))
-  afterEach(() => server.resetHandlers())
+  afterEach(() => {
+    server.resetHandlers()
+    failOnUnhandledRequests(unhandled)
+  })
   afterAll(() => server.close())
-  return server
+  // What a test of this guard checks; other tests leave it to afterEach
+  return Object.assign(server, { unhandled })
 }

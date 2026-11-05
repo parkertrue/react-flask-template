@@ -575,6 +575,75 @@ class TestRefreshEndpoint:
         assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
 
 
+class TestReplacedAccount:
+    """A restored backup hands out ids again: a token whose id now names a
+    different account must not work as that account"""
+
+    @staticmethod
+    def replace(db, user):
+        """Delete `user` and register another account under the same id, a
+        day later, as MySQL does after a restore"""
+        user_id, created_at = user.id, user.created_at
+        db.session.delete(user)
+        db.session.commit()
+        newcomer = User(email='newcomer@example.com')
+        newcomer.id = user_id
+        newcomer.created_at = created_at + timedelta(days=1)
+        newcomer.set_password('TestPassword123')
+        db.session.add(newcomer)
+        db.session.commit()
+        return user_id
+
+    def test_tokens_carry_the_accounts_creation_time(self, client, sample_user, fake_redis):
+        created = sample_user.created_timestamp
+        response = client.post('/api/auth/login', json=LOGIN_PAYLOAD)
+        login_access = decode_token(response.get_json()['access_token'])
+        login_refresh = refresh_claims(client)
+
+        refreshed = client.post('/api/auth/refresh', headers={
+            'X-CSRF-REFRESH-TOKEN': response.get_json()['refresh_csrf']})
+
+        assert refreshed.status_code == 200
+        assert [login_access['user_created_at'], login_refresh['user_created_at'],
+                decode_token(refreshed.get_json()['access_token'])['user_created_at'],
+                refresh_claims(client)['user_created_at']] == [created] * 4
+
+    def test_an_access_token_of_a_replaced_account(
+            self, client, db, sample_user, fake_redis, security_events):
+        token = client.post('/api/auth/login', json=LOGIN_PAYLOAD).get_json()['access_token']
+        user_id = self.replace(db, sample_user)
+
+        response = client.get('/api/account', headers={'Authorization': f'Bearer {token}'})
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+        assert security_events()[1:] == [{'message': 'token_invalid', 'ip': '127.0.0.1',
+                                          'reason': 'User not found or replaced',
+                                          'user_id': user_id}]
+
+    def test_a_refresh_token_of_a_replaced_account(self, client, db, sample_user, fake_redis):
+        """Its JTI is still recorded in Redis, which a restore leaves alone"""
+        csrf = login(client)
+        self.replace(db, sample_user)
+
+        response = client.post('/api/auth/refresh', headers=csrf)
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+
+    def test_a_token_without_the_accounts_creation_time(self, app, client, sample_user):
+        """Issued before tokens carried it: refused, so its holder logs in again"""
+        now = int(time.time())
+        claims = {'sub': str(sample_user.id), 'type': 'access', 'fresh': False, 'jti': 'j',
+                  'iat': now, 'nbf': now, 'exp': now + 600}
+        token = jwt.encode(claims, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+
+        response = client.get('/api/account', headers={'Authorization': f'Bearer {token}'})
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+
+
 class TestLogoutEndpoint:
     """Test suite for POST /api/auth/logout and /api/auth/logout-all."""
 
@@ -1006,7 +1075,8 @@ class TestSecurityEvents:
 
         assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
         assert security_events() == [{'message': 'token_invalid', 'ip': '127.0.0.1',
-                                      'reason': 'User not found', 'user_id': user_id}]
+                                      'reason': 'User not found or replaced',
+                                      'user_id': user_id}]
         self.assert_absent(logged, auth_headers['Authorization'].removeprefix('Bearer '))
 
     @pytest.mark.parametrize('headers, reason', [

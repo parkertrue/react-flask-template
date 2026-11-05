@@ -204,11 +204,18 @@ test.describe('nginx', () => {
     expect(await ico.text()).not.toContain('<div id="root">')
   })
 
-  test('each request is logged as one JSON line, without its query string', async ({ request }) => {
+  test('each request is logged as one JSON line, without its or its Referer\'s query string', async ({ request }) => {
     // A path of its own finds this request's line among the others; the
     // quotes in the user agent would break a line nginx did not escape
     const route = `/api/no-such-route-${Date.now()}`
-    await request.get(`${route}?token=secret-in-a-link`, { headers: { 'User-Agent': 'probe "quoted"' } })
+    // A page opened from such a link names it, query included, as the
+    // Referer of every request it makes
+    await request.get(`${route}?token=secret-in-a-link`, {
+      headers: {
+        'User-Agent': 'probe "quoted"',
+        'Referer': 'https://localhost/reset?token=secret-in-a-referer',
+      },
+    })
 
     const line = await loggedLine('nginx', l => l.includes(route))
 
@@ -218,6 +225,7 @@ test.describe('nginx', () => {
       method: 'GET',
       // A reset or verification link's token must not stay in the log
       path: route,
+      referer: 'https://localhost/reset',
       status: 404,
       user_agent: 'probe "quoted"',
       request_time: expect.any(Number),
@@ -225,6 +233,7 @@ test.describe('nginx', () => {
       upstream_response_time: expect.stringMatching(/^\d+\.\d{3}$/),
     })
     expect(JSON.stringify(line)).not.toContain('secret-in-a-link')
+    expect(JSON.stringify(line)).not.toContain('secret-in-a-referer')
   })
 
   test('the client\'s own text is cut short in the log', async ({ request }) => {

@@ -32,7 +32,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -93,9 +93,10 @@ jobs:
           docker compose --env-file .env.test -f docker-compose.test.yml \
             -f .github/smoke/platform.yml --profile platform down -v
 
-  # deploy.sh against a registry on the runner: good deploys, a failed start
-  # rolled back, a failed migration that leaves the running app alone, and
-  # its refusals (.github/scripts/smoke_deploy.py)
+  # deploy.sh on the runner, building each commit as a server does: good
+  # deploys, a failed start rolled back, a failed migration, build or db
+  # start that leaves the running app alone, its refusals, the images it
+  # keeps, and --latest as a timer runs it (.github/scripts/smoke_deploy.py)
   deploy:
     name: Deploy smoke
     runs-on: ubuntu-latest

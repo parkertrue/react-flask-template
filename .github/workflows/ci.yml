@@ -31,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip
@@ -42,6 +42,10 @@ jobs:
 
       - name: Lint
         run: ruff check .
+
+      # Each ruff rule the backend relies on still fires on a planted case
+      - name: Lint rules
+        run: python ../.github/scripts/check_lint_rules.py
 
       # The same command as locally: fails under the coverage floor in
       # backend/.coveragerc, in total or for any one package of app/
@@ -88,7 +92,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: pip

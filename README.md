@@ -108,7 +108,7 @@ ruff check .                 # Lint
 npm run lint
 npm run test:run             # Unit tests once (npm run test for watch mode)
 npm run test:coverage        # What CI runs
-npx playwright install chromium   # E2E, first time only
+npx playwright install chromium   # E2E: first time, and after each Playwright update
 npm run test:e2e             # E2E against the full Docker stack at https://localhost:8443
 ```
 
@@ -124,7 +124,9 @@ To stop a failing check from merging, require these status checks on `main` (Set
 
 ## Production
 
-Everything runs in Docker; only Nginx is published (ports 80 and 443). [docs/deployment.md](docs/deployment.md) covers the details: database users, changing secrets later, Let's Encrypt, external MySQL or Redis, container platforms such as ECS, and logs.
+Everything runs in Docker; only Nginx is published (ports 80 and 443). [docs/deployment.md](docs/deployment.md) covers the details: database users, changing secrets later, Let's Encrypt, external MySQL or Redis, container platforms such as ECS, logs, backups and restoring.
+
+**Not included:** alerts, log shipping, scheduled off-host backups, host hardening and certificate renewal are left to the tools made for them; [Operating in Production](docs/deployment.md#operating-in-production) says which to reach for. Set them up before the server holds real data.
 
 ### Environment File
 

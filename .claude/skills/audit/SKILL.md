@@ -82,9 +82,22 @@ each finding's `(open: ...)` tag, RULES.md)
 Problems reported by more than one check, merged into one item, and patterns
 (for example, several findings with the same root cause).
 
-## Proposed guards
-Every finding's Prevent column, deduplicated: lint rules, tests or CI jobs
-that would stop these coming back, in priority order.
+## Proposed PRs
+One plan across every check, rebuilt from the checks' own plans by
+RULES.md's rules (Report, *Proposed PRs*): a problem several checks report
+is one item in one PR, and every finding not going to the handoff or
+DECISIONS.md is in exactly one PR, lows and nits included. Each PR lists
+the IDs it fixes, its changes, its guards (the Prevent column,
+deduplicated) and its tests.
+
+## Decisions for you
+Collected from every check and merged where they are the same choice, in
+RULES.md's form, plus any the cross-check grouping raises. "None." if
+there are none.
+
+## Recording plan
+One table for every ID in every check's report, in RULES.md's form; check
+the total matches the summed counts.
 
 ## Proposed DECISIONS.md entries
 Collected from every check, for the user to accept or reject.
@@ -103,7 +116,11 @@ The verdict is BLOCKED if any check found a blocker, or any check could not
 run at all.
 
 Then reply to the user with: the verdict, counts by severity, the blockers and
-high findings (one line each), the top proposed guards, and the path to the
-consolidated report. Lead with findings recorded nowhere yet; give the ones
-tagged `(open: ...)` as a count and their IDs. A known blocker still blocks. Do not fix anything. Ask which findings to address, and
-whether to record the proposed DECISIONS.md entries.
+high findings (one line each), one line per proposed PR (title and the IDs
+it fixes), the IDs going to the handoff or DECISIONS.md, the *Decisions
+for you* in full, and the path to the consolidated report. Lead with
+findings recorded nowhere yet; give the ones tagged `(open: ...)` as a
+count and their IDs. A known blocker still blocks. Do not fix or record
+anything. End by asking the user to answer the decisions, and whether to
+record every finding as the *Recording plan* says (the handoff's items and
+DECISIONS.md, combined with what is already there).

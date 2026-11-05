@@ -11,9 +11,8 @@ def fake_redis(request):
     """Every test of the unit app gets an in-memory Redis token store.
 
     UnitTestConfig runs without Redis, but the app treats a missing store as
-    an outage (login and refresh answer 503), so tests
-    sign in through the same path production does. Request `no_redis` to test
-    the outage itself.
+    an outage (login and refresh answer 503), so tests sign in through the
+    same path production does. Request `no_redis` to test the outage itself.
     """
     if 'app' not in request.fixturenames:
         yield None

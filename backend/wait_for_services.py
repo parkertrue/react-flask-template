@@ -20,7 +20,7 @@ import redis
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-from app.config import database_url, get_config, read_redis_url, redis_url
+from app.config import database_url, get_config, read_redis_url
 from app.utils.log import JsonFormatter
 
 log = logging.getLogger('wait_for_services')
@@ -112,7 +112,7 @@ def main():
     # (no TLS to an external host), would otherwise look like a service that
     # never comes up, and the loop below would wait out the whole timeout.
     try:
-        database, redis_ = database_url(), redis_url()
+        database, redis_ = database_url(), read_redis_url()
         app_database = database_url(migration=False)
         if database and redis_:
             get_config()
@@ -127,8 +127,8 @@ def main():
     if missing:
         log.error(f"Missing required environment variables: {', '.join(missing)}")
         sys.exit(1)
-    secrets = [url.password for url in (database, app_database) if url]
-    secrets.append(read_redis_url().password)
+    secrets = [url.password for url in (database, app_database, redis_) if url]
+    redis_ = redis_.render_as_string(hide_password=False)
 
     deadline = time.monotonic() + TIMEOUT_SECONDS
     shown = None

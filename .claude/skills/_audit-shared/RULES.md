@@ -50,11 +50,13 @@ Audits are **read-only** with respect to the repository:
 
 - Do not edit, create or delete tracked files, and do not commit, push, or
   change branches in the main working tree. The only file you write is your
-  report (below).
+  report (below). That includes `temp/HANDOFF-open-issues.md` and
+  `DECISIONS.md`: the report's *Recording plan* proposes what goes in them,
+  and the main conversation records it once the user approves.
 - Do not touch `.env.prod`, or the dev (`app_dev`) and production (`app`)
   Compose projects or their volumes. They hold the user's data.
-- Checks that need running services use one of two throwaway stacks, never
-  both at once. Only one check may run Docker at a time (the `/audit`
+- Checks that need running services use one of two throwaway stacks (plus
+  `/audit-infra`'s Deploy smoke run, below), never two at once. Only one check may run Docker at a time (the `/audit`
   orchestrator runs them one after another), and each tears its stack down
   when done, volumes included.
   - The **test stack**: `docker-compose.test.yml`, project `app_test`, ports
@@ -70,6 +72,13 @@ Audits are **read-only** with respect to the repository:
     the test stack uses `10.217.1`), plus a scratch override file that rebinds
     nginx to `127.0.0.1` (`ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]`),
     so nothing listens on the network. Never use the bare project name `app`.
+  - **Deploy smoke** (`python .github/scripts/smoke_deploy.py`,
+    `/audit-infra`'s deploy layer only): its own clone and project
+    `deploy_smoke`, subnet `10.217.8`, nginx on ports 80 and 443 of
+    **every** interface while it runs, so not beside the production-config
+    stack or a local production stack. It tears itself down, images
+    included; check `docker ps -a --filter name=deploy_smoke` is empty
+    afterwards.
   - Project names here (`app_test`, `app_dev`, `app_audit`) are the
     template's defaults. In an app built from the template, read the real
     names from each compose file's `name:` and use those instead.
@@ -123,7 +132,7 @@ Audits are **read-only** with respect to the repository:
   suites with coverage, the same again after `remove_examples.py` (the
   Scaffold job), compose validation, zizmor, a license, required-checks,
   toolchain-version and whitespace check, hadolint and gixy-ng.
-  Integration, E2E and the Platform smoke job run on `main`, on pull
+  Integration, E2E, Platform smoke and Deploy smoke run on `main`, on pull
   requests, and daily. Check the
   `on:` blocks in `.github/workflows/` if in doubt. **Read CI results instead
   of re-running them:** `gh run list --commit $(git rev-parse HEAD)` first,
@@ -208,6 +217,27 @@ tagged `(open: ...)`. Resolved: the earlier findings that are now fixed.
 Recurring: IDs also in the last report (call out any reported three times or
 more).
 
+## Proposed PRs
+Every finding not tagged `(open: ...)` and not proposed for DECISIONS.md
+goes into exactly one PR, lows and nits included.
+### PR 1: <title>
+Fixes: <IDs>
+Changes: <file by file, from the Fix column>
+Guards: <from the Prevent column, or "—">
+Tests: <suites to run, tests to add and mutation-check>
+
+## Decisions for you
+One entry per finding whose fix needs the user's choice now (which option,
+whether to fix or record it, a wording): the question, the options with
+the recommended one first, and what each changes. "None." if there are none.
+
+## Recording plan
+| ID | Sev | Goes to |
+|---|---|---|
+| INFRA-1 | high | PR 1 |
+| INFRA-2 | low | handoff: <existing item it merges into>, or new item under <group> |
+| INFRA-3 | nit | DECISIONS.md: new entry (below), or amends "<entry title>" |
+
 ## Proposed DECISIONS.md entries
 Findings that look deliberate: the entry you would add, for the user to accept or reject.
 
@@ -217,6 +247,17 @@ Short bullets of important claims you checked and found true (one line each).
 ## Unverified / Skipped
 What you could not check, and why (no deployment, Docker unavailable, ...).
 ```
+
+**Proposed PRs:** group findings that touch the same files or would be
+fixed together, keep a risky change (auth, data, deploy) apart from
+routine ones, and order the PRs by severity, then by what depends on
+what. A finding tagged `(open: ...)` stays with its handoff item and gets
+no PR, unless this run's evidence makes it more urgent; say why if so.
+
+**Recording plan:** one row per finding, every ID in *Findings* exactly
+once; check the count matches the Counts line. A finding in a PR is
+recorded with that PR; one that overlaps a handoff item or a DECISIONS.md
+entry is combined with it rather than added beside it.
 
 **Timings:** run `date +%H:%M` when you start, just before your first
 container starts, just after your last teardown, and when you finish, and
@@ -239,6 +280,8 @@ ID prefixes: `INFRA`, `TEST`, `SEC`, `REC`, `CODE`, `A11Y`, `DOCS`, `SCAF`,
 `LEGAL`.
 Order findings by severity. Give each one a precise `file:line`.
 
-When done, reply with **only**: the verdict, the counts, the top five
-findings (ID, severity, one line each), and the report path. The report holds
-the detail.
+When done, reply with **only**: the verdict, the counts, one line per
+proposed PR (title and the IDs it fixes), the IDs going to the handoff or
+DECISIONS.md, the *Decisions for you* in full, and the report path. End by
+asking the user to answer the decisions, so the findings can be recorded
+as the *Recording plan* says. The report holds the detail.

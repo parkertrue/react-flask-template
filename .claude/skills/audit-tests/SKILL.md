@@ -62,8 +62,9 @@ no assert, weak-only asserts, the weak matchers, and skipped or focused
 tests. Check that they still pass, then look for what they can't see:
 - Hedges written another way (an assert after an `isVisible()` check whose
   result decides the path, a status set built in a variable); assertions only
-  on mocks being called, never on outcomes; snapshots of large markup;
-  `expect(true)`. Propose a guard for any pattern you find more than once.
+  on mocks being called, never on outcomes (lint refuses large snapshots
+  and an assert on a constant). Propose a guard for any pattern you find
+  more than once.
 - Tests that never assert, or whose only assertion is that nothing threw.
 - Frontend tests asserting markup structure instead of roles, labels and
   text (lint already refuses `data-testid` and `toHaveClass`).

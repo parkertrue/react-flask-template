@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 
 import app as app_module
 from app import create_app
-from app.auth.models import TERMS_VERSION
+from app.auth.models import TERMS_VERSION, User
 from app.config import UnitTestConfig
 from app.utils import redis_service
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
@@ -104,13 +104,20 @@ class TestRedisReconnect:
     def test_refresh_fails_closed_while_down(self, redis_down_at_boot):
         app, _, _ = redis_down_at_boot
         with app.app_context():
-            token = create_refresh_token(identity='1')
+            app_module.db.create_all()
+            user = User(email='down@example.com')
+            user.set_password('TestPassword123')
+            app_module.db.session.add(user)
+            app_module.db.session.commit()
+            token = create_refresh_token(identity=str(user.id))
             csrf = decode_token(token)['csrf']
         client = app.test_client()
         client.set_cookie('__Secure-refresh_token', token, path='/api/auth')
 
         response = client.post(
             '/api/auth/refresh', headers={'X-CSRF-REFRESH-TOKEN': csrf})
+        with app.app_context():
+            app_module.db.engine.dispose()
 
         assert response.status_code == 503
         assert response.get_json()['error']['code'] == 'SERVICE_UNAVAILABLE'
@@ -351,6 +358,16 @@ class TestJWTErrorHandlers:
         data = response.get_json()
         assert data['error']['code'] == 'AUTH_MISSING_TOKEN'
         assert 'authentication required' in data['error']['message'].lower()
+
+    def test_access_token_in_a_cookie_is_not_accepted(self, client, auth_token):
+        """Only the header carries an access token: a cookie planted by a
+        sibling subdomain must not sign the browser in as someone else."""
+        client.set_cookie('access_token_cookie', auth_token)
+
+        response = client.get('/api/account')
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_MISSING_TOKEN'
 
     def test_invalid_token_handler(self, client):
         """Invalid JWT token should return 401 with AUTH_INVALID_TOKEN."""

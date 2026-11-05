@@ -28,7 +28,15 @@ function renderPage() {
   ], '/account')
 }
 
-const logoutAll = () => screen.getByRole('button', { name: /log out all devices|logging out/i })
+// The page's own, the first in the document: the dialog's confirm button
+// shares its name, and jsdom leaves the page behind the dialog reachable
+const logoutAll = () => screen.getAllByRole('button', { name: /log out all devices|logging out/i })[0]
+const logoutAllDialog = () => screen.getByRole('dialog', { name: 'Log out all devices?' })
+
+async function confirmLogoutAll(user) {
+  await user.click(logoutAll())
+  await user.click(within(logoutAllDialog()).getByRole('button', { name: 'Log out all devices' }))
+}
 
 const httpError = (status, code, message) =>
   Object.assign(new Error(`Request failed with status code ${status}`), {
@@ -67,10 +75,33 @@ describe('AccountPage', () => {
     expect(logoutAll()).toBeInTheDocument()
   })
 
+  it('asks before logging every device out, signing nothing out yet', async () => {
+    const { user } = renderPage()
+
+    await user.click(logoutAll())
+
+    expect(logoutAllDevices).not.toHaveBeenCalled()
+    expect(logoutAllDialog()).toHaveAccessibleDescription(/this browser included/)
+    // Starts on the answer that changes nothing
+    expect(within(logoutAllDialog()).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+  })
+
+  it('signs nothing out when the user cancels', async () => {
+    const { user } = renderPage()
+    await user.click(logoutAll())
+
+    await user.click(within(logoutAllDialog()).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(logoutAll()).toHaveFocus()
+    expect(logoutAllDevices).not.toHaveBeenCalled()
+    expect(storage.getAccessToken()).toBe('access-token')
+  })
+
   it('signs every device out, ends this session and goes home', async () => {
     const { user, router } = renderPage()
 
-    await user.click(logoutAll())
+    await confirmLogoutAll(user)
 
     expect(await screen.findByText('Home page')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/')
@@ -88,7 +119,7 @@ describe('AccountPage', () => {
     logoutAllDevices.mockRejectedValue(error)
     const { user } = renderPage()
 
-    await user.click(logoutAll())
+    await confirmLogoutAll(user)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message)
     expect(storage.getAccessToken()).toBe('access-token')
@@ -100,7 +131,7 @@ describe('AccountPage', () => {
     logoutAllDevices.mockRejectedValue(httpError(401))
     const { user, router } = renderPage()
 
-    await user.click(logoutAll())
+    await confirmLogoutAll(user)
 
     expect(await screen.findByText('Home page')).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/')
@@ -111,10 +142,10 @@ describe('AccountPage', () => {
   it('clears an earlier error when trying again', async () => {
     logoutAllDevices.mockRejectedValueOnce(httpError(503, 'SERVICE_UNAVAILABLE'))
     const { user } = renderPage()
-    await user.click(logoutAll())
+    await confirmLogoutAll(user)
     await screen.findByRole('alert')
 
-    await user.click(logoutAll())
+    await confirmLogoutAll(user)
 
     expect(await screen.findByText('Home page')).toBeInTheDocument()
     expect(logoutAllDevices).toHaveBeenCalledTimes(2)
@@ -125,12 +156,14 @@ describe('AccountPage', () => {
     logoutAllDevices.mockImplementation(() => new Promise(resolve => { finish = resolve }))
     const { user } = renderPage()
 
-    await user.click(logoutAll())
+    await confirmLogoutAll(user)
     await user.click(logoutAll())
 
     expect(logoutAll()).toHaveTextContent('Logging out...')
     expect(logoutAll()).toHaveAttribute('aria-disabled', 'true')
     expect(logoutAll()).toHaveFocus()
+    // A busy button asks nothing
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(logoutAllDevices).toHaveBeenCalledTimes(1)
     await act(async () => finish())
   })

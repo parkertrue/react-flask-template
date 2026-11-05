@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import db
@@ -44,6 +44,12 @@ class User(db.Model):
     def __init__(self, *, email: str, terms_version: int = TERMS_VERSION) -> None:
         self.email = email
         self.terms_version = terms_version
+
+    @property
+    def created_timestamp(self) -> int:
+        """created_at as Unix seconds (it is stored as naive UTC); every token
+        carries it, so a token cannot outlive its account (app/__init__.py)"""
+        return int(self.created_at.replace(tzinfo=timezone.utc).timestamp())
 
     def set_password(self, password: str) -> None:
         self.password_hash = hash_password(password)
