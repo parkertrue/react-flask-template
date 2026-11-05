@@ -147,9 +147,12 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # No --with-deps: the runner image already has Chromium's libraries, and
+      # it apt-installs ~21 MB of non-Latin fonts from Ubuntu's mirror, which
+      # once took 10 minutes. A missing library fails the tests at once, by name
       - name: Install Playwright browsers
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # Pulls and builds take most of webServer's 120s timeout on a cold
       # runner, so they happen here and webServer's --build is all cache hits
