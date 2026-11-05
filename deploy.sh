@@ -133,8 +133,24 @@ services() {
 [ -z "$(git status --porcelain --untracked-files=no)" ] \
     || die "the clone has uncommitted changes; deploy from a clean clone"
 
-mkdir "$LOCK" 2> /dev/null || die "another deploy is running (or one was killed: remove $LOCK)"
-trap 'rmdir "$LOCK"' EXIT
+# The lock holds its deploy's PID, so a run takes over the lock of one that
+# was killed outright (kill -9, a reboot), which leaves it behind. ps, not
+# kill -0, which fails on another user's live process. Two runs taking over
+# the same dead lock at the same moment could both proceed; a timer's runs
+# never overlap, so that needs a deploy by hand at that very moment.
+if ! mkdir "$LOCK" 2> /dev/null; then
+    holder=$(cat "$LOCK/pid" 2> /dev/null) || holder=
+    # No PID yet (its deploy is starting, or died before writing one)
+    # counts as running
+    if ! [[ "$holder" =~ ^[0-9]+$ ]] || ps -p "$holder" > /dev/null 2>&1; then
+        die "another deploy is running${holder:+ (pid $holder)}; if none is, remove $PWD/$LOCK"
+    fi
+    log "taking over the lock of deploy $holder, which is no longer running"
+    rm -r "$LOCK"
+    mkdir "$LOCK" 2> /dev/null || die "another deploy is running"
+fi
+trap 'rm -r "$LOCK"' EXIT
+echo $$ > "$LOCK/pid"
 
 current=$(state IMAGE_TAG)
 previous=$(state PREVIOUS_IMAGE_TAG)
@@ -168,8 +184,10 @@ fi
 
 tag=$target
 # .env.deploy is written only once a deploy ends, so after one that was cut
-# off, the running containers may be another commit's than it records
-if [ "$target" = "$current" ] && running; then
+# off, the running containers may be another commit's than it records, and
+# the checkout, db and redis another's than the running containers: then the
+# whole deploy runs, which puts them back and rebuilds nothing
+if [ "$target" = "$current" ] && [ "$(git rev-parse HEAD)" = "$target" ] && running; then
     log "$target is already deployed"
     exit 0
 fi
@@ -181,8 +199,10 @@ was=$(git rev-parse HEAD)
 log "deploying $tag"
 
 checkout "$tag"
+# Back to the deployed commit on failure: after a deploy that was cut off,
+# the checkout this run started on may be another
 if ! build; then
-    checkout "$was"
+    checkout "${current:-$was}"
     die "could not build the images for $tag; nothing changed"
 fi
 
@@ -201,7 +221,7 @@ fi
 
 # --no-deps: db and redis are up already, and an external one is not here
 if ! compose up --no-build --no-deps --exit-code-from migrate migrate; then
-    checkout "$was"
+    checkout "${current:-$was}"
     write_state "$current" "$previous" "$tag"
     die "migrate failed for $tag; the running app is unchanged"
 fi
