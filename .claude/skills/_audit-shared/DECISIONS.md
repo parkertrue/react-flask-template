@@ -8,6 +8,10 @@ matches the entry (then the entry is stale and that is the finding).
 Add an entry when a finding is deliberately kept as-is. Delete one when the
 code changes so it no longer applies.
 
+In a *Revisit when*, "a deployment", "a real server" and "production" mean
+one that serves real users and holds their data. A server the maintainer runs
+for testing doesn't count, even one that deploys every merge to `main`.
+
 ## Accepted trade-offs
 
 **External services: one database user is not enough, and the bundled
@@ -461,6 +465,36 @@ Production", says what is not included and which tool to reach for; audits
 report a missing one only where those docs fail to name it. *Revisit when:*
 a gap's answer comes to depend on how this template is built.
 
+**Encryption at rest is the host's job.** The MySQL volume, Redis's files
+and backups are protected by encrypting the disk they sit on: full-disk
+encryption (LUKS or the OS's equivalent) on a self-hosted server, the
+provider's default encryption on a cloud disk or managed database, and
+backups encrypted before they leave the host. The app encrypts no columns:
+its key would sit in the same environment as the database URL, so it would
+only guard against a stolen disk or backup, which disk and backup
+encryption already cover. The cost on a self-hosted server is that every
+boot waits for the passphrase (or a TPM or network unlock), so an
+unattended reboot leaves the app down until someone unlocks the disk.
+*Revisit when:* a field must stay unreadable to whoever runs the database,
+such as under a compliance rule (then column encryption with a key held
+outside the app's environment).
+
+**MySQL only.** The template runs on MySQL 8.4, bundled or managed. Another
+engine would be a project of its own: the driver and its connect args (query
+timeouts, the UTC session time zone), the migrations, the MySQL-only
+integration tests, and case-insensitive email matching, which MySQL's
+collation gives for free and Postgres would need `citext` or a lower-cased
+unique index for. *Revisit when:* a deployment needs a provider or host
+without MySQL.
+
+**No TLS between containers on one host.** It is not needed while every
+service shares one host: the bundled MySQL and Redis traffic stays on the
+`internal` network, and anyone who can sniff that bridge already has root
+on the host. Off-host (any host but `db` or `redis`), `ProductionConfig`
+requires it. *Revisit when:* the bundled services are spread across hosts,
+since an overlay network keeps the names `db` and `redis`, so
+`ProductionConfig` would not ask for TLS.
+
 ## Deferred until the app grows
 
 **TanStack Query.** It would replace the hand-written loading, error and
@@ -495,8 +529,3 @@ findings.
   a `deploy.sh` clone dirty), and renewal is manual. It gets written and
   tried on that server rather than on paper; until then the docs and
   recovery checks don't report it. A CDN is not set up either.
-- **TLS between containers** is not needed while every service shares one
-  host: the bundled MySQL and Redis traffic stays on the `internal` network,
-  and anyone who can sniff that bridge already has root on the host. Off-host
-  (any host but `db` or `redis`), `ProductionConfig` requires it.
-- **Encryption at rest** (MySQL volume, Redis, backups) is undecided.
