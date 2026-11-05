@@ -69,7 +69,7 @@ These steps edit tracked files, so on a server that deploys with `deploy.sh` the
    ssl_certificate_key  /etc/letsencrypt/live/yourdomain.com/privkey.pem;
    ```
 
-5. Rebuild and restart: `docker compose --env-file .env.prod up -d --build` (on a server that deploys with `deploy.sh`, see the warning above)
+5. Rebuild and restart: `docker compose --env-file .env.prod build --pull --provenance=false`, then `docker compose --env-file .env.prod up -d` (on a server that deploys with `deploy.sh`, see the warning above)
 
 Let's Encrypt certificates expire after 90 days. Renew with `certbot renew` (the standalone method needs port 80 free, so stop nginx first), then restart nginx.
 
@@ -101,7 +101,7 @@ A migration must keep the code before it working: the old backend serves after i
 
 **What the server needs.** Internet access while it builds (base images, Python and npm packages), and enough memory to build the frontend: a server with 1 GB can run out during the build, so add swap or pick a larger one. Docker's build cache grows with each deploy; `docker builder prune` clears it.
 
-**Building by hand** (the README's Build and Start, without `deploy.sh`): `build --provenance=false` keeps an unchanged image's ID. Under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so without the flag every rebuild gets a new ID and `up -d` replaces every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. (Compose 5.0 ignores `provenance: false` under the compose file's `build:`, so it stays a flag; older Compose versions lack it, so drop it there.) `deploy.sh` doesn't need it: each commit's images get new tags, so a deploy replaces the app containers anyway.
+**Building by hand** (the README's Build and Start, without `deploy.sh`): `build --pull` checks for newer base images, so a rebuild picks up their upstream fixes (an image whose base hasn't changed keeps its ID), and `--provenance=false` keeps an unchanged image's ID. Under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so without the flag every rebuild gets a new ID and `up -d` replaces every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. (Compose 5.0 ignores `provenance: false` under the compose file's `build:`, so it stays a flag; older Compose versions lack it, so drop it there.) `deploy.sh` doesn't need it: each commit's images get new tags, so a deploy replaces the app containers anyway.
 
 **Setting a server up.**
 
@@ -136,7 +136,7 @@ A migration must keep the code before it working: the old backend serves after i
 
 On a container platform such as ECS, the platform pulls the images from a registry instead ([Deploying to a Platform](#deploying-to-a-platform)).
 
-CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`) runs the script on the runner: two good deploys, one whose nginx fails to start (rolled back from the images still there), one whose migration fails (the running backend never replaced), one that does not build, refusals, `--rollback`, which images are kept, and `--latest` through commits pushed between its runs.
+CI's Deploy smoke job (`.github/scripts/smoke_deploy.py`, whose docstring lists its cases) runs the script on the runner through each step above failing, its refusals, `--rollback`, `--latest` and an interrupted deploy.
 
 ### Deploying Automatically
 
@@ -235,7 +235,7 @@ The database name may hold only letters, digits and `_`, and `_` is a wildcard i
 **Redis settings the app cannot check.** Its ACL user may not read the server's configuration, so set these yourself:
 
 * `maxmemory-policy noeviction`. Every refresh token carries an expiry, so a policy that evicts keys with one (ElastiCache's default, `volatile-lru`) silently signs users out once memory fills. On ElastiCache, use a custom parameter group.
-* A user named in `REDIS_URL` (required), with the bundled ACL's rules: on ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~LIMITS:* +@all -@dangerous`. An AUTH token alone, on the `default` user, is refused.
+* A user named in `REDIS_URL` (required), with the bundled ACL's rules (the `redis` service in `docker-compose.yml`): its own keys, `+@all -@dangerous`, and minus the command category of each module the server loads (`-@search -@json -@timeseries -@bloom -@cuckoo -@cms -@topk -@tdigest`), which `@dangerous` doesn't cover. On ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~LIMITS:* +@all -@dangerous`, plus a `-@<category>` for each module your engine version offers (not yet checked against ElastiCache). An AUTH token alone, on the `default` user, is refused.
 * Cluster mode disabled: the app's Redis client is not cluster-aware. That rules out ElastiCache Serverless, which is always clustered and whose eviction policy is fixed at `volatile-lru`; use a node-based cluster.
 
 **Network access.** Let only the server reach the database and Redis (security groups, a private network, or the provider's allowlist), never the internet.
@@ -355,7 +355,8 @@ The template sets none of these up. Choose them before the server holds real dat
 * **Scheduled, off-host backups.** [Backups and Restoring](#backups-and-restoring) gives the dump and restore commands; run the dump on a schedule and copy it off the server with a backup tool (restic, borg).
 * **Point-in-time recovery.** A nightly dump can lose up to a day of writes. To lose less, use a managed database, which keeps its binary log for you ([External Database or Redis](#external-database-or-redis)).
 * **Host hardening.** SSH, firewall, automatic security updates, Docker's daemon settings: follow your distribution's guide or the CIS benchmark, and check the result with Lynis and Docker Bench for Security. [The Host](#the-host) lists what this stack changes about it.
-* **Certificate renewal** ([TLS Certificates](#tls-certificates)).
+* **Encryption at rest.** Encrypt the disk that holds the MySQL volume and the dumps (LUKS or the OS's equivalent; a cloud disk's or managed database's default encryption). [Restarts](#restarts) says what it costs.
+* **Certificate renewal** is not provided yet: renew by hand as [TLS Certificates](#tls-certificates) says.
 
 ### Restarts
 
@@ -370,12 +371,12 @@ The bundled MySQL's volume holds everything worth keeping. Redis holds only sess
 **Back up** as the migration user, which owns the database. Its password is already in the `db` container, so it never appears on a command line:
 
 ```bash
-docker compose --env-file .env.prod exec -T db sh -c \
+(umask 077; docker compose --env-file .env.prod exec -T db sh -c \
   'MYSQL_PWD="$MYSQL_PASSWORD" mysqldump -u"$MYSQL_USER" --single-transaction --no-tablespaces "$MYSQL_DATABASE"' \
-  > backup-$(date +%F).sql
+  > backup-$(date +%F).sql)
 ```
 
-`--single-transaction` takes a consistent copy while the app keeps serving. The file holds every email and password hash: keep it as private as `.env.prod` (`chmod 600`), encrypted wherever it is copied, and kept only as long as the privacy notice says ([Personal Data and Legal Pages](personal-data.md)). Restoring it brings back accounts deleted since it was taken: delete them again. The dump holds no database users, and the binary log MySQL keeps (30 days by default) is not used by any of this.
+`--single-transaction` takes a consistent copy while the app keeps serving. The file holds every email and password hash: `umask 077` creates it readable by its owner alone, as private as `.env.prod`; keep it encrypted wherever it is copied, and only as long as the privacy notice says ([Personal Data and Legal Pages](personal-data.md)). Restoring it brings back accounts deleted since it was taken ([Deleted accounts come back](#deleted-accounts-come-back)). The dump holds no database users, and the binary log MySQL keeps (30 days by default) is not used by any of this.
 
 **Restore into the running stack** (bad data: a broken migration, a bug that deleted rows). Pause [automatic deploys](#deploying-automatically) first, then:
 
@@ -401,24 +402,41 @@ docker compose --env-file .env.prod exec -T db sh -c \
 
 The new volume creates both database users from `.env.prod`, so this works with new passwords too.
 
-**Accounts created after the backup are gone**, and MySQL hands their ids out again from where the dump left off. Their sessions still work until the next request, which refuses them: every token names its account by id and creation time, so it never works as the account that takes the id next.
+**Accounts created after the backup are gone**, and MySQL hands their ids out again from where the dump left off. Their devices still look signed in, but their next request is refused: every token names its account by id and creation time, so it never works as the account that takes the id next. Losing those accounts and every write since the backup is a personal data breach: record it ([Personal Data and Legal Pages](personal-data.md)).
 
 **Watch free disk.** When the disk fills, writes fail with 503s while every health check stays green, and a client that retries can commit the same write several times once space returns; after space is freed, MySQL waits up to a minute before writing again.
+
+#### Deleted accounts come back
+
+Any restore, a managed database's snapshot included, brings back the accounts deleted since the backup was taken, with everything they owned, and their owners can log in again. Delete them again before the app serves:
+
+1. Before restoring, collect the user ids of the `account_deleted` events logged since the backup's time. Docker's own logs reach back only to the last deploy, and are gone on a new server, so read the shipped logs where you have them ([Logs](#logs)):
+
+   ```bash
+   docker compose --env-file .env.prod logs --no-log-prefix backend | grep '"message": "account_deleted"'
+   ```
+
+2. After loading the dump, and before `start backend` (or `deploy.sh` on a new server), delete them as the migration user. A restored row keeps its id, and the database deletes the rest of each account's rows:
+
+   ```bash
+   docker compose --env-file .env.prod exec -T db sh -c \
+     'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE" -e "DELETE FROM users WHERE id IN (<ids>)"'
+   ```
 
 ### Secrets Off the Host
 
 `.env.prod` and the TLS certificate and key in `nginx/certs/` exist only on the server. Keep a copy in a password manager or a secrets store, so a new server can start with the same values.
 
-**After a compromise**, issue new secrets rather than restoring the old ones: a new `SECRET_KEY`, new database and Redis passwords ([Changing a Value Later](#changing-a-value-later)), and a new TLS key and certificate. Restore onto a new server rather than cleaning the old one.
+**After a compromise**, issue new secrets rather than restoring the old ones: a new `SECRET_KEY`, new database and Redis passwords ([Changing a Value Later](#changing-a-value-later)), and a new TLS key and certificate. For a private repository, remove the old server's deploy key in the repository's settings and make a new one on the new server. Treat any dump that was on the old server as exposed: every email and password hash in it. Restore onto a new server rather than cleaning the old one.
 
 ### The Host
 
 * Ports Docker publishes (nginx's 80 and 443) bypass host firewalls such as `ufw`, so `ufw status` does not show what is reachable. Check from another machine, over IPv4 and IPv6.
 * Anyone in the `docker` group can control the whole host; without it, Docker commands need `sudo` ([Redeploying](#redeploying), "Setting a server up").
 * An installer may leave the root volume much smaller than the disk. Check free space before the first deploy: builds and images take several GB.
-* A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_app-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
+* A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_app-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (`<project>` is `name:` in `docker-compose.yml`, `app` in the template; never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
 
   ```bash
-  docker ps -aq --filter label=com.docker.compose.project=app --filter label=com.docker.compose.service=backend | xargs -r docker rm -f
+  docker ps -aq --filter label=com.docker.compose.project=<project> --filter label=com.docker.compose.service=backend | xargs -r docker rm -f
   docker compose --env-file .env.prod up -d --wait
   ```

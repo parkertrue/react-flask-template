@@ -183,6 +183,11 @@ jobs:
       - name: Toolchain versions
         run: python3 .github/scripts/check_versions.py
 
+      # A production build the docs show must pull its base images, as
+      # deploy.sh does
+      - name: Documented builds pull
+        run: python3 .github/scripts/check_build_pull.py
+
       # .editorconfig's rules for every tracked text file. Markdown may keep
       # trailing spaces, which are a line break there.
       - name: Whitespace
