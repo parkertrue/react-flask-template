@@ -16,11 +16,11 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[2] / 'db' / 'init' / '01-app-user.sh'
 
 # Saves its arguments, the password it was given and the SQL on its stdin
-STUB = '''#!/bin/sh
+STUB = """#!/bin/sh
 printf '%s' "$*" > "$STUB_OUT/args"
 printf '%s' "$MYSQL_PWD" > "$STUB_OUT/password"
 cat > "$STUB_OUT/sql"
-'''
+"""
 
 # What the MySQL image hands the script, with a quote and a backslash where
 # literal() must escape them

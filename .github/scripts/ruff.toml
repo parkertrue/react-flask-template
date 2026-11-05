@@ -1,0 +1,6 @@
+# The backend's rules, for the CI scripts, which print their results and
+# run docker, git and ruff, so print and subprocess are allowed here.
+extend = "../../backend/ruff.toml"
+
+[lint]
+ignore = ["T201", "TID251"]

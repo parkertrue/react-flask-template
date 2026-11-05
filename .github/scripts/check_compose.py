@@ -6,8 +6,8 @@ stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins the
 production backend's wait for `migrate` to succeed, which a plain
 `docker compose up` (README, Build and Start) relies on; deploy.sh runs
-migrate itself. Each file is read as
-`docker compose config` resolves it, anchors and merges applied.
+migrate itself. Each file is read as `docker compose config` resolves it,
+anchors and merges applied.
 """
 import json
 import subprocess
@@ -68,7 +68,7 @@ def problems(prod, test, dev):
                 yield f'{name}: {key} is {ours[key]!r} in production, {theirs[key]!r} in test'
     for stack, services in (('test', test), ('dev', dev)):
         if acl(services['redis']) != acl(prod['redis']):
-            yield f'redis: the ACL in {stack} differs from production\'s'
+            yield f"redis: the ACL in {stack} differs from production's"
     for stack, services in (('production', prod), ('test', test), ('dev', dev)):
         if init_mounts(services['db']) != [(INIT_SCRIPTS, True)]:
             yield f'db: {stack} does not mount db/init read-only as its init scripts'
