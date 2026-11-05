@@ -12,6 +12,8 @@ fi
 echo "Loading environment variables from .env.dev"
 SHELL_FLASK_DEBUG="${FLASK_DEBUG-}"
 set -a
+# .env.dev, which ShellCheck need not follow
+# shellcheck source=/dev/null
 source "$ENV_FILE"
 set +a
 if [ -n "$SHELL_FLASK_DEBUG" ]; then

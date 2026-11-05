@@ -40,8 +40,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
+      # The CI scripts too, under their own ruff.toml
       - name: Lint
-        run: ruff check .
+        run: |
+          ruff check .
+          ruff check ../.github/scripts
 
       # Each ruff rule the backend relies on still fires on a planted case
       - name: Lint rules
@@ -187,6 +190,13 @@ jobs:
       # deploy.sh does
       - name: Documented builds pull
         run: python3 .github/scripts/check_build_pull.py
+
+      # Pinned by digest, like hadolint. Dependabot does not watch workflow
+      # images, so bump this by hand.
+      - name: Shell scripts
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            -S warning $(git ls-files '*.sh')
 
       # .editorconfig's rules for every tracked text file. Markdown may keep
       # trailing spaces, which are a line break there.
