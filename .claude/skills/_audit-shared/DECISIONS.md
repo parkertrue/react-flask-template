@@ -243,10 +243,10 @@ which keeps one mailbox per account and is the login limit's key.
 *Revisit when:* Pydantic's email type gains those options.
 
 **No `engines` field, the `react-router-dom` shim, unhashed Python locks.**
-CI and Docker pin Node 24, the shim costs nothing at runtime, and Dependabot
-plus exact pins cover the locks. *Revisit when:* a contributor hits a Node
-mismatch, React Router drops the shim, or a supply-chain incident touches
-PyPI.
+CI and Docker pin one Node major (`check_versions.py`), the shim costs
+nothing at runtime, and Dependabot plus exact pins cover the locks.
+*Revisit when:* a contributor hits a Node mismatch, React Router drops the
+shim, or a supply-chain incident touches PyPI.
 
 **A write the client was told failed may still have committed.** When a
 commit stalls inside MySQL (a hung server), the query timeout or

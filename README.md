@@ -19,7 +19,7 @@ More detail lives in [docs/deployment.md](docs/deployment.md) (running in produc
 
 * [Docker & Docker Compose](https://www.docker.com/products/docker-desktop/)
 * [Python 3.14](https://www.python.org/downloads/)
-* [Node.js 24 LTS](https://nodejs.org/)
+* [Node.js 26 LTS](https://nodejs.org/)
 * [Git Bash](https://git-scm.com/download/win) (Windows only): use it for every command in this README
 
 Make sure Docker is running before any `docker compose` command.
