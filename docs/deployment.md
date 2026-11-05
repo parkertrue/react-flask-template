@@ -353,7 +353,7 @@ The template sets none of these up. Choose them before the server holds real dat
 * **Alerts.** Nothing tells you the app is down, a deploy failed, or the disk is filling. Point an uptime checker (Uptime Kuma, healthchecks.io, a cloud provider's) at `https://<SERVER_NAME>/api/health`, which answers `{"status":"ok"}`, and watch the host's free disk and memory (Netdata, Prometheus's node exporter, the provider's agent).
 * **Log shipping.** Docker keeps each container's last 30 MB and deletes them with the container ([Logs](#logs)). Ship them with a Docker logging driver or an agent (Loki, Fluent Bit, CloudWatch).
 * **Scheduled, off-host backups.** [Backups and Restoring](#backups-and-restoring) gives the dump and restore commands; run the dump on a schedule and copy it off the server with a backup tool (restic, borg).
-* **Point-in-time recovery.** A nightly dump can lose up to a day of writes. To lose less, use a managed database, which keeps its binary log for you ([External Database or Redis](#external-database-or-redis)).
+* **Point-in-time recovery.** A nightly dump can lose up to a day of writes. To lose less, use a managed database, which keeps its binary log for you; the bundled MySQL keeps none ([External Database or Redis](#external-database-or-redis)).
 * **Host hardening.** SSH, firewall, automatic security updates, Docker's daemon settings: follow your distribution's guide or the CIS benchmark, and check the result with Lynis and Docker Bench for Security. [The Host](#the-host) lists what this stack changes about it.
 * **Encryption at rest.** Encrypt the disk that holds the MySQL volume and the dumps (LUKS or the OS's equivalent; a cloud disk's or managed database's default encryption). [Restarts](#restarts) says what it costs.
 * **Certificate renewal** is not provided yet: renew by hand as [TLS Certificates](#tls-certificates) says.
@@ -376,7 +376,7 @@ The bundled MySQL's volume holds everything worth keeping. Redis holds only sess
   > backup-$(date +%F).sql)
 ```
 
-`--single-transaction` takes a consistent copy while the app keeps serving. The file holds every email and password hash: `umask 077` creates it readable by its owner alone, as private as `.env.prod`; keep it encrypted wherever it is copied, and only as long as the privacy notice says ([Personal Data and Legal Pages](personal-data.md)). Restoring it brings back accounts deleted since it was taken ([Deleted accounts come back](#deleted-accounts-come-back)). The dump holds no database users, and the binary log MySQL keeps (30 days by default) is not used by any of this.
+`--single-transaction` takes a consistent copy while the app keeps serving. The file holds every email and password hash: `umask 077` creates it readable by its owner alone, as private as `.env.prod`; keep it encrypted wherever it is copied, and only as long as the privacy notice says ([Personal Data and Legal Pages](personal-data.md)). Restoring it brings back accounts deleted since it was taken ([Deleted accounts come back](#deleted-accounts-come-back)). The dump holds no database users.
 
 **Restore into the running stack** (bad data: a broken migration, a bug that deleted rows). Pause [automatic deploys](#deploying-automatically) first, then:
 
@@ -404,7 +404,7 @@ The new volume creates both database users from `.env.prod`, so this works with 
 
 **Accounts created after the backup are gone**, and MySQL hands their ids out again from where the dump left off. Their devices still look signed in, but their next request is refused: every token names its account by id and creation time, so it never works as the account that takes the id next. Losing those accounts and every write since the backup is a personal data breach: record it ([Personal Data and Legal Pages](personal-data.md)).
 
-**Watch free disk.** When the disk fills, writes fail with 503s while every health check stays green, and a client that retries can commit the same write several times once space returns; after space is freed, MySQL waits up to a minute before writing again.
+**Watch free disk.** When the disk fills, writes that need new space fail at once with 503s while every health check stays green; they succeed again as soon as space is freed.
 
 #### Deleted accounts come back
 

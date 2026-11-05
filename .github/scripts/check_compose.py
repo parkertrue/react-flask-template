@@ -3,8 +3,8 @@
 CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
-the app's data-only user; nothing else compares the copies. It also pins the
-production backend's wait for `migrate` to succeed, which a plain
+the app's data-only user; nothing else compares the copies. It also pins
+production's db to run without a binary log, and the production backend's wait for `migrate` to succeed, which a plain
 `docker compose up` (README, Build and Start) relies on; deploy.sh runs
 migrate itself. Each file is read as `docker compose config` resolves it,
 anchors and merges applied.
@@ -72,6 +72,8 @@ def problems(prod, test, dev):
     for stack, services in (('production', prod), ('test', test), ('dev', dev)):
         if init_mounts(services['db']) != [(INIT_SCRIPTS, True)]:
             yield f'db: {stack} does not mount db/init read-only as its init scripts'
+    if '--disable-log-bin' not in prod['db'].get('command', []):
+        yield 'db: production does not run with --disable-log-bin'
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
     if migrate.get('condition') != 'service_completed_successfully':
         yield 'backend: production does not wait for migrate to complete successfully'
@@ -86,7 +88,7 @@ def main():
     if found:
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
-                     'and the backend waits for migrate\n')
+                     'the db keeps no binary log, and the backend waits for migrate\n')
 
 
 if __name__ == '__main__':

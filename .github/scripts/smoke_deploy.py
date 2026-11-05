@@ -183,7 +183,7 @@ def scenario(clone):
     clone.write('nginx/Dockerfile', dockerfile + 'RUN exit 1\n')
     unbuildable = clone.commit('E: the build fails')
     clone.write('nginx/Dockerfile', dockerfile)
-    db_command = 'command: ["--innodb-buffer-pool-size=512M"]'
+    db_command = 'command: ["--innodb-buffer-pool-size=512M", "--disable-log-bin"]'
     clone.edit('docker-compose.yml', db_command, db_command[:-1] + ', "--no-such-option"]')
     broken_db = clone.commit('G: db does not start')
     clone.edit('docker-compose.yml', db_command[:-1] + ', "--no-such-option"]', db_command)
