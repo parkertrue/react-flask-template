@@ -385,11 +385,10 @@ docker compose --env-file .env.prod exec -T db sh -c \
   'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" -e "DROP DATABASE $MYSQL_DATABASE; CREATE DATABASE $MYSQL_DATABASE"'
 docker compose --env-file .env.prod exec -T db sh -c \
   'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"' < backup-<date>.sql
-docker compose --env-file .env.prod run --rm --no-deps migrate
 docker compose --env-file .env.prod start backend
 ```
 
-The second command empties the database: a dump drops and recreates only the tables it holds, so a table a later migration added would stay, and `migrate` would then fail to create it. The users' grants are on the database's name and survive. The dump brings back `alembic_version`, so `migrate` brings a dump from before a migration up to the deployed code.
+The second command empties the database: a dump drops and recreates only the tables it holds, so a table a later migration added would stay, and `migrate` would then fail to create it. The users' grants are on the database's name and survive. `start backend` runs `migrate` first, since the backend waits for it, and the dump brings back `alembic_version`, so a dump from before a migration is brought up to the deployed code. If `migrate` fails, the backend stays stopped: read `logs migrate`.
 
 **Restore onto a new server** (the old one is gone or untrusted): set the server up as for a first deploy ([Redeploying](#redeploying)), then start the database alone, load the dump and deploy:
 
@@ -417,4 +416,9 @@ The new volume creates both database users from `.env.prod`, so this works with 
 * Ports Docker publishes (nginx's 80 and 443) bypass host firewalls such as `ufw`, so `ufw status` does not show what is reachable. Check from another machine, over IPv4 and IPv6.
 * Anyone in the `docker` group can control the whole host; without it, Docker commands need `sudo` ([Redeploying](#redeploying), "Setting a server up").
 * An installer may leave the root volume much smaller than the disk. Check free space before the first deploy: builds and images take several GB.
-* A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything.
+* A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_app-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
+
+  ```bash
+  docker ps -aq --filter label=com.docker.compose.project=app --filter label=com.docker.compose.service=backend | xargs -r docker rm -f
+  docker compose --env-file .env.prod up -d --wait
+  ```
