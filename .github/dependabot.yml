@@ -52,7 +52,8 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # Stay on the 8.4 LTS line; MySQL 9.x releases are short-lived
+      # Stay on the 8.4 LTS line; the innovation releases between LTS lines
+      # are short-lived. Move to the next LTS by hand.
       - dependency-name: mysql
         update-types: ["version-update:semver-major"]
 
