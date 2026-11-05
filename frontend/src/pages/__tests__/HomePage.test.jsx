@@ -29,7 +29,7 @@ describe('HomePage', () => {
     expect(links()).toEqual({ 'Get started': '/register', 'Log in': '/login' })
   })
 
-  it('offers a signed-in user their notes instead', () => {
+  it('offers a signed-in user the way into the app instead', () => {
     signIn()
     renderPage()
 
