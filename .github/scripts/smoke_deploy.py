@@ -3,13 +3,15 @@
 CI's Deploy smoke job runs this. It copies the working tree into a fresh
 clone of a throwaway origin and commits a few versions to its main (a good
 one, a second good one, one whose nginx stops at start, one whose migration
-fails, one that does not build, one whose db does not start, one built on a
-base image no registry has, one that changes redis). Then it runs deploy.sh
-through each case, and after a deploy cut off halfway, then --latest as a
-timer would, through commits pushed meanwhile, and checks what it
-left running, the images it kept, the checkout and .env.deploy. Every
-failed check is printed, then it exits 1. Needs Docker, git, bash, curl,
-and a certificate pair in nginx/certs/; ports 80 and 443 must be free.
+fails, one that does not build, one whose db does not start, one that
+changes db, one built on a base image no registry has, one that changes
+redis). Then it runs deploy.sh through each case, after deploys cut off
+before and after the backend was replaced, against the locks of a live and
+a dead deploy, then --latest as a timer would, through commits pushed
+meanwhile, and checks what it left running, the images it kept, the
+checkout and .env.deploy. Every failed check is printed, then it exits 1.
+Needs Docker, git, bash, curl, ps, and a certificate pair in nginx/certs/;
+ports 80 and 443 must be free.
 """
 import os
 import secrets
@@ -132,9 +134,21 @@ def running(service):
 
 
 def db():
-    """The bundled db's command and health"""
-    return run('docker', 'inspect', '-f', '{{json .Config.Cmd}} {{.State.Health.Status}}',
+    """The bundled db's settings (as Compose hashes them), command and health"""
+    return run('docker', 'inspect', '-f', '{{index .Config.Labels "com.docker.compose.config-hash"}} '
+               '{{json .Config.Cmd}} {{.State.Health.Status}}',
                f'{PROJECT}-db-1', check=False).stdout.strip()
+
+
+def bash_pid(*, live):
+    """A bash process's PID, as deploy.sh's $$ would be: a live one, to end
+    with its stdin, or one that has exited"""
+    process = subprocess.Popen([shutil.which('bash'), '-c', 'echo $$; read' if live else 'echo $$'],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8')
+    pid = process.stdout.readline().strip()
+    if not live:
+        process.wait()
+    return process, pid
 
 
 def serving(clone, sha):
@@ -173,6 +187,9 @@ def scenario(clone):
     clone.edit('docker-compose.yml', db_command, db_command[:-1] + ', "--no-such-option"]')
     broken_db = clone.commit('G: db does not start')
     clone.edit('docker-compose.yml', db_command[:-1] + ', "--no-such-option"]', db_command)
+    clone.edit('docker-compose.yml', db_command, f'{db_command}\n    labels: [smoke.changed=1]')
+    changed_db = clone.commit("L: db's settings change")
+    clone.edit('docker-compose.yml', f'{db_command}\n    labels: [smoke.changed=1]', db_command)
     clone.edit('nginx/Dockerfile', 'FROM nginx:1.31-alpine', f'FROM {STALE_BASE}')
     stale_base = clone.commit('H: built on a base image no registry has')
     clone.write('nginx/Dockerfile', dockerfile)
@@ -209,19 +226,24 @@ def scenario(clone):
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_nginx), clone.state())
 
     backend = running('backend')
+    # Each failure below starts from another checkout than the deployed
+    # one, as a deploy cut off halfway leaves it, and must end on B's
+    clone.git('checkout', '--quiet', '--detach', good)
     result = clone.deploy(broken_migration)
     check('a failed migration fails the deploy', result.returncode == 1, result.stderr)
     check('the running backend was never replaced', running('backend') == backend, running('backend'))
-    check('B still serves', *serving(clone, second))
+    check('B still serves, checked out', *serving(clone, second))
     check('.env.deploy records D as failed', (clone.state().get('IMAGE_TAG'),
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_migration), clone.state())
 
     before = clone.state()
+    clone.git('checkout', '--quiet', '--detach', good)
     result = clone.deploy(unbuildable)
     check('a commit that does not build is refused', result.returncode == 1
           and 'nothing changed' in result.stderr, result.stderr)
-    check('nothing changed for it, nor is it recorded as failed',
-          clone.state() == before and serving(clone, second)[0], clone.state())
+    check('nothing changed for it, nor is it recorded as failed, and B is checked out',
+          clone.state() == before and serving(clone, second)[0],
+          f'{clone.state()} {serving(clone, second)[1]}')
 
     # What a deploy of A killed halfway leaves, once the operator has removed
     # its lock: A's backend running, A checked out, and .env.deploy still
@@ -243,6 +265,18 @@ def scenario(clone):
     check('B still serves after the db failed', *serving(clone, second))
     check('.env.deploy records G as failed', (clone.state().get('IMAGE_TAG'),
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_db), clone.state())
+
+    # What a deploy of L killed before it replaced the backend leaves: B's
+    # backend running, L checked out, and db on L's settings. Deploying B,
+    # the commit .env.deploy records, must put both back.
+    clone.git('checkout', '--quiet', '--detach', changed_db)
+    clone.compose('up', '-d', '--no-build', '--wait', 'db', 'redis')
+    check("the cut-off deploy moved db to L's settings", db() != healthy_db, db())
+    result = clone.deploy(second)
+    check('after a deploy cut off before the backend, the recorded commit deploys again',
+          'already deployed' not in result.stdout and serving(clone, second)[0],
+          f'{result.stdout} {serving(clone, second)[1]}')
+    check("db is back on B's settings after the cut-off deploy", db() == healthy_db, db())
 
     # Pulled first: a build's base images need not be in the image list
     run('docker', 'pull', '--quiet', 'nginx:1.31-alpine')
@@ -268,11 +302,34 @@ def scenario(clone):
           and 'uncommitted changes' in result.stderr, result.stderr)
     clone.git('checkout', '--', 'README.md')
 
-    (clone.path / '.deploy.lock').mkdir()
+    lock = clone.path / '.deploy.lock'
+    # A lock with no PID yet, as a deploy that is starting holds it
+    lock.mkdir()
+    result = clone.deploy(good)
+    check('a deploy is refused while one is starting', result.returncode == 1
+          and 'another deploy is running' in result.stderr, result.stderr)
+    lock.rmdir()
+
+    holder, pid = bash_pid(live=True)
+    lock.mkdir()
+    (lock / 'pid').write_text(f'{pid}\n', encoding='utf-8')
     result = clone.deploy(good)
     check('a second deploy at once is refused', result.returncode == 1
-          and 'another deploy is running' in result.stderr, result.stderr)
-    (clone.path / '.deploy.lock').rmdir()
+          and f'another deploy is running (pid {pid})' in result.stderr, result.stderr)
+    check("the live deploy's lock is left alone", (lock / 'pid').exists(), lock)
+    holder.communicate('\n')
+    shutil.rmtree(lock, ignore_errors=True)
+
+    _, pid = bash_pid(live=False)
+    lock.mkdir()
+    (lock / 'pid').write_text(f'{pid}\n', encoding='utf-8')
+    result = clone.deploy(second)
+    check("a killed deploy's lock is taken over", result.returncode == 0
+          and f'taking over the lock of deploy {pid}' in result.stdout
+          and 'already deployed' in result.stdout, result.stdout + result.stderr)
+    check('the taken-over lock is removed afterwards', not lock.exists(), lock)
+    # So a failure here does not refuse every deploy after it
+    shutil.rmtree(lock, ignore_errors=True)
 
     result = clone.deploy('--rollback')
     check('--rollback builds nothing', f'using the images already built for {good}'
