@@ -415,6 +415,21 @@ register, refresh, account deletion) count in Redis and stay exact. Exact
 limits at the edge belong to the load balancer's WAF. *Revisit when:* a
 deployment runs enough tasks that the multiplied budget matters.
 
+**No IPv6 at the edge.** nginx publishes 80 and 443 on IPv4 only
+(`0.0.0.0`, `check_compose.py`), so an IPv6 visitor is refused and the
+browser falls back to IPv4; a server publishes no AAAA record. Published on
+`[::]` as well, Docker's proxy would relay every IPv6 visitor from the
+`edge` gateway's address (seen on the test VM, 2026-11-05), giving them all
+one rate-limit bucket that a stranger's wrong passwords could lock. Real
+IPv6 needs IPv6 on `edge`, which a host with IPv6 switched off cannot
+create, and per-address limits keyed on the visitor's /64, since most hold
+a whole /64 and could rotate through it. Behind a dual-stack load balancer
+(`behind-proxy`) IPv6 visitors already arrive with their own address in
+`X-Forwarded-For`, so there the limits key on a single IPv6 address today:
+the per-account login limits hold, the per-address ones can be dodged.
+*Revisit when:* a deployment needs IPv6 at nginx, or runs behind a
+dual-stack load balancer (then the /64 keying, in nginx and in Flask).
+
 **Deploys build on the server, not in CI.** `deploy.sh` builds the
 commit it deploys on the server itself, so the images that run are a second
 build of the tree CI tested, not the images it tested: branch protection ran
