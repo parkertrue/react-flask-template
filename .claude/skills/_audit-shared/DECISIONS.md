@@ -430,6 +430,18 @@ the per-account login limits hold, the per-address ones can be dodged.
 *Revisit when:* a deployment needs IPv6 at nginx, or runs behind a
 dual-stack load balancer (then the /64 keying, in nginx and in Flask).
 
+**`--provenance=false` stays a flag.** Without it, every rebuild gets a new
+image ID and a hand-run `up -d` replaces the app containers though nothing
+changed. On Docker Engine 29 with Compose 5.6.1 (the test VM, 2026-11-05)
+the flag keeps an unchanged image's ID, and so does `provenance: false`
+under `build:`. But that key is honored only since Compose 5.5.1
+(docker/compose#14112): 5.0 ignores it, and some versions in use refuse the
+whole file over it (GitHub's `ubuntu-24.04` runner, 2026-11-06: "additional
+properties 'provenance' not allowed"), which would stop the stack and
+`deploy.sh` from starting at all. The flag is accepted everywhere it exists.
+*Revisit when:* every Compose a deployment could run, CI's runner included,
+accepts and honors the key.
+
 **Deploys build on the server, not in CI.** `deploy.sh` builds the
 commit it deploys on the server itself, so the images that run are a second
 build of the tree CI tested, not the images it tested: branch protection ran
