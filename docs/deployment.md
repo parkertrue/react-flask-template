@@ -410,11 +410,14 @@ The new volume creates both database users from `.env.prod`, so this works with 
 
 Any restore, a managed database's snapshot included, brings back the accounts deleted since the backup was taken, with everything they owned, and their owners can log in again. Delete them again before the app serves:
 
-1. Before restoring, collect the user ids of the `account_deleted` events logged since the backup's time. Docker's own logs reach back only to the last deploy, and are gone on a new server, so read the shipped logs where you have them ([Logs](#logs)):
+1. Before restoring, list the `account_deleted` events logged since the backup's time. Docker's own logs reach back only to the last deploy, and are gone on a new server, so read the shipped logs where you have them ([Logs](#logs)):
 
    ```bash
-   docker compose --env-file .env.prod logs --no-log-prefix backend | grep '"message": "account_deleted"'
+   docker compose --env-file .env.prod logs --no-log-prefix backend | grep '"message": "account_deleted"' \
+     | sed -E 's/.*"time": "([^"]+)".*"user_id": ([0-9]+).*/\1 \2/'
    ```
+
+   Each line is one deletion's time and user id. Keep the ids deleted after the backup was taken: a dump's last line (`-- Dump completed on ...`) gives its time in UTC, as the log does.
 
 2. After loading the dump, and before `start backend` (or `deploy.sh` on a new server), delete them as the migration user. A restored row keeps its id, and the database deletes the rest of each account's rows:
 
