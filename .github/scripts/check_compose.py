@@ -4,7 +4,7 @@ CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins
-production's db to run without a binary log, and the production backend's wait for `migrate` to succeed, which a plain
+production's ports to IPv4, production's db to run without a binary log, and the production backend's wait for `migrate` to succeed, which a plain
 `docker compose up` (README, Build and Start) relies on; deploy.sh runs
 migrate itself. Each file is read as `docker compose config` resolves it,
 anchors and merges applied.
@@ -72,6 +72,13 @@ def problems(prod, test, dev):
     for stack, services in (('production', prod), ('test', test), ('dev', dev)):
         if init_mounts(services['db']) != [(INIT_SCRIPTS, True)]:
             yield f'db: {stack} does not mount db/init read-only as its init scripts'
+    # A port without a host address listens on [::] too, where Docker's proxy
+    # relays every IPv6 visitor from one address (DECISIONS.md)
+    for name, service in prod.items():
+        for port in service.get('ports', []):
+            if port.get('host_ip') != '0.0.0.0':
+                where = port.get('host_ip') or 'every address, IPv6 included'
+                yield f"{name}: port {port['target']} is published on {where}, not 0.0.0.0"
     if '--disable-log-bin' not in prod['db'].get('command', []):
         yield 'db: production does not run with --disable-log-bin'
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
@@ -88,7 +95,8 @@ def main():
     if found:
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
-                     'the db keeps no binary log, and the backend waits for migrate\n')
+                     'ports are IPv4 only, the db keeps no binary log, '
+                     'and the backend waits for migrate\n')
 
 
 if __name__ == '__main__':

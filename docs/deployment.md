@@ -431,7 +431,8 @@ Any restore, a managed database's snapshot included, brings back the accounts de
 
 ### The Host
 
-* Ports Docker publishes (nginx's 80 and 443) bypass host firewalls such as `ufw`, so `ufw status` does not show what is reachable. Check from another machine, over IPv4 and IPv6.
+* Ports Docker publishes (nginx's 80 and 443) bypass host firewalls such as `ufw`, so `ufw status` does not show what is reachable. Check from another machine: nginx's ports answer over IPv4 only, and IPv6 should be refused on them; check SSH over both.
+* Publish an A record for `SERVER_NAME`, not an AAAA record: nginx listens on IPv4 only, since Docker would otherwise relay every IPv6 visitor from one address, sharing one rate-limit bucket. A visitor whose browser tries IPv6 falls back to IPv4. Serving IPv6 would need IPv6 on the `edge` network and rate limits keyed on each visitor's /64, which the template does not do.
 * Anyone in the `docker` group can control the whole host; without it, Docker commands need `sudo` ([Redeploying](#redeploying), "Setting a server up").
 * An installer may leave the root volume much smaller than the disk. Check free space before the first deploy: builds and images take several GB.
 * A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_app-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (`<project>` is `name:` in `docker-compose.yml`, `app` in the template; never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
