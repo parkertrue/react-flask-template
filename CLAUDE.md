@@ -74,7 +74,7 @@ pytest tests/unit/auth/test_routes.py::TestClassName::test_method_name -v
 
 ## Audits
 
-Skills in `.claude/skills/` that audit the template, run on demand only, never automatically. Each check runs in its own subagent, changes nothing, and writes its findings to `temp/audits/YYYY-MM-DD-<check>.md`, comparing them with its previous report. Each report also proposes the PRs that would fix every finding, nits included, the decisions the user must make, and where each finding is to be recorded (the handoff's open issues or `DECISIONS.md`), which the main conversation does once the user approves.
+Skills in `.claude/skills/` that audit the template, run on demand only, never automatically. Each check runs in its own subagent, changes nothing, and writes its findings to `temp/audits/YYYY-MM-DD-<check>.md`, comparing them with its previous report. Each report also proposes the PRs that would fix every finding, nits included, the decisions the user must make, and where each finding is to be recorded (`OPEN-ISSUES.md` or `DECISIONS.md`), which the main conversation does once the user approves.
 
 | Command | Covers | When to run |
 |---|---|---|
@@ -89,7 +89,7 @@ Skills in `.claude/skills/` that audit the template, run on demand only, never a
 | `/audit-scaffold` | Acts out "Starting a New App" in a throwaway worktree | After structural changes |
 | `/audit <tier>` | Runs a tier (`daily`, `periodic`, `ops`, `release`) and merges the reports | `release` before publishing |
 
-Shared material lives in `.claude/skills/_audit-shared/`: `RULES.md` (what every check follows: CLAUDE.md is the spec, read-only boundaries, severity, report format), `SOURCES.md` (the outside standards each layer is measured against), and `DECISIONS.md` (accepted trade-offs and known gaps, so audits stop re-reporting them). When a finding is kept on purpose, record it in `DECISIONS.md`; when a finding could be caught mechanically, add the lint rule, test or CI job instead of more prompt text.
+Shared material lives in `.claude/skills/_audit-shared/`: `RULES.md` (what every check follows: CLAUDE.md is the spec, read-only boundaries, severity, report format), `SOURCES.md` (the outside standards each layer is measured against), `DECISIONS.md` (accepted trade-offs and known gaps, so audits stop re-reporting them), and `OPEN-ISSUES.md` (the app's running list of open work: getting started, the production to-dos every deployment works through, and every issue since). What is yours alone (your machine, your servers, the current state) goes in a gitignored `temp/HANDOFF.md`, which a new chat reads first; `OPEN-ISSUES.md`'s first issue says how to set it up. When a finding is kept on purpose, record it in `DECISIONS.md`; when a finding could be caught mechanically, add the lint rule, test or CI job instead of more prompt text.
 
 ## Production Build
 ```bash

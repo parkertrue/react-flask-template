@@ -31,11 +31,10 @@ bulletproof. In priority order:
 - **`DECISIONS.md`** (next to this file) lists accepted trade-offs and known
   gaps. Do not report them as findings. Report an entry only if its *Revisit
   when* condition has come true or the code no longer matches it.
-- **`temp/HANDOFF-open-issues.md`**, if it exists (gitignored: the
-  maintainer's running list of open work). Check every finding against it. A
-  finding it already lists is still reported, since this run may show it is
-  worse or bring new evidence: write `(open: <handoff item>)` after its
-  Finding text, and rate its severity yourself.
+- **`OPEN-ISSUES.md`** (next to this file) is the running list of open
+  work. Check every finding against it. A finding it already lists is still
+  reported, since this run may show it is worse or bring new evidence: write
+  `(open: <issue>)` after its Finding text, and rate its severity yourself.
 - **Read files from disk.** A copy of CLAUDE.md or any other file already in
   your context may be older than the working tree. Read it again before
   relying on it.
@@ -50,7 +49,7 @@ Audits are **read-only** with respect to the repository:
 
 - Do not edit, create or delete tracked files, and do not commit, push, or
   change branches in the main working tree. The only file you write is your
-  report (below). That includes `temp/HANDOFF-open-issues.md` and
+  report (below). That includes `OPEN-ISSUES.md` and
   `DECISIONS.md`: the report's *Recording plan* proposes what goes in them,
   and the main conversation records it once the user approves.
 - Do not touch `.env.prod`, or the dev (`app_dev`) and production (`app`)
@@ -212,7 +211,7 @@ Timings: start HH:MM, first container HH:MM, last teardown HH:MM, end HH:MM
 ## Compared with last run
 Read the most recent earlier report for this check in `temp/audits/`; if
 there is none, write "First run." and nothing else here.
-New: IDs in neither the last report nor the handoff. Already open: IDs
+New: IDs in neither the last report nor OPEN-ISSUES.md. Already open: IDs
 tagged `(open: ...)`. Resolved: the earlier findings that are now fixed.
 Recurring: IDs also in the last report (call out any reported three times or
 more).
@@ -235,7 +234,7 @@ the recommended one first, and what each changes. "None." if there are none.
 | ID | Sev | Goes to |
 |---|---|---|
 | INFRA-1 | high | PR 1 |
-| INFRA-2 | low | handoff: <existing item it merges into>, or new item under <group> |
+| INFRA-2 | low | OPEN-ISSUES.md: <existing issue it merges into>, or new issue under <group> |
 | INFRA-3 | nit | DECISIONS.md: new entry (below), or amends "<entry title>" |
 
 ## Proposed DECISIONS.md entries
@@ -251,12 +250,12 @@ What you could not check, and why (no deployment, Docker unavailable, ...).
 **Proposed PRs:** group findings that touch the same files or would be
 fixed together, keep a risky change (auth, data, deploy) apart from
 routine ones, and order the PRs by severity, then by what depends on
-what. A finding tagged `(open: ...)` stays with its handoff item and gets
+what. A finding tagged `(open: ...)` stays with its issue in OPEN-ISSUES.md and gets
 no PR, unless this run's evidence makes it more urgent; say why if so.
 
 **Recording plan:** one row per finding, every ID in *Findings* exactly
 once; check the count matches the Counts line. A finding in a PR is
-recorded with that PR; one that overlaps a handoff item or a DECISIONS.md
+recorded with that PR; one that overlaps an issue in OPEN-ISSUES.md or a DECISIONS.md
 entry is combined with it rather than added beside it.
 
 **Timings:** run `date +%H:%M` when you start, just before your first
@@ -281,7 +280,7 @@ ID prefixes: `INFRA`, `TEST`, `SEC`, `REC`, `CODE`, `A11Y`, `DOCS`, `SCAF`,
 Order findings by severity. Give each one a precise `file:line`.
 
 When done, reply with **only**: the verdict, the counts, one line per
-proposed PR (title and the IDs it fixes), the IDs going to the handoff or
+proposed PR (title and the IDs it fixes), the IDs going to OPEN-ISSUES.md or
 DECISIONS.md, the *Decisions for you* in full, and the report path. End by
 asking the user to answer the decisions, so the findings can be recorded
 as the *Recording plan* says. The report holds the detail.
