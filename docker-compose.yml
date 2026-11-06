@@ -285,6 +285,13 @@ services:
       - NET_BIND_SERVICE
       - SETGID
       - SETUID
+    # The master stays root, so nothing may change its files: it writes only
+    # the config rendered at start, its temporary files and its PID
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d
+      - /var/cache/nginx
+      - /run
     # IPv4 only: edge has no IPv6, so on [::] Docker's proxy would relay
     # every IPv6 visitor from the gateway's address, one shared rate-limit
     # bucket (DECISIONS.md, check_compose.py)
