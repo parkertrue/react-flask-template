@@ -110,8 +110,28 @@ matters.
 
 **No nginx healthcheck.** Compose uses healthchecks only to order startup and
 never restarts an unhealthy container, and nothing depends on nginx, so a
-healthcheck would do nothing. *Revisit when:* a monitor or orchestrator acts
+healthcheck would do nothing. Without one, `up --wait` reports nginx healthy
+the moment it starts, even one crash-looping on an unreadable key (seen on
+the test VM, 2026-11-05); `deploy.sh` catches that, since it checks
+`/api/health` through nginx. *Revisit when:* a monitor or orchestrator acts
 on container health.
+
+**Docker Bench warnings the stack has on purpose** (run on the test VM,
+2026-11-05, CIS Docker 1.6.0). 4.1: `db` and `redis` start as root, but
+their entrypoints run MySQL and Redis as their own users (uid 999), and
+nginx's master stays root to bind 80 and 443 and read the key, its workers
+not. 5.4: nginx adds `DAC_READ_SEARCH`, to read the mode-600 key whoever
+owns it on the host. 5.8, 5.9, 5.14: nginx publishes the privileged ports 80
+and 443 on every IPv4 address; it is the edge. 4.6: health checks live in
+the compose file, and a platform takes its own (ECS ignores an image's
+`HEALTHCHECK`). 4.5: Docker Content Trust is off; the images are built on
+the server, never pulled from a registry. 5.13 and capabilities for `db` and
+`redis`: their root filesystems are writable and they keep Docker's default
+capabilities, since their long-running processes are not root and so hold
+none, and the official entrypoints write and `chown` on first start.
+Sections 1-3 are the host's (`docs/deployment.md`, The Host). *Revisit
+when:* the images or their users change, or a newer CIS Docker benchmark
+adds a container check.
 
 **Unreachable CVEs in base-image OS packages are low.** A scanner flagging an
 Alpine library in the nginx or backend image (e.g. libexpat or libtiff in
