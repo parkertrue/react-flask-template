@@ -152,7 +152,11 @@ Ground rules when using these:
 - **hadolint**: https://github.com/hadolint/hadolint (runs in CI: the "Dockerfiles" job)
 - **Docker Bench for Security**: https://github.com/docker/docker-bench-security
   Run on the production host. It checks the daemon and running containers
-  against the CIS Docker Benchmark.
+  against the CIS Docker Benchmark (1.6.0; last release 2023, so pin a
+  commit). Run it with `bash docker-bench-security.sh`: its README's `sh`
+  is dash on Debian and Ubuntu, where every check using `[[` fails, on
+  stderr only. `-l` appends to an existing log, and with Docker Engine 29 it
+  prints harmless `no such object: <size>` errors.
 - **CIS Benchmarks** (Docker, Ubuntu/Linux, NGINX): https://www.cisecurity.org/cis-benchmarks
   Free PDFs with registration; for the server-hardening check.
 

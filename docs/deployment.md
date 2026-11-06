@@ -113,9 +113,11 @@ A migration must keep the code before it working: the old backend serves after i
    For a deploy user on Linux:
 
    ```bash
-   sudo useradd --system --create-home --shell /usr/sbin/nologin deploy
+   sudo useradd --create-home --shell /usr/sbin/nologin deploy
    sudo usermod -aG docker deploy
    ```
+
+   Not `--system`: it hands out the highest free system uid, often 999, which the MySQL and Redis containers run as. Without [user namespaces](#the-host) a container's uid is the host's, so a process breaking out of either would own the clone and `deploy.sh`, which the deploy user runs. `id deploy` should show none of the containers' uids: 999, 101 (nginx's workers) or 10001 (the backend).
 
 2. Clone the repository as that user. A public one:
 
@@ -437,6 +439,11 @@ Any restore, a managed database's snapshot included, brings back the accounts de
 * Ports Docker publishes (nginx's 80 and 443) bypass host firewalls such as `ufw`, so `ufw status` does not show what is reachable. Check from another machine: nginx's ports answer over IPv4 only, and IPv6 should be refused on them; check SSH over both.
 * Publish an A record for `SERVER_NAME`, not an AAAA record: nginx listens on IPv4 only, since Docker would otherwise relay every IPv6 visitor from one address, sharing one rate-limit bucket. A visitor whose browser tries IPv6 falls back to IPv4. Serving IPv6 would need IPv6 on the `edge` network and rate limits keyed on each visitor's /64, which the template does not do.
 * Anyone in the `docker` group can control the whole host; without it, Docker commands need `sudo` ([Redeploying](#redeploying), "Setting a server up").
+* Docker's daemon settings from the CIS benchmark, `"live-restore": true`, `"icc": false`, `"no-new-privileges": true` and `"userland-proxy": false` in `/etc/docker/daemon.json`, need no change to the stack. `live-restore` also keeps the site up while Docker itself restarts or upgrades.
+* User namespaces (`"userns-remap": "default"`) run each container's users as unprivileged host uids, so none owns anything on the host. The stack runs under them with two changes:
+  * nginx reads the TLS key as the remapped root, which its `DAC_READ_SEARCH` no longer covers: give the key the first id of `dockremap`'s range in `/etc/subgid` as its group, `sudo chgrp <id> nginx/certs/privkey.pem && sudo chmod 640 nginx/certs/privkey.pem`.
+  * Docker keeps a separate store under them, without the images or the database volume. Take a dump ([Backups and Restoring](#backups-and-restoring)), stop the stack with `down`, not `stop`, turn them on and restart Docker, deploy, then restore the dump. A stopped stack's networks stay on the host, and the host then routes the `edge` subnet to the old, empty bridge instead of the new one: the site times out. Switching back works the same way.
+* Docker Bench for Security warns about choices the stack makes on purpose: the `db` and `redis` images start as root (their entrypoints then run MySQL and Redis as their own users), nginx keeps `DAC_READ_SEARCH` (to read the key whoever owns it) and publishes the privileged ports 80 and 443 on every IPv4 address, health checks live in the compose file rather than the images, and Docker Content Trust is off (the images are built on the server).
 * An installer may leave the root volume much smaller than the disk. Check free space before the first deploy: builds and images take several GB.
 * A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_app-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (`<project>` is `name:` in `docker-compose.yml`, `app` in the template; never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
 
