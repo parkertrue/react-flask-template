@@ -17,7 +17,7 @@ More detail lives in [docs/deployment.md](docs/deployment.md) (running in produc
 
 ## Required Software
 
-* [Docker & Docker Compose](https://www.docker.com/products/docker-desktop/) (Compose 5.5.1 or newer: `docker compose version`)
+* [Docker & Docker Compose](https://www.docker.com/products/docker-desktop/)
 * [Python 3.14](https://www.python.org/downloads/)
 * [Node.js 26 LTS](https://nodejs.org/)
 * [Git Bash](https://git-scm.com/download/win) (Windows only): use it for every command in this README
@@ -152,7 +152,7 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 ### Build and Start
 
 ```bash
-docker compose --env-file .env.prod build --pull
+docker compose --env-file .env.prod build --pull --provenance=false
 docker compose --env-file .env.prod up
 ```
 

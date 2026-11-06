@@ -69,7 +69,7 @@ These steps edit tracked files, so on a server that deploys with `deploy.sh` the
    ssl_certificate_key  /etc/letsencrypt/live/yourdomain.com/privkey.pem;
    ```
 
-5. Rebuild and restart: `docker compose --env-file .env.prod build --pull`, then `docker compose --env-file .env.prod up -d` (on a server that deploys with `deploy.sh`, see the warning above)
+5. Rebuild and restart: `docker compose --env-file .env.prod build --pull --provenance=false`, then `docker compose --env-file .env.prod up -d` (on a server that deploys with `deploy.sh`, see the warning above)
 
 Let's Encrypt certificates expire after 90 days. Renew with `certbot renew` (the standalone method needs port 80 free, so stop nginx first), then restart nginx.
 
@@ -101,7 +101,7 @@ A migration must keep the code before it working: the old backend serves after i
 
 **What the server needs.** Internet access while it builds (base images, Python and npm packages), and enough memory to build the frontend: a server with 1 GB can run out during the build, so add swap or pick a larger one. Docker's build cache grows with each deploy; `docker builder prune` clears it.
 
-**Building by hand** (the README's Build and Start, without `deploy.sh`): `build --pull` checks for newer base images, so a rebuild picks up their upstream fixes (an image whose base hasn't changed keeps its ID), and `provenance: false` under each `build:` in `docker-compose.yml` keeps an unchanged image's ID. Under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so with it every rebuild would get a new ID and `up -d` would replace every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. Compose before 5.5.1 ignores the setting: there every rebuild replaces the containers, so upgrade Compose. `deploy.sh` doesn't rely on it: each commit's images get new tags, so a deploy replaces the app containers anyway.
+**Building by hand** (the README's Build and Start, without `deploy.sh`): `build --pull` checks for newer base images, so a rebuild picks up their upstream fixes (an image whose base hasn't changed keeps its ID), and `--provenance=false` keeps an unchanged image's ID. Under Docker's containerd image store (Docker Desktop, and Docker Engine 29 by default) the build's default provenance attestation records its build times, so without the flag every rebuild gets a new ID and `up -d` replaces every app container even when nothing changed. The images never leave the host, so nothing reads the attestation. (It stays a flag, not `provenance: false` under the compose file's `build:`: some Compose versions ignore that key and others refuse the whole file over it. Compose versions older than the flag lack it, so drop it there.) `deploy.sh` doesn't need it: each commit's images get new tags, so a deploy replaces the app containers anyway.
 
 **Setting a server up.**
 
