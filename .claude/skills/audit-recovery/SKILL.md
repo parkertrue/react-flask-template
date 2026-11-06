@@ -81,9 +81,12 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   and the scratch env file added to each command: seed data through the
   driver script, dump, change data, restore into the running stack, then
   `down -v` and restore into a fresh volume, running the driver script
-  after each. Does each restore bring back the dump's rows and only those,
-  and is a token of an account created after the dump refused, even once
-  the next account registered takes its id? Review the rest on paper: what Redis loses
+  after each. Seed enough rows that the dump takes a few seconds, delete
+  one account while it runs and one after it, and follow "Deleted accounts
+  come back": both must stay deleted after each restore. Does each restore
+  bring back the dump's rows and only those, and is a token of an account
+  created after the dump refused, even once the next account registered
+  takes its id? Review the rest on paper: what Redis loses
   (sessions, rate-limit counters), the dump's handling (it holds emails and
   password hashes), and the 3-2-1 rule.
 - **Compromised host:** if an attacker gets a shell in each container (nginx,

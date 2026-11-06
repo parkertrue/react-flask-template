@@ -375,30 +375,30 @@ The bundled MySQL's volume holds everything worth keeping. Redis holds only sess
 ```bash
 (umask 077; docker compose --env-file .env.prod exec -T db sh -c \
   'MYSQL_PWD="$MYSQL_PASSWORD" mysqldump -u"$MYSQL_USER" --single-transaction --no-tablespaces "$MYSQL_DATABASE"' \
-  > backup-$(date +%F).sql)
+  > backup-$(date -u +%Y%m%dT%H%M%SZ).sql)
 ```
 
-`--single-transaction` takes a consistent copy while the app keeps serving. The file holds every email and password hash: `umask 077` creates it readable by its owner alone, as private as `.env.prod`; keep it encrypted wherever it is copied, and only as long as the privacy notice says ([Personal Data and Legal Pages](personal-data.md)). Restoring it brings back accounts deleted since it was taken ([Deleted accounts come back](#deleted-accounts-come-back)). The dump holds no database users.
+`--single-transaction` takes a consistent copy while the app keeps serving, of the data as it stood when the dump started. The file is named after that time, in UTC: the shell builds the name before `mysqldump` runs, so it is never later than the copy. The file holds every email and password hash: `umask 077` creates it readable by its owner alone, as private as `.env.prod`; keep it encrypted wherever it is copied, and only as long as the privacy notice says ([Personal Data and Legal Pages](personal-data.md)). Restoring it brings back accounts deleted since it was taken ([Deleted accounts come back](#deleted-accounts-come-back)). The dump holds no database users.
 
-**Restore into the running stack** (bad data: a broken migration, a bug that deleted rows). Pause [automatic deploys](#deploying-automatically) first, then:
+**Restore into the running stack** (bad data: a broken migration, a bug that deleted rows). First pause [automatic deploys](#deploying-automatically) and list the deleted accounts ([Deleted accounts come back](#deleted-accounts-come-back)), and delete them again before the last command:
 
 ```bash
 docker compose --env-file .env.prod stop backend
 docker compose --env-file .env.prod exec -T db sh -c \
   'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" -e "DROP DATABASE $MYSQL_DATABASE; CREATE DATABASE $MYSQL_DATABASE"'
 docker compose --env-file .env.prod exec -T db sh -c \
-  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"' < backup-<date>.sql
+  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"' < backup-<time>.sql
 docker compose --env-file .env.prod start backend
 ```
 
 The second command empties the database: a dump drops and recreates only the tables it holds, so a table a later migration added would stay, and `migrate` would then fail to create it. The users' grants are on the database's name and survive. `start backend` runs `migrate` first, since the backend waits for it, and the dump brings back `alembic_version`, so a dump from before a migration is brought up to the deployed code. If `migrate` fails, the backend stays stopped: read `logs migrate`.
 
-**Restore onto a new server** (the old one is gone or untrusted): set the server up as for a first deploy ([Redeploying](#redeploying)), then start the database alone, load the dump and deploy:
+**Restore onto a new server** (the old one is gone or untrusted): set the server up as for a first deploy ([Redeploying](#redeploying)), then start the database alone, load the dump and deploy. First list the deleted accounts ([Deleted accounts come back](#deleted-accounts-come-back)), and delete them again before the last command:
 
 ```bash
 docker compose --env-file .env.prod up -d --wait db
 docker compose --env-file .env.prod exec -T db sh -c \
-  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"' < backup-<date>.sql
+  'MYSQL_PWD="$MYSQL_PASSWORD" mysql -u"$MYSQL_USER" "$MYSQL_DATABASE"' < backup-<time>.sql
 ./deploy.sh <commit>
 ```
 
@@ -419,7 +419,7 @@ Any restore, a managed database's snapshot included, brings back the accounts de
      | sed -E 's/.*"time": "([^"]+)".*"user_id": ([0-9]+).*/\1 \2/'
    ```
 
-   Each line is one deletion's time and user id. Keep the ids deleted after the backup was taken: a dump's last line (`-- Dump completed on ...`) gives its time in UTC, as the log does.
+   Each line is one deletion's time and user id. Keep the ids deleted after the backup's start time: for a dump, the time in its file name, in UTC as the log is. `--single-transaction` copies the data as it stood then, so an account deleted while the dump ran is still in it. An id deleted before that time is not in the dump, so deleting it again does nothing.
 
 2. After loading the dump, and before `start backend` (or `deploy.sh` on a new server), delete them as the migration user. A restored row keeps its id, and the database deletes the rest of each account's rows:
 
