@@ -85,7 +85,7 @@ Problems reported by more than one check, merged into one item, and patterns
 ## Proposed PRs
 One plan across every check, rebuilt from the checks' own plans by
 RULES.md's rules (Report, *Proposed PRs*): a problem several checks report
-is one item in one PR, and every finding not going to the handoff or
+is one item in one PR, and every finding not going to OPEN-ISSUES.md or
 DECISIONS.md is in exactly one PR, lows and nits included. Each PR lists
 the IDs it fixes, its changes, its guards (the Prevent column,
 deduplicated) and its tests.
@@ -117,10 +117,10 @@ run at all.
 
 Then reply to the user with: the verdict, counts by severity, the blockers and
 high findings (one line each), one line per proposed PR (title and the IDs
-it fixes), the IDs going to the handoff or DECISIONS.md, the *Decisions
+it fixes), the IDs going to OPEN-ISSUES.md or DECISIONS.md, the *Decisions
 for you* in full, and the path to the consolidated report. Lead with
 findings recorded nowhere yet; give the ones tagged `(open: ...)` as a
 count and their IDs. A known blocker still blocks. Do not fix or record
 anything. End by asking the user to answer the decisions, and whether to
-record every finding as the *Recording plan* says (the handoff's items and
+record every finding as the *Recording plan* says (OPEN-ISSUES.md's issues and
 DECISIONS.md, combined with what is already there).
