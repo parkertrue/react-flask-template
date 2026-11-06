@@ -4,7 +4,8 @@ CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins
-production's ports to IPv4, production's db to run without a binary log, and the production backend's wait for `migrate` to succeed, which a plain
+production's ports to IPv4, production's db to run without a binary log, its backend, migrate and nginx
+to run read-only, and the production backend's wait for `migrate` to succeed, which a plain
 `docker compose up` (README, Build and Start) relies on; deploy.sh runs
 migrate itself. Each file is read as `docker compose config` resolves it,
 anchors and merges applied.
@@ -19,6 +20,10 @@ INIT_SCRIPTS = Path(__file__).resolve().parents[2] / 'db' / 'init'
 
 # The hardening each test service must share with its production namesake
 HARDENING = ('security_opt', 'cap_drop', 'cap_add', 'read_only', 'pids')
+
+# The services whose root filesystem production keeps read-only. db and redis
+# stay writable: their entrypoints write on first start (DECISIONS.md).
+READ_ONLY = ('backend', 'migrate', 'nginx')
 
 
 def config(*args):
@@ -79,6 +84,10 @@ def problems(prod, test, dev):
             if port.get('host_ip') != '0.0.0.0':
                 where = port.get('host_ip') or 'every address, IPv6 included'
                 yield f"{name}: port {port['target']} is published on {where}, not 0.0.0.0"
+    # The test stack copies read_only, so this alone keeps both
+    for name in READ_ONLY:
+        if not prod[name].get('read_only'):
+            yield f'{name}: production does not run with a read-only root filesystem'
     if '--disable-log-bin' not in prod['db'].get('command', []):
         yield 'db: production does not run with --disable-log-bin'
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
@@ -96,6 +105,7 @@ def main():
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
                      'ports are IPv4 only, the db keeps no binary log, '
+                     'the backend, migrate and nginx are read-only, '
                      'and the backend waits for migrate\n')
 
 

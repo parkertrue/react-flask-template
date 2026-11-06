@@ -302,7 +302,7 @@ A sketch of one working layout, not infrastructure code. Translate it into your 
 3. **Secrets:** `SECRET_KEY`, `DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD` and `REDIS_PASSWORD` in Secrets Manager, referenced from the task definitions' `secrets`.
 4. **The service's task definition** (`awsvpc`; start at 1 vCPU and 2 GB):
    - `backend`: port 5000, `readonlyRootFilesystem: true` with a volume at `/tmp`, `linuxParameters.capabilities.drop: ["ALL"]`, and a health check running the same command as `docker-compose.yml`'s with `startPeriod: 60`.
-   - `nginx`: port 80, `dependsOn` backend `HEALTHY`, with the `behind-proxy` variables above (`NGINX_TRUSTED_PROXIES` set to the ALB's subnets). Fargate can't add capabilities, so leave nginx's default set rather than dropping them all.
+   - `nginx`: port 80, `readonlyRootFilesystem: true` with volumes at `/etc/nginx/conf.d`, `/var/cache/nginx` and `/run`, `dependsOn` backend `HEALTHY`, with the `behind-proxy` variables above (`NGINX_TRUSTED_PROXIES` set to the ALB's subnets). Fargate can't add capabilities, so leave nginx's default set rather than dropping them all.
    - Both log through `awslogs` to CloudWatch Logs groups with a retention you choose ([Logs](#logs)).
 5. **Migrations:** a second task definition, the backend image only, with the command and variables from "Migrations" above. The deploy runs it (`aws ecs run-task`), waits for exit code 0, then updates the service.
 6. **Load balancer:** an ALB with an ACM certificate. The HTTPS listener forwards to the service's port 80, and the HTTP listener redirects to HTTPS. The target group's health check is `/api/health`, and the service's health-check grace period is at least 60 s.

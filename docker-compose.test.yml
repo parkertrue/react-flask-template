@@ -198,6 +198,11 @@ services:
       - NET_BIND_SERVICE
       - SETGID
       - SETUID
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d
+      - /var/cache/nginx
+      - /run
     environment:
       # The E2E suite logs in and registers many times from one address
       NGINX_AUTH_RATE: 600r/m

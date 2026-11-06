@@ -39,11 +39,6 @@ ENV NGINX_SERVER_NAME=localhost
 # Only NGINX_* variables are substituted into templates/, so no other
 # environment variable can leak into the config.
 ENV NGINX_ENVSUBST_FILTER=^NGINX_
-# nginx.conf's "worker_processes auto" means one worker per host CPU, however
-# few CPUs the container may use (20 workers under a 0.5-CPU limit and a
-# 64-process cap). The image's start-up script resizes it to the container's
-# CPU limit when this is set.
-ENV NGINX_ENTRYPOINT_WORKER_PROCESSES_AUTOTUNE=1
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80 443
 CMD ["nginx", "-g", "daemon off;"]
