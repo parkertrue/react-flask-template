@@ -371,8 +371,15 @@ wrote 51 KB for 4000 requests, where it wrote 11.2 MB (an access line and an
 error-log line per refusal) before the sampling. Its served lines and the
 sampled refusals, about 770 bytes each, roll 30 MB over in about 13 minutes
 on one zone, and (by the same numbers) about 8 if it floods the page and the API together.
-*Revisit when:* the bundled Compose deployment runs on a real server (then
-ship its logs off the host, or raise the cap with a stated retention).
+Keeping logs past a deploy, or shipping them, is generic server operations
+(below): any Compose app that replaces its containers needs the same
+logging driver or agent, so "Not Included" names them (journald in an
+untracked `docker-compose.override.yml`, Loki, Fluent Bit, CloudWatch)
+rather than the template building one (user, 2026-11-05). What the docs
+cover is why it matters here: every deploy erases the backend's and nginx's
+logs, and their `account_deleted` events are the only record of which
+accounts a restore brings back. *Revisit when:* keeping those events past
+a deploy comes to need something only this template can provide.
 
 **nginx logs a 1-in-100 sample of refused requests.** A client over a rate
 limit gets its 429, and nginx writes an access line for one refusal in 100,
