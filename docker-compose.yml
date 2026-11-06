@@ -205,7 +205,12 @@ services:
     logging: *logging
     <<: [*security, *backend-hardening]
     image: *backend-image
-    build: ./backend
+    build:
+      context: ./backend
+      # The default provenance attestation records build times, so every
+      # rebuild would get a new image ID and `up -d` would replace the
+      # container though nothing changed. Compose 5.5.1+ (older ignore it).
+      provenance: false
     environment: *backend-env
     # Looking up a stopped container's name (Redis or MySQL during an outage)
     # waits on DNS servers this network cannot reach: 4s per try by default.
@@ -262,6 +267,8 @@ services:
     build:
       context: .
       dockerfile: nginx/Dockerfile
+      # As the backend's: an unchanged rebuild keeps its image ID
+      provenance: false
     environment:
       # The domain this deployment serves; requests for any other host are
       # dropped (see nginx/servers/tls.conf.template)

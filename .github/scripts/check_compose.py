@@ -4,7 +4,7 @@ CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins
-production's ports to IPv4, production's db to run without a binary log, and the production backend's wait for `migrate` to succeed, which a plain
+production's ports to IPv4, its builds to keep an unchanged image's ID, production's db to run without a binary log, and the production backend's wait for `migrate` to succeed, which a plain
 `docker compose up` (README, Build and Start) relies on; deploy.sh runs
 migrate itself. Each file is read as `docker compose config` resolves it,
 anchors and merges applied.
@@ -79,6 +79,11 @@ def problems(prod, test, dev):
             if port.get('host_ip') != '0.0.0.0':
                 where = port.get('host_ip') or 'every address, IPv6 included'
                 yield f"{name}: port {port['target']} is published on {where}, not 0.0.0.0"
+    # Without it every rebuild gets a new image ID, and up -d replaces the
+    # container though nothing changed (docs/deployment.md, Redeploying)
+    for name, service in prod.items():
+        if 'build' in service and str(service['build'].get('provenance')).lower() != 'false':
+            yield f'{name}: production builds it without provenance: false'
     if '--disable-log-bin' not in prod['db'].get('command', []):
         yield 'db: production does not run with --disable-log-bin'
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
@@ -95,7 +100,7 @@ def main():
     if found:
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
-                     'ports are IPv4 only, the db keeps no binary log, '
+                     'ports are IPv4 only, builds skip provenance, the db keeps no binary log, '
                      'and the backend waits for migrate\n')
 
 
