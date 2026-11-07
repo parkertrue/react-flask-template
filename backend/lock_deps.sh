@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")"
 
-MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd):/src" -w /src python:3.14-slim sh -c "
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd):/src" -w /src python:3.15-slim sh -c "
   pip install -q --root-user-action=ignore 'pip-tools>=7.6.2' &&
   pip-compile -q --strip-extras $* -o requirements.txt requirements.in &&
   pip-compile -q --strip-extras $* -o requirements-dev.txt requirements-dev.in"
