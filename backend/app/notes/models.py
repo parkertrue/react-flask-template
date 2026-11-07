@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app import Model, db
 
 # The schemas validate against this, so an over-long note is a 422, not a
-# database error. frontend/src/features/notes/validation.js mirrors it.
+# database error. frontend/src/features/notes/validation.ts mirrors it.
 NOTE_MAX_LENGTH = 256
 # How many notes one account may keep. nginx's per-IP rate bounds requests,
 # not storage, so without this one account could fill the database's disk.

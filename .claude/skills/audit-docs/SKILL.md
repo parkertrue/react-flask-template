@@ -28,7 +28,7 @@ directory it names, with the environment it implies**? (For example, a
 Try the ones that need no running services. Pay most attention to the parts
 that drift: setup steps, test commands, ports, env var lists, the HTTPS and deployment sections, and the
 architecture descriptions of folders. Compare the routes in `flask routes` and
-the pages in `frontend/src/routes.jsx` with every inventory the skills give
+the pages in `frontend/src/routes.tsx` with every inventory the skills give
 (routes to probe, journeys to test, states to check): a route or page missing
 from one makes that audit report it covered without looking.
 

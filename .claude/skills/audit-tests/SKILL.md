@@ -33,8 +33,8 @@ folder as RULES.md.
 Read the test config and shared helpers: `backend/pytest.ini`,
 `backend/.coveragerc`, `backend/tests/conftest.py`,
 `backend/tests/unit/conftest.py`, `backend/run_tests.sh`,
-`frontend/vite.config.js` (test block), `frontend/src/test/` (setup, server,
-router, fixtures), `frontend/playwright.config.js`, `frontend/e2e/helpers.js`.
+`frontend/vite.config.ts` (test block), `frontend/src/test/` (setup, server,
+router, fixtures), `frontend/playwright.config.ts`, `frontend/e2e/helpers.ts`.
 
 - Do the configs enforce what CLAUDE.md claims: strict mode, warnings as
   errors, branch coverage at 95% (backend and frontend), random order,
@@ -47,7 +47,7 @@ router, fixtures), `frontend/playwright.config.js`, `frontend/e2e/helpers.js`.
   features: fixtures per feature, table-driven cases, no copy-paste per case?
 - Thresholds: do global coverage thresholds hide a weak critical file? List
   the coverage of each security-critical module (`backend/app/auth/routes.py`,
-  `utils/redis_service.py`, `frontend/src/api/api.js`, `src/auth/`). If any is
+  `utils/redis_service.py`, `frontend/src/api/api.ts`, `src/auth/`). If any is
   well below the global figure, the guard is a per-path threshold.
 - Flakiness: fixed sleeps, polling without a deadline, selectors tied to
   markup instead of roles and labels (lint already refuses E2E
@@ -91,7 +91,7 @@ Build an inventory of the behaviors the app promises. Take the routes from
 the code, not from this list: every API route from `flask routes` (in
 `backend/`, `APP_ENV=unit SECRET_KEY=<any 32+ characters> .venv/Scripts/flask --app wsgi routes`,
 which needs no services) with its documented status codes, and every page
-in `frontend/src/routes.jsx`. Add every error code in `backend/app` (the
+in `frontend/src/routes.tsx`. Add every error code in `backend/app` (the
 frontend `errorBody` list must match), every config guard, every CLAUDE.md
 claim about failure handling (Redis down, DB dropped, refresh race, rate
 limit hit), and every user journey. Journeys include, for example: register

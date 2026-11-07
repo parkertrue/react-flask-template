@@ -150,9 +150,9 @@ Files: `backend/app/utils/redis_service.py` (and the rest of `utils/`), the
   (sessions and rate limits), key TTLs so nothing grows without bound.
 
 ### frontend: build and runtime config
-Files: `frontend/vite.config.js`, `package.json`, `index.html`,
-`eslint.config.js`, `jsconfig.json`, `src/main.jsx`, `src/routes.jsx`,
-`src/api/api.js`.
+Files: `frontend/vite.config.ts`, `package.json`, `index.html`,
+`eslint.config.js`, `tsconfig*.json`, `src/main.tsx`, `src/routes.tsx`,
+`src/api/api.ts`.
 - Production build: run `npm run build -- --outDir <scratch>/dist` in
   `frontend/` and look at the output sizes. Are there source maps, dev-only code or unused dependencies in the
   bundle?

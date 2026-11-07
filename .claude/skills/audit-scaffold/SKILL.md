@@ -62,7 +62,7 @@ Steps 6 and 7 are part mechanical, part writing. Act out every file change
 they ask for: in step 6, replace `LICENSE` and `frontend/package.json`'s
 `license` with a stand-in license (MIT, held by a made-up name) and delete
 `.claude/skills/audit-scaffold/` in the worktree; in step 7, fill in
-`OPERATOR` in `frontend/src/legal.js` and `frontend/public/.well-known/security.txt`
+`OPERATOR` in `frontend/src/legal.ts` and `frontend/public/.well-known/security.txt`
 with made-up values, as its "Before launch" list says. Skip only the
 writing: rewriting README and `CLAUDE.md` (just note which of their sections
 would need it, as a measure of how much is notes-specific) and the legal

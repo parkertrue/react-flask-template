@@ -60,7 +60,7 @@ Upgrades waiting on a release or a date; Dependabot proposes the rest
   it, and an attack needs its own pattern. Keep the Dependabot alert open:
   it closes by itself once an eslint bump brings minimatch 11. If it is
   still open in mid-December 2026, try forcing 11 with an npm `overrides`
-  entry, with `src/__tests__/eslintRules.test.js` (which plants a
+  entry, with `src/__tests__/eslintRules.test.ts` (which plants a
   violation of every glob-scoped rule) as the guard.
 
 ## Production to-dos

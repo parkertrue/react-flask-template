@@ -30,7 +30,7 @@ is run by something other than the compose file.
 **Access token in localStorage.** The 15-minute access token is readable by
 any XSS; the refresh token stays in an HttpOnly cookie. Mitigated by the short
 expiry, the CSP, and React's escaping. Keeps the client simple: no cookie for
-API calls, so no CSRF on them. See the comment in `frontend/src/auth/storage.js`.
+API calls, so no CSRF on them. See the comment in `frontend/src/auth/storage.ts`.
 *Revisit when:* the app renders third-party or user-supplied HTML.
 
 **Register answers 409 for a taken email.** This tells an attacker an
@@ -43,7 +43,7 @@ way for both and send a "you already have an account" email instead.
 The user chose a shorter first view of the form (2026-10-15). WCAG 3.3.2 is
 still met: the field is labelled, the first failed submit names the broken
 rule, and from then on the full rule list shows beside it as the field's
-hint (`RegisterPage.jsx`). The cost is one failed submit for a user who
+hint (`RegisterPage.tsx`). The cost is one failed submit for a user who
 guesses wrong. Spaces and emoji are left out of the list; their own messages
 explain them when they come up. *Revisit when:* email verification is added,
 which reworks registration anyway.
@@ -93,7 +93,7 @@ environment. Adding CORS would only widen what can call the API.
 
 **gixy-ng skips `hsts_header` and `try_files_is_evil_too`.** HSTS is
 meaningless on the port-80 redirect server (RFC 6797 8.1) and is asserted
-over HTTPS by `e2e/nginx.spec.js`; the `try_files` warning is a performance
+over HTTPS by `e2e/nginx.spec.ts`; the `try_files` warning is a performance
 opinion that doesn't matter for a few static files. See the `nginx` job in
 `.github/workflows/ci.yml`.
 
@@ -193,7 +193,7 @@ attribution from derived apps.
 
 **Legal placeholders are not enforced at build.** Nothing stops a
 production image from serving the placeholder `OPERATOR` values in
-`frontend/src/legal.js`, `contact@example.com` in `security.txt`, or the
+`frontend/src/legal.ts`, `contact@example.com` in `security.txt`, or the
 "Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before launch" list is
 the only safeguard: a build check would have to tell the production image
 apart from the test stack's, which serves the same placeholders on purpose
@@ -322,7 +322,7 @@ exceptions).
 **Frontend folder rules stay a custom ESLint rule, not
 `eslint-plugin-boundaries`.** `eslint.config.js`'s `relative-within-folder`
 rule (about 25 lines) and the `@/` patterns enforce the one-way imports, and
-`src/__tests__/eslintRules.test.js` plants violations of each. `boundaries`
+`src/__tests__/eslintRules.test.ts` plants violations of each. `boundaries`
 would declare the same rules more declaratively, but it resolves paths
 through `eslint-plugin-import`'s resolvers, so the `@/` alias needs two or
 three more dev packages, and the planted tests would stay anyway, since
@@ -375,7 +375,7 @@ server rendering.**
 actions), or forms read `FormData` instead of state, or a feature needs
 `useOptimistic` (form actions).
 
-**TanStack Query's retries and refetches are off** (`api/queryClient.js`).
+**TanStack Query's retries and refetches are off** (`api/queryClient.ts`).
 A query is tried once: the api client already refreshes an expired token,
 and a 503 or a network error shows at once rather than after three silent
 tries with backoff. Nothing refetches on window focus or reconnect: an
@@ -397,7 +397,7 @@ schema (Elastic ECS, Datadog's reserved fields), every line needs tracing ids
 (OpenTelemetry), or the formatter grows past about 40 lines.
 
 **The color guard stays a Vitest test, not stylelint.**
-`styles/__tests__/stylesheets.test.js` refuses a color written outside
+`styles/__tests__/stylesheets.test.ts` refuses a color written outside
 `tokens.css`, and a token that is unused or never defined. stylelint covers
 only the first half (`color-named`, `color-no-hex`,
 `function-disallowed-list`), and would add a CLI, a config and a CI step.
@@ -444,7 +444,7 @@ Logging none was rejected too: nginx's 429s never reach Flask, so no
 `rate_limited` event would show that a flood happened or where it came from.
 The sample keeps the flood's address, timing and paths (multiply by 100 for
 its size). The cost: exact counts are lost, and a single 429 a real user got
-is likely not logged. `nginx.spec.js` checks both halves. *Revisit when:* logs
+is likely not logged. `nginx.spec.ts` checks both halves. *Revisit when:* logs
 are shipped off the host (then log every refusal).
 
 **One backend container, at a fixed address.** nginx connects to the

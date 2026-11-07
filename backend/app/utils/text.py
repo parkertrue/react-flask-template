@@ -5,7 +5,7 @@ import unicodedata
 # out: "other symbols", which hold every emoji along with signs like © and °,
 # enclosing marks (keycaps), line and paragraph separators, and control,
 # format (the zero-width joiner that builds emoji sequences), private-use and
-# unassigned characters. frontend/src/utils/validation.js mirrors this.
+# unassigned characters. frontend/src/utils/validation.ts mirrors this.
 _ALLOWED_CATEGORIES = {'Lu', 'Ll', 'Lt', 'Lm', 'Lo', 'Mn', 'Mc', 'Nd', 'Nl', 'No',
                        'Pc', 'Pd', 'Ps', 'Pe', 'Pi', 'Pf', 'Po', 'Sm', 'Sc', 'Sk', 'Zs'}
 # Combining marks, but they only turn the character before them into emoji

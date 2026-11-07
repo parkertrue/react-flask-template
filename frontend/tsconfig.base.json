@@ -1,0 +1,26 @@
+{
+  // The settings every project shares. Strict, with the checks strict leaves
+  // out; src/__tests__/typescriptRules.test.ts plants a case for each.
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowJs": false,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // `@/x` is src/x; vite.config.ts gives the bundler the same alias
+    "paths": { "@/*": ["./src/*"] }
+  }
+}

@@ -5,7 +5,7 @@ config, and config fails silently: a code dropped from `select`, a misspelled
 path in `banned-api` or strict mode turned off reports nothing. So this
 plants one violation per rule, runs it through ruff with backend/ruff.toml or
 mypy with backend/mypy.ini, and expects that rule's code, as
-frontend/src/__tests__/eslintRules.test.js does for ESLint. It runs here,
+frontend/src/__tests__/eslintRules.test.ts does for ESLint. It runs here,
 not in pytest, because ruff bans `subprocess` in backend/.
 """
 import json

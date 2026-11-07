@@ -49,7 +49,7 @@ comment and flag:
   maintainer might "simplify" into a bug.
 - **Temporary markers:** `TODO`, `FIXME`, `HACK`, `XXX`, `NOCOMMIT`. Each one
   is a finding: resolve it, or move it to the project's issue list. Lint
-  refuses them in JavaScript (`no-warning-comments`) and, all but `NOCOMMIT`,
+  refuses them in TypeScript (`no-warning-comments`) and, all but `NOCOMMIT`,
   in Python (ruff `FIX`), so look for `NOCOMMIT` in Python and for all of
   them in files no linter reads: CSS, YAML, shell, Dockerfiles, nginx config
   and docs.
@@ -66,7 +66,7 @@ way that would mislead someone into a bug (then **medium**).
   `backend/app/` and the backend scripts (ruff already catches unused imports).
   Grep for each definition's uses; remember Flask registers routes and loaders
   by decorator.
-- JavaScript: exports nothing imports, components and hooks nothing renders,
+- TypeScript: exports nothing imports, components and hooks nothing renders,
   CSS selectors no markup uses (check `frontend/src/styles/` and feature CSS
   against the JSX), and fixtures or test helpers no test uses.
 - Routes the frontend never calls that are not documented as API-only.
@@ -140,13 +140,14 @@ latest report's ID instead of repeating them.
 ## 5. lint: the lint setup itself
 
 Files: `backend/ruff.toml`, `backend/mypy.ini`, `backend/pytest.ini`, `backend/.coveragerc`,
-`frontend/eslint.config.js`, the coverage thresholds in
-`frontend/vite.config.js`, and the tests that act as lint
+`frontend/eslint.config.js`, `frontend/tsconfig*.json`, the coverage thresholds in
+`frontend/vite.config.ts`, and the tests that act as lint
 (`backend/tests/unit/test_import_rules.py`,
 `backend/tests/unit/test_assertions.py`,
-`frontend/src/__tests__/eslintRules.test.js`), plus the lint jobs in
-`.github/workflows/`. Run `ruff check .`, `mypy` and `npm run lint` first; a red run
-is a blocker.
+`frontend/src/__tests__/eslintRules.test.ts`,
+`frontend/src/__tests__/typescriptRules.test.ts`), plus the lint jobs in
+`.github/workflows/`. Run `ruff check .`, `mypy`, `npm run lint` and
+`npm run typecheck` first; a red run is a blocker.
 
 - **Redundant config:** options set to their default (check the tool's docs
   for the installed version), rules repeated across blocks, blocks that could

@@ -1,0 +1,10 @@
+{
+  // `tsc -b` checks each project below. They differ in what code may see:
+  // app code gets the browser alone, so a Node API in it fails the check.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.test.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}

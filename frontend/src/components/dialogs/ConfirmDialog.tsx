@@ -1,0 +1,69 @@
+import { useEffect, useId, useRef, type ReactNode } from 'react'
+
+interface ConfirmDialogProps {
+  title: string
+  children: ReactNode
+  confirmLabel: string
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+// A yes/no question on the browser's own modal <dialog>: showModal() keeps
+// Tab inside it, makes the page behind it inert, and closes it on Escape.
+// Render it only while asking; it opens as it mounts, and every way out
+// (either button, Escape) ends in onConfirm or onCancel.
+export default function ConfirmDialog({ title, children, confirmLabel, onConfirm, onCancel }: ConfirmDialogProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
+  const titleId = useId()
+  const bodyId = useId()
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    // Strict Mode runs this twice, and showModal() throws on an open dialog
+    if (!dialog || dialog.open) return
+    openerRef.current = document.activeElement as HTMLElement | null
+    dialog.showModal()
+    // Start on the answer that changes nothing
+    cancelRef.current?.focus()
+  }, [])
+
+  const handleClose = () => {
+    // Browsers return focus to the opener on close; doing it here as well
+    // covers any that do not
+    openerRef.current?.focus()
+    if (dialogRef.current?.returnValue === 'confirm') onConfirm()
+    else onCancel()
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="dialog"
+      aria-labelledby={titleId}
+      aria-describedby={bodyId}
+      onClose={handleClose}
+    >
+      <h2 id={titleId}>{title}</h2>
+      <div id={bodyId} className="dialog-body">{children}</div>
+      <div className="dialog-actions">
+        <button
+          ref={cancelRef}
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => dialogRef.current?.close('cancel')}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-danger"
+          onClick={() => dialogRef.current?.close('confirm')}
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </dialog>
+  )
+}

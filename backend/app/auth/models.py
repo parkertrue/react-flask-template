@@ -5,13 +5,13 @@ from app import Model, db
 from app.utils.passwords import hash_password, verify_password
 
 # The schemas validate against this, so an over-long email is a 422, not a
-# database error. frontend/src/utils/validation.js mirrors it.
+# database error. frontend/src/utils/validation.ts mirrors it.
 EMAIL_MAX_LENGTH = 128
 
 # The version of the terms of service a new user accepts. Raise it by one
 # whenever the terms change: registering with an older one is refused, and
 # each user's row records the version accepted and when.
-# frontend/src/legal.js mirrors it.
+# frontend/src/legal.ts mirrors it.
 TERMS_VERSION = 1
 
 

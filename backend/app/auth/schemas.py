@@ -12,7 +12,7 @@ from app.auth.models import EMAIL_MAX_LENGTH
 from app.utils.text import UNSUPPORTED_CHARACTERS_MESSAGE, is_plain_text
 
 # Only the hash is stored, so these are policy rather than a column size.
-# frontend/src/utils/validation.js mirrors them.
+# frontend/src/utils/validation.ts mirrors them.
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
 
