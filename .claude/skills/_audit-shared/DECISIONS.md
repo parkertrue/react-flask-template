@@ -344,16 +344,36 @@ lockfile packages (all MIT) are mostly Node-only and not bundled. *Revisit
 when:* the client needs streaming or `AbortSignal` beyond what axios offers,
 or a major axios release changes the interceptor API.
 
-**Pages load data with TanStack Query hooks, not React Router loaders.**
-`AccountPage` and `useNotes` fetch as they render (`useQuery`,
-`useInfiniteQuery`), while the app already uses `createBrowserRouter`. A
-loader would fire before `ProtectedRoute` renders, so a signed-out visit
-would send an unauthenticated request and land on the `errorElement` instead
-of `/login`. Using loaders means moving both guards into loaders
-(`throw redirect(...)`) and rebuilding the "Loading..." live regions on
-`useNavigation`; a loader would then fill the same cache
-(`queryClient.ensureQueryData`), not replace it. *Revisit when:* a page
-needs its data before first paint.
+**Pages load data with TanStack Query hooks and submit forms from
+`onSubmit`: no React Router loaders or actions, no React form actions, no
+server rendering.**
+- *React Router loaders and actions.* `AccountPage` and `useNotes` fetch as
+  they render (`useQuery`, `useInfiniteQuery`), while the app already uses
+  `createBrowserRouter`. A loader would fire before `ProtectedRoute`
+  renders, so a signed-out visit would send an unauthenticated request and
+  land on the `errorElement` instead of `/login`. Using loaders means moving
+  both guards into loaders (`throw redirect(...)`) and rebuilding the
+  "Loading..." live regions on `useNavigation`; a loader would then fill the
+  same cache (`queryClient.ensureQueryData`), not replace it. A route
+  `action` (`<Form>`, `useFetcher`) sits beside its loader and re-runs it,
+  so the two come together.
+- *React form actions* (`<form action>`, `useActionState`) work with these
+  forms: values held in state survive React's form reset (checked in
+  Chromium on `LoginPage`, 2026-11-07). But they saved three lines there,
+  split validation (in `onSubmit`, which needs the form to focus the first
+  invalid field) from submitting (cancelling the submit is what stops the
+  action), and left the last error showing during a retry unless hidden by
+  hand. The action read React state, not its `FormData`: fields stay in
+  state for live error clearing and the note counter.
+- *Server rendering* (Next.js, React Router framework mode) is out of scope:
+  it would put a Node server where nginx serves static files, and move
+  sign-in from a stored access token to cookie sessions. Public pages that
+  need search indexing would take React Router's build-time prerendering
+  instead, still with no server at runtime.
+
+*Revisit when:* a page needs its data before first paint (loaders and
+actions), or forms read `FormData` instead of state, or a feature needs
+`useOptimistic` (form actions).
 
 **TanStack Query's retries and refetches are off** (`api/queryClient.js`).
 A query is tried once: the api client already refreshes an expired token,
@@ -559,14 +579,6 @@ on the host. Off-host (any host but `db` or `redis`), `ProductionConfig`
 requires it. *Revisit when:* the bundled services are spread across hosts,
 since an overlay network keeps the names `db` and `redis`, so
 `ProductionConfig` would not ask for TLS.
-
-## Deferred until the app grows
-
-**React 19 form actions (`<form action>`, `useActionState`).** In a
-client-only SPA React resets the form after every submit (a failed login would
-wipe the email), and live error clearing and the note character counter need
-controlled inputs anyway. The real gains need server rendering. *Revisit
-when:* the app adopts a server-rendering framework.
 
 ## Known gaps (open work, not new findings)
 
