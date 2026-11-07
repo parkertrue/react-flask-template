@@ -13,20 +13,28 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS = [ROOT / 'README.md', ROOT / 'CLAUDE.md', *sorted((ROOT / 'docs').glob('*.md'))]
 
 # A compose command for .env.prod that builds: `build`, or `up --build`
-BUILD = re.compile(r'docker compose\b.*--env-file \.env\.prod\b.*(\sbuild\b|--build\b)')
+BUILD = re.compile(r'docker compose\b.*--env-file[= ]\.env\.prod\b.*(\sbuild\b|--build\b)')
 
 
 def main():
     problems = []
+    builds = 0
     for doc in DOCS:
         for number, line in enumerate(doc.read_text(encoding='utf-8').splitlines(), 1):
-            if BUILD.search(line) and '--pull' not in line:
+            if not BUILD.search(line):
+                continue
+            builds += 1
+            if '--pull' not in line:
                 problems.append(f'{doc.relative_to(ROOT).as_posix()}:{number}: '
                                 f'a production build without --pull')
     sys.stdout.write(''.join(f'::error::{p}\n' for p in problems))
     if problems:
         sys.exit(f'{len(problems)} build command(s) without --pull')
-    sys.stdout.write('Every documented production build pulls its base images\n')
+    # A build in a form BUILD misses goes unchecked: finding none means the form changed
+    if not builds:
+        sys.exit('no production build command found in README.md, CLAUDE.md or docs/: '
+                 'has its form changed?')
+    sys.stdout.write(f'{builds} documented production builds pull their base images\n')
 
 
 if __name__ == '__main__':

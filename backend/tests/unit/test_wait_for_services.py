@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pymysql
 import pytest
 import redis
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, make_url
 from sqlalchemy.exc import OperationalError
 
 import wait_for_services as wait
@@ -206,6 +206,28 @@ def test_a_check_that_raises_reports_why(env, monkeypatch):
     mysql = wait.mysql_error(database_url(), [])
     assert mysql.startswith("(pymysql.err.OperationalError) (1045, \"Access denied for user 'app'\")")
     assert wait.redis_error(read_redis_url(), []) == 'invalid username-password pair'
+
+
+def test_the_checks_log_in_with_the_real_passwords(env, monkeypatch):
+    """A URL rendered with its password hidden logs in as ***: every container
+    would wait out the timeout and stop, with nothing saying why"""
+    received = {}
+
+    def record_redis(url, **kwargs):
+        received['redis'] = url
+        return MagicMock()
+
+    def record_mysql(url, **kwargs):
+        received['mysql'] = url
+        return MagicMock()
+
+    monkeypatch.setattr(redis.Redis, 'from_url', record_redis)
+    monkeypatch.setattr(wait, 'create_engine', record_mysql)
+
+    assert wait.redis_error(read_redis_url(), []) is None
+    assert wait.mysql_error(database_url(), []) is None
+    assert received['redis'] == ENV['REDIS_URL']
+    assert make_url(received['mysql']).password == 'db-secret'
 
 
 def test_an_error_without_a_message_is_named_by_its_type(env, monkeypatch):

@@ -56,19 +56,16 @@ services:
     <<: *security
     image: mysql:8.4.13
     # InnoDB's cache of table and index pages. The default, 128M, sends reads
-    # to disk once the data outgrows it. With it full, MySQL holds about 400M
-    # more whatever the load (performance_schema 225M, the redo log buffer
-    # 64M; measured on 8.4.13), each busy connection up to 18M more (its
-    # buffers and a 16M in-memory temporary table), and a client run with
-    # exec (mysqldump, a restore) counts against the limit too. Keep the
-    # memory limit at the buffer pool plus 1g and resize both together: at
-    # the pool plus 512m, 20 exec'd clients got MySQL killed.
-    # temptable_max_ram (1G shared by all connections) is beyond any limit,
-    # but filling it takes 60-odd concurrent temporary tables, and this app's
-    # queries use indexes.
+    # to disk once the data outgrows it. Beyond the pool, MySQL holds about
+    # 400M whatever the load, each busy connection up to 18M more, and a
+    # client run with exec (mysqldump, a restore) counts against the limit
+    # too: keep the memory limit at the buffer pool plus 1g (plus 512m was too
+    # little) and resize both together. temptable_max_ram (1G, shared) is
+    # beyond any limit, but filling it takes 60-odd concurrent temporary
+    # tables, and this app's queries use indexes.
     # No binary log: nothing reads it (point-in-time recovery belongs to a
-    # managed database), and with it on a full disk stalls every commit, which
-    # answers 503 after 15s and commits up to a minute after space is freed,
+    # managed database), and with it on, a full disk stalls every commit
+    # (503s after 15s, then commits up to a minute after space is freed),
     # while it keeps every write, deleted rows included, for 30 days.
     command: ["--innodb-buffer-pool-size=512M", "--disable-log-bin"]
     # Only the variables MySQL needs, interpolated from the --env-file passed

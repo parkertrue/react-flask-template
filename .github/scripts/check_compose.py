@@ -4,11 +4,11 @@ CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins
-production's ports to IPv4, production's db to run without a binary log, its backend, migrate and nginx
-to run read-only, and the production backend's wait for `migrate` to succeed, which a plain
-`docker compose up` (README, Build and Start) relies on; deploy.sh runs
-migrate itself. Each file is read as `docker compose config` resolves it,
-anchors and merges applied.
+production's ports to IPv4, its db to run without a binary log, its
+backend, migrate and nginx to run read-only, and its backend's wait for
+`migrate` to succeed, which a plain `docker compose up` (README, Build and
+Start) relies on; deploy.sh runs migrate itself. Each file is read as
+`docker compose config` resolves it, anchors and merges applied.
 """
 import json
 import subprocess
