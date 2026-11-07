@@ -126,7 +126,7 @@ To stop a failing check from merging, require these status checks on `main` (Set
 
 Everything runs in Docker; only Nginx is published (ports 80 and 443). [docs/deployment.md](docs/deployment.md) covers the details: database users, changing secrets later, Let's Encrypt, external MySQL or Redis, container platforms such as ECS, logs, backups and restoring.
 
-**Not included:** alerts, log shipping, scheduled off-host backups, disk encryption and host hardening are left to the tools made for them, and certificate renewal is not provided yet; [Operating in Production](docs/deployment.md#operating-in-production) says which to reach for. Set them up before the server holds real data.
+**Not included:** alerts, log shipping, scheduled off-host backups, point-in-time recovery, disk encryption and host hardening are left to the tools made for them, and certificate renewal is not provided yet; [Operating in Production](docs/deployment.md#operating-in-production) says which to reach for. Set them up before the server holds real data.
 
 ### Environment File
 

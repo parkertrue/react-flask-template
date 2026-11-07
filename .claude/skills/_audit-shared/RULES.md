@@ -127,10 +127,11 @@ Audits are **read-only** with respect to the repository:
 - Windows with Git Bash (POSIX syntax) and PowerShell; Docker Desktop.
 - Backend tools: `source backend/.venv/Scripts/activate` (or `.venv/bin/activate`
   on Linux/macOS). Frontend: `npm` in `frontend/`.
-- CI runs on pushes to `main` and on pull requests: ruff, ESLint, both unit
-  suites with coverage, the same again after `remove_examples.py` (the
-  Scaffold job), compose validation, zizmor, a license, required-checks,
-  toolchain-version and whitespace check, hadolint and gixy-ng.
+- CI runs on pushes to `main` and on pull requests: ruff (the backend and
+  `.github/scripts`), ESLint, both unit suites with coverage, the same
+  again after `remove_examples.py` (the Scaffold job), compose validation,
+  zizmor, ShellCheck, a license, required-checks, toolchain-version,
+  documented-build and whitespace check, hadolint and gixy-ng.
   Integration, E2E, Platform smoke and Deploy smoke run on `main`, on pull
   requests, and daily. Check the
   `on:` blocks in `.github/workflows/` if in doubt. **Read CI results instead

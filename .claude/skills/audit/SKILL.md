@@ -37,10 +37,10 @@ above and ask which tier to run. Do not guess.
    tree is clean). If Docker is not running (`docker info`), tell the user that
    the Docker-dependent parts will be reported as skipped, and continue.
 2. Split the tier's checks into two groups:
-   - **No Docker:** audit-code, audit-docs, audit-tests, audit-legal.
+   - **No Docker:** audit-code, audit-docs, audit-legal.
    - **Docker** (they share the test or production-config stack, which only
-     one may use at a time): audit-infra, audit-security, audit-a11y,
-     audit-scaffold, audit-recovery, in that order.
+     one may use at a time): audit-infra, audit-tests, audit-security,
+     audit-a11y, audit-scaffold, audit-recovery, in that order.
 3. Launch every check in the no-Docker group at once, plus the **first**
    check of the Docker group, each as a background `general-purpose` subagent.
    When a Docker check finishes, launch the next one. Never run two Docker

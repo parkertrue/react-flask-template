@@ -50,7 +50,7 @@ renew certificates, back up, upgrade, roll back, rotate secrets, read logs.
 What DECISIONS.md leaves to other tools ("Generic server operations are out
 of scope": alerts, log shipping, scheduled backups, hardening) is mentioned
 only if "Operating in Production" fails to say it is not provided. Certificate
-renewal waits for the work on the test server (Known gaps): report it only where the
+renewal waits for a real deployment (Known gaps): report it only where the
 docs give a step that is wrong, not where one is missing. Also flag any instruction that
 has the reader edit a tracked file that CI, tests or another stack also use
 (a change for production that breaks the test stack).
