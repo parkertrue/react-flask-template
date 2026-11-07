@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/useAuth'
 import { useLogout } from '@/auth/useLogout'
 import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
@@ -18,18 +19,12 @@ export default function AccountPage() {
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [askingLogoutAll, setAskingLogoutAll] = useState(false)
-  const [account, setAccount] = useState(null)
-  const [loadError, setLoadError] = useState(null)
+  const { data: account, error: accountError } = useQuery({ queryKey: ['account'], queryFn: getAccount })
+  const loadError = accountError && getErrorMessage(accountError)
   const deletion = useFormFields({ 'delete-password': '' })
   const [askingDelete, setAskingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
-
-  useEffect(() => {
-    getAccount()
-      .then(setAccount)
-      .catch(err => setLoadError(getErrorMessage(err)))
-  }, [])
 
   // Not while a request is in flight: its button is busy
   const askToLogoutAll = () => {

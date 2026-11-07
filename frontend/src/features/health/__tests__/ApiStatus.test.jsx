@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import ApiStatus from '../ApiStatus'
 import { checkHealth } from '../healthService'
+import { queryWrapper } from '@/test/query'
 
 vi.mock('../healthService')
 
@@ -10,7 +11,7 @@ vi.mock('../healthService')
 describe('ApiStatus', () => {
   it('shows that it is checking at first', () => {
     checkHealth.mockReturnValue(new Promise(() => {}))
-    render(<ApiStatus />)
+    render(<ApiStatus />, { wrapper: queryWrapper() })
 
     expect(screen.getByRole('status')).toHaveTextContent('API status: checking')
   })
@@ -20,7 +21,7 @@ describe('ApiStatus', () => {
     ['an error when the API is unreachable', () => checkHealth.mockRejectedValue(new Error('Down')), 'error'],
   ])('shows %s', async (_, arrange, status) => {
     arrange()
-    render(<ApiStatus />)
+    render(<ApiStatus />, { wrapper: queryWrapper() })
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(`API status: ${status}`))
   })
