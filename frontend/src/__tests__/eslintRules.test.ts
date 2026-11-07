@@ -22,12 +22,16 @@ const APP_FILE = 'src/utils/validation.ts'
 const COMPONENT_FILE = 'src/pages/HomePage.tsx'
 const TEST_FILE = 'src/utils/__tests__/validation.test.ts'
 
-// The first lint loads every plugin, which on a busy machine takes longer
-// than a test's 5 s, so it happens here, with time to spare
+// The first lint loads every plugin, and the first typed lint of each
+// project's file builds that project's program, either of which on a busy
+// machine takes longer than a test's 5 s, so they happen here, with time
+// to spare
 beforeAll(async () => {
   await eslint.lintText('\n', { filePath: 'src/x.ts' })
-  await typedEslint.lintText('\n', { filePath: 'src/x.ts' })
-}, 60_000)
+  for (const filePath of [APP_FILE, COMPONENT_FILE, TEST_FILE]) {
+    await typedEslint.lintText('\n', { filePath })
+  }
+}, 120_000)
 
 const ruleIds = async (filePath: string, code: string, linter = eslint) => {
   const results = await linter.lintText(`${code}\n`, { filePath })
