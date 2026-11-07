@@ -217,8 +217,8 @@ describe('TypeScript rules', () => {
     // A count in a message, and a state setter in an arrow
     [APP_FILE, 'export const f = (n: number) => `${n} left`'],
     [COMPONENT_FILE, "import { useState } from 'react'\nexport const X = () => { const [, set] = useState(false); return <button type=\"button\" onClick={() => set(true)} /> }"],
-    // A mock passed to expect
-    [TEST_FILE, "import { it, expect, vi } from 'vitest'; const o = { m: vi.fn() }; it('a', () => { o.m(); expect(o.m).toHaveBeenCalledTimes(1) })"],
+    // A mocked method passed to expect
+    [TEST_FILE, "import { it, expect, vi } from 'vitest'\nimport { api } from '@/api/api'\nvi.mock('@/api/api')\nit('a', () => { expect(api.post).not.toHaveBeenCalled() })"],
   ])('allows %s: %s', async (filePath, code) => {
     expect(await ruleIds(filePath, code, typedEslint)).toEqual([])
   })

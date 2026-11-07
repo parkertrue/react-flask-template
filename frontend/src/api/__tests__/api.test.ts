@@ -176,6 +176,14 @@ describe('expired access token', () => {
     expect(storage.getAccessToken()).toBeNull()
   })
 
+  // Signed out, there is no token to have expired, nor a session to refresh;
+  // the server would refuse a refresh anyway (and no handler takes one)
+  it('passes the failure on, without refreshing, for a request sent with no token', async () => {
+    server.use(http.get('/api/protected', expired))
+
+    expect(await failedWith(api.get('/protected'))).toBe('AUTH_TOKEN_EXPIRED')
+  })
+
   it('refreshes at most once for a request that stays expired', async () => {
     // The refresh succeeds, but the retried request is still rejected (clock
     // skew, a backend bug): it must fail, not refresh again in a loop. Any
