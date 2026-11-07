@@ -139,13 +139,13 @@ latest report's ID instead of repeating them.
 
 ## 5. lint: the lint setup itself
 
-Files: `backend/ruff.toml`, `backend/pytest.ini`, `backend/.coveragerc`,
+Files: `backend/ruff.toml`, `backend/mypy.ini`, `backend/pytest.ini`, `backend/.coveragerc`,
 `frontend/eslint.config.js`, the coverage thresholds in
 `frontend/vite.config.js`, and the tests that act as lint
 (`backend/tests/unit/test_import_rules.py`,
 `backend/tests/unit/test_assertions.py`,
 `frontend/src/__tests__/eslintRules.test.js`), plus the lint jobs in
-`.github/workflows/`. Run `ruff check .` and `npm run lint` first; a red run
+`.github/workflows/`. Run `ruff check .`, `mypy` and `npm run lint` first; a red run
 is a blocker.
 
 - **Redundant config:** options set to their default (check the tool's docs

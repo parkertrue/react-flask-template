@@ -46,7 +46,12 @@ jobs:
           ruff check .
           ruff check ../.github/scripts
 
-      # Each ruff rule the backend relies on still fires on a planted case
+      # Strict, on app/ and the scripts the image runs (backend/mypy.ini)
+      - name: Type check
+        run: mypy
+
+      # Each ruff rule and mypy check the backend relies on still fires on a
+      # planted case
       - name: Lint rules
         run: python ../.github/scripts/check_lint_rules.py
 
@@ -115,10 +120,11 @@ jobs:
       - name: Remove the examples
         run: python .github/scripts/remove_examples.py
 
-      - name: Backend lint and unit tests
+      - name: Backend lint, type check and unit tests
         working-directory: backend
         run: |
           ruff check .
+          mypy
           ./run_tests.sh unit
 
       - name: Frontend lint and unit tests

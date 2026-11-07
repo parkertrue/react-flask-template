@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from contextlib import contextmanager
 from threading import BoundedSemaphore
 
@@ -30,7 +31,7 @@ def init_password_hashing(app: Flask) -> None:
 
 
 @contextmanager
-def _hash_slot():
+def _hash_slot() -> Iterator[None]:
     slots = current_app.extensions['password_hash_slots']
     if not slots.acquire(timeout=current_app.config['PASSWORD_HASH_WAIT_SECONDS']):
         raise PasswordHashingBusy()

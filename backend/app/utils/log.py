@@ -12,11 +12,11 @@ import logging
 import sys
 from datetime import datetime, timezone
 
-from flask import current_app, has_request_context, request
+from flask import Flask, current_app, has_request_context, request
 
 
 class JsonFormatter(logging.Formatter):
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         line = {
             'time': datetime.fromtimestamp(record.created, timezone.utc)
             .isoformat(timespec='milliseconds'),
@@ -37,7 +37,7 @@ _handler = logging.StreamHandler(sys.stdout)
 _handler.setFormatter(JsonFormatter())
 
 
-def configure_logging(app):
+def configure_logging(app: Flask) -> None:
     """Send the app's logger, and so every logger under it, to stdout as JSON.
 
     Only the app's own logger, not the root: libraries stay quiet, and a
@@ -54,7 +54,7 @@ def configure_logging(app):
         logger.setLevel(logging.INFO)
 
 
-def security_event(event, **fields):
+def security_event(event: str, **fields: object) -> None:
     """Log something an investigation would need (a login, a refused token,
     a rate limit hit) with the client's address.
 

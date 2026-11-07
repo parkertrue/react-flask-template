@@ -70,7 +70,7 @@ pages' text.
 
 ## 3. Verify
 
-In the worktree: `ruff check .`, the backend unit tests with coverage,
+In the worktree: `ruff check .`, `mypy`, the backend unit tests with coverage,
 `npm run lint`, `npm run test:coverage`, and `npm run build -- --outDir <scratch>/dist`.
 Each must pass, including the coverage thresholds. Then run the backend
 integration suite on a fresh test stack (it includes `test_migrations.py`,

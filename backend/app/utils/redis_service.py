@@ -167,7 +167,7 @@ class RedisService:
         recorded = self._record_token(
             keys=[_tokens_key(user_id)],
             args=[jti, now + ttl_seconds, now, MAX_SESSIONS_PER_USER, replaces])
-        return recorded == 1
+        return bool(recorded == 1)
 
     def store_refresh_token(self, user_id: int, jti: str, ttl_seconds: int) -> bool | None:
         """Record a new sign-in's refresh token; None if Redis failed"""
@@ -226,7 +226,7 @@ class RedisService:
             pipe.zcount(key, time.time(), '+inf')
             pipe.delete(key)
             live, _ = pipe.execute()
-            return live
+            return int(live)
         except redis.RedisError as error:
             self._failed(error, 'Could not revoke the sessions of user %s', user_id)
             return None

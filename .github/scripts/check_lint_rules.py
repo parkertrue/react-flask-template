@@ -1,15 +1,17 @@
-"""Fail when a ruff rule the backend relies on stops firing.
+"""Fail when a ruff rule or a mypy check the backend relies on stops firing.
 
-CI's Backend unit job runs this, after Lint. The rules are config, and
-config fails silently: a code dropped from `select` or a misspelled path in
-`banned-api` reports nothing. So this plants one violation per rule, pipes it
-through ruff with backend/ruff.toml, and expects that rule's code, as
+CI's Backend unit job runs this, after Lint and Type check. The rules are
+config, and config fails silently: a code dropped from `select`, a misspelled
+path in `banned-api` or strict mode turned off reports nothing. So this
+plants one violation per rule, runs it through ruff with backend/ruff.toml or
+mypy with backend/mypy.ini, and expects that rule's code, as
 frontend/src/__tests__/eslintRules.test.js does for ESLint. It runs here,
 not in pytest, because ruff bans `subprocess` in backend/.
 """
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[2] / 'backend'
@@ -58,17 +60,42 @@ def codes(filename, code):
     return {message['code'] for message in json.loads(result.stdout)}
 
 
+# (code, the mypy error code that must fire)
+PLANTED_TYPES = (
+    # Strict mode: every function annotated
+    ('def f(x):\n    return x\n', 'no-untyped-def'),
+    # A plain type error, so mypy is running at all
+    ("x: int = 'a'\n", 'assignment'),
+)
+
+
+def type_codes(code):
+    """mypy's error codes for this code, checked with backend/mypy.ini"""
+    with tempfile.TemporaryDirectory() as directory:
+        probe = Path(directory) / 'probe.py'
+        probe.write_text(code)
+        # A file named on the command line stands in for the config's `files`
+        result = subprocess.run(
+            ['mypy', '--config-file', 'mypy.ini', '--output', 'json', str(probe)],
+            cwd=BACKEND, capture_output=True, text=True, check=False)
+    return {json.loads(line)['code'] for line in result.stdout.splitlines() if line}
+
+
 def main():
     failures = [f'{rule} did not fire for {filename}: {code!r}'
                 for filename, code, rule in PLANTED if rule not in codes(filename, code)]
+    failures += [f'mypy {rule} did not fire for {code!r}'
+                 for code, rule in PLANTED_TYPES if rule not in type_codes(code)]
     # And a clean file stays clean, so the checks above cannot all pass on noise
     if clean := codes(APP, "x = 'a'\n"):
         failures.append(f'a clean file reports {sorted(clean)}')
+    if clean := type_codes('x: int = 1\n'):
+        failures.append(f'mypy reports {sorted(clean)} for a clean file')
     for failure in failures:
         print(failure)
     if failures:
         sys.exit(1)
-    print(f'{len(PLANTED)} planted violations, each caught by its rule')
+    print(f'{len(PLANTED) + len(PLANTED_TYPES)} planted violations, each caught by its rule')
 
 
 if __name__ == '__main__':

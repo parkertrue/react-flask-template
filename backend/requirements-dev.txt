@@ -13,6 +13,8 @@ annotated-types==0.8.0
     # via
     #   -c requirements.txt
     #   pydantic
+ast-serialize==0.13.1
+    # via mypy
 blinker==1.9.0
     # via
     #   -c requirements.txt
@@ -86,6 +88,8 @@ jinja2==3.1.6
     # via
     #   -c requirements.txt
     #   flask
+librt==0.16.0
+    # via mypy
 limits==5.8.0
     # via
     #   -c requirements.txt
@@ -101,6 +105,10 @@ markupsafe==3.0.4
     #   jinja2
     #   mako
     #   werkzeug
+mypy==2.4.1
+    # via -r requirements-dev.in
+mypy-extensions==1.1.0
+    # via mypy
 ordered-set==4.1.0
     # via
     #   -c requirements.txt
@@ -110,6 +118,8 @@ packaging==26.3
     #   -c requirements.txt
     #   limits
     #   pytest
+pathspec==1.1.1
+    # via mypy
 pluggy==1.6.0
     # via
     #   pytest
@@ -164,6 +174,7 @@ typing-extensions==4.16.0
     #   alembic
     #   flask-limiter
     #   limits
+    #   mypy
     #   pydantic
     #   pydantic-core
     #   sqlalchemy

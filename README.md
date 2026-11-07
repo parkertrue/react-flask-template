@@ -103,6 +103,7 @@ pip install -r requirements-dev.txt
 ./run_tests.sh integration   # Real MySQL + Redis in Docker
 ./run_tests.sh combined      # Both, with one coverage report
 ruff check .                 # Lint
+mypy                         # Type check (strict)
 
 # From frontend/
 npm run lint

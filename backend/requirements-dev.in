@@ -10,3 +10,6 @@ pytest-cov
 # one test leaning on another's leftovers fails at once
 pytest-randomly
 ruff
+# Type checks app/ in strict mode (mypy.ini); the pydantic plugin it loads
+# comes with pydantic
+mypy
