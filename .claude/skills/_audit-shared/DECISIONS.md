@@ -580,6 +580,21 @@ requires it. *Revisit when:* the bundled services are spread across hosts,
 since an overlay network keeps the names `db` and `redis`, so
 `ProductionConfig` would not ask for TLS.
 
+**No production data in dev, scrubbed or not.** The docs cover
+production's own dumps and restores ("Backups and Restoring") and nothing
+that copies one elsewhere. Scrubbed data that can still be linked to a
+person is still personal data under GDPR, and a developer's machine is
+less protected than the server. Note content is free text that no scrubber
+cleans reliably, so a safe copy keeps only the data's shape (counts,
+lengths, timestamps), which generated data gives without the risk.
+Scrubbing would also have to run on the server, so that raw data never
+leaves it, and every new column of personal data would have to join its
+list, where a miss ships real data silently. If dev needs volume or edge
+cases, generate them (a dev-only seed command that refuses production).
+One user's bug is reproduced on the server, with their consent, as a
+support case. *Revisit when:* dev needs something only real data shows,
+which generated data cannot.
+
 ## Known gaps (open work, not new findings)
 
 A check mentions these only when its findings bear on one (for example, a
