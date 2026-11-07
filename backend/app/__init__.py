@@ -1,4 +1,6 @@
-from flask import Flask, request
+from typing import TYPE_CHECKING, Any
+
+from flask import Flask, Response, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
@@ -7,20 +9,31 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from pydantic import ValidationError
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.orm import DeclarativeBase
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.auth.errors import token_invalid, token_revoked
 from app.config import get_config
-from app.utils.errors import error_response, service_unavailable
+from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.log import configure_logging, security_event
 from app.utils.passwords import PasswordHashingBusy, init_password_hashing
 from app.utils.redis_service import (
     TokenStoreUnavailable, connect_redis, get_redis_service)
 
 
+class Base(DeclarativeBase):
+    """Every model's base class, typed, so mypy reads the models' columns"""
+
+
 jwt = JWTManager()
-db = SQLAlchemy()
+db = SQLAlchemy(model_class=Base)
+# What models subclass. Flask-SQLAlchemy builds db.Model at runtime, out of
+# mypy's sight, as a subclass of Base, which is what mypy is told it is.
+if TYPE_CHECKING:
+    Model = Base
+else:
+    Model = db.Model
 migrate = Migrate()
 # No default limits: only the routes that need one declare it. nginx caps
 # every client's request rate, and a per-IP daily quota on the whole API
@@ -42,7 +55,7 @@ HTTP_ERRORS = {
 }
 
 
-def create_app():
+def create_app() -> Flask:
     """Build the app with the config APP_ENV selects (config.get_config)"""
     app = Flask(__name__)
     configure_logging(app)
@@ -55,7 +68,9 @@ def create_app():
     # out of login. Only trust as many X-Forwarded-* hops as there are proxies.
     proxies = app.config['TRUSTED_PROXY_COUNT']
     if proxies:
-        app.wsgi_app = ProxyFix(
+        # Werkzeug's documented way to wrap the app, which mypy reads as
+        # replacing a method
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
             app.wsgi_app, x_for=proxies, x_proto=proxies, x_host=proxies)
 
     jwt.init_app(app)
@@ -78,7 +93,7 @@ def create_app():
     from app.auth.models import User
 
     @jwt.additional_claims_loader
-    def add_account_claims(identity):
+    def add_account_claims(identity: str) -> dict[str, int]:
         """Every token names its account by id and creation time.
 
         An id alone can name another account: a restored backup hands out
@@ -90,7 +105,7 @@ def create_app():
         return {'user_created_at': user.created_timestamp} if user else {}
 
     @jwt.user_lookup_loader
-    def load_user(jwt_header, jwt_payload):
+    def load_user(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> User | None:
         """Runs on every @jwt_required request: the token's account must exist.
 
         A deleted account's access token stays valid until it expires; this
@@ -105,14 +120,14 @@ def create_app():
         return user
 
     @jwt.user_lookup_error_loader
-    def user_not_found(jwt_header, jwt_payload):
+    def user_not_found(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> ErrorResponse:
         security_event('token_invalid', reason='User not found or replaced',
                        user_id=int(jwt_payload['sub']))
         # Answered as a bad token, so the frontend signs the user out
         return token_invalid()
 
     @jwt.token_in_blocklist_loader
-    def check_if_token_revoked(jwt_header, jwt_payload):
+    def check_if_token_revoked(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> bool:
         # Only refresh tokens are tracked in Redis
         if jwt_payload.get('type') != 'refresh':
             return False
@@ -137,19 +152,21 @@ def create_app():
         # Not in the allowlist: logged out, rotated, or expired
         return not is_valid
 
-    @jwt.unauthorized_loader
-    def missing_token(reason):
+    # Registered by a call, not as a decorator, so csrf_refused below calls
+    # it as typed: the decorator returns it untyped
+    def missing_token(reason: str) -> ErrorResponse:
         return error_response(
             code='AUTH_MISSING_TOKEN',
             message='Authentication required',
             status=401
         )
+    jwt.unauthorized_loader(missing_token)
 
     # A forged or malformed token (a bad signature, alg none) or a refresh
     # token sent as an access token: the client never had a token like it.
     # The reason is PyJWT's or flask-jwt-extended's, and never holds the token.
     @jwt.invalid_token_loader
-    def invalid_token(reason):
+    def invalid_token(reason: str) -> ErrorResponse:
         security_event('token_invalid', reason=reason)
         return token_invalid()
 
@@ -157,12 +174,12 @@ def create_app():
     # stolen cookie alone shows up. Answered as flask-jwt-extended's own
     # handler would (a missing token), but logged first.
     @app.errorhandler(CSRFError)
-    def csrf_refused(e):
+    def csrf_refused(e: CSRFError) -> ErrorResponse:
         security_event('token_invalid', reason=str(e))
         return missing_token(str(e))
 
     @jwt.expired_token_loader
-    def expired_token(jwt_header, jwt_payload):
+    def expired_token(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> ErrorResponse:
         return error_response(
             code='AUTH_TOKEN_EXPIRED',
             message='Session expired',
@@ -170,7 +187,7 @@ def create_app():
         )
 
     @jwt.revoked_token_loader
-    def revoked_token(jwt_header, jwt_payload):
+    def revoked_token(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> ErrorResponse:
         # A refresh token that was rotated, logged out or revoked: a replay
         # of an old one is how a stolen cookie shows up
         sub = jwt_payload['sub']
@@ -178,7 +195,7 @@ def create_app():
         return token_revoked()
 
     @app.errorhandler(ValidationError)
-    def handle_pydantic_error(e):
+    def handle_pydantic_error(e: ValidationError) -> ErrorResponse:
         return error_response(
             code='VALIDATION_ERROR',
             message='Invalid input',
@@ -186,11 +203,11 @@ def create_app():
         )
 
     @app.errorhandler(TokenStoreUnavailable)
-    def token_store_unavailable(e):
+    def token_store_unavailable(e: TokenStoreUnavailable) -> ErrorResponse:
         return service_unavailable()
 
     @app.errorhandler(PasswordHashingBusy)
-    def password_hashing_busy(e):
+    def password_hashing_busy(e: PasswordHashingBusy) -> ErrorResponse:
         return service_unavailable('The server is busy, please try again shortly')
 
     # MySQL stopped, hung (the 15s query timeout), or the connection dropped
@@ -199,7 +216,7 @@ def create_app():
     # Flask logs only unhandled exceptions, so log this one here.
     @app.errorhandler(OperationalError)
     @app.errorhandler(InterfaceError)
-    def database_unavailable(e):
+    def database_unavailable(e: OperationalError | InterfaceError) -> ErrorResponse:
         app.logger.exception('Database unavailable')
         return service_unavailable()
 
@@ -207,18 +224,20 @@ def create_app():
     # every error leaves the API in the same JSON shape. Flask logs an
     # unhandled exception's traceback before this answers it as a 500.
     @app.errorhandler(HTTPException)
-    def http_error(e):
-        if e.code == 429:
+    def http_error(e: HTTPException) -> ErrorResponse:
+        # Flask hands this handler only exceptions that carry a status
+        code = e.code or 500
+        if code == 429:
             # Flask-Limiter's description is the limit that was hit
             security_event('rate_limited', path=request.path, limit=e.description)
         return error_response(
             **HTTP_ERRORS.get(
-                e.code, dict(code='HTTP_ERROR', message=e.name)),
-            status=e.code
+                code, dict(code='HTTP_ERROR', message=e.name)),
+            status=code
         )
 
     @app.after_request
-    def no_store(response):
+    def no_store(response: Response) -> Response:
         """API responses carry tokens and private data: no cache may keep them"""
         response.headers.setdefault('Cache-Control', 'no-store')
         return response

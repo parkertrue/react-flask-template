@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app import db
+from app import Model, db
 from app.utils.passwords import hash_password, verify_password
 
 # The schemas validate against this, so an over-long email is a 422, not a
@@ -15,7 +15,7 @@ EMAIL_MAX_LENGTH = 128
 TERMS_VERSION = 1
 
 
-class User(db.Model):
+class User(Model):
     __tablename__ = 'users'
 
     id: Mapped[int] = mapped_column(primary_key=True)

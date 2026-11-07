@@ -15,9 +15,10 @@ import os
 import re
 import sys
 import time
+from collections.abc import Iterable
 
 import redis
-from sqlalchemy import create_engine, text
+from sqlalchemy import URL, create_engine, text
 from sqlalchemy.pool import NullPool
 
 from app.config import database_url, get_config, read_redis_url
@@ -41,7 +42,7 @@ GRANT_ROW = re.compile(r'GRANT (?P<privileges>[A-Z ,]+) ON (?P<target>\S+) TO \S
 TABLES = re.compile(r'\*|`[^`]+`')
 
 
-def describe(error, secrets):
+def describe(error: BaseException, secrets: Iterable[str]) -> str:
     """The error's text, with every password in it masked: a driver may
     echo back what it was given"""
     text = str(error) or type(error).__name__
@@ -50,7 +51,7 @@ def describe(error, secrets):
     return text
 
 
-def mysql_error(url, secrets):
+def mysql_error(url: URL, secrets: Iterable[str]) -> str | None:
     """None once MySQL accepts this login, else why it does not"""
     try:
         engine = create_engine(url, poolclass=NullPool, connect_args={'connect_timeout': 2})
@@ -61,7 +62,7 @@ def mysql_error(url, secrets):
         return describe(error, secrets)
 
 
-def redis_error(url, secrets):
+def redis_error(url: URL, secrets: Iterable[str]) -> str | None:
     """None once Redis accepts this login, else why it does not"""
     try:
         client = redis.Redis.from_url(url.render_as_string(hide_password=False),
@@ -73,7 +74,7 @@ def redis_error(url, secrets):
         return describe(error, secrets)
 
 
-def data_only(grant, database):
+def data_only(grant: str, database: str) -> bool:
     """Whether one row of SHOW GRANTS gives no more than DATA_PRIVILEGES,
     and those in `database` alone"""
     match = GRANT_ROW.fullmatch(grant)
@@ -91,17 +92,19 @@ def data_only(grant, database):
             and privileges <= DATA_PRIVILEGES)
 
 
-def schema_rights(url):
+def schema_rights(url: URL) -> list[str]:
     """The grants that let this login do more than read and write rows in
     its own database, from MySQL's own list: none for the app's user"""
     engine = create_engine(url, poolclass=NullPool, connect_args={'connect_timeout': 2})
     with engine.connect() as connection:
         grants = connection.execute(text('SHOW GRANTS FOR CURRENT_USER()')).scalars().all()
     engine.dispose()
+    # read_database_url refuses a URL without one
+    assert url.database is not None
     return [grant for grant in grants if not data_only(grant, url.database)]
 
 
-def main():
+def main() -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     log.handlers = [handler]
@@ -128,7 +131,11 @@ def main():
     if missing:
         log.error(f"Missing required environment variables: {', '.join(missing)}")
         sys.exit(1)
-    secrets = [url.password for url in (database, app_database, redis_) if url]
+    # database_url() falls back to DATABASE_URL, so it is set whenever
+    # app_database is
+    assert database is not None and redis_ is not None
+    # Every URL names a password: read_database_url and read_redis_url refuse one without
+    secrets = [url.password for url in (database, app_database, redis_) if url and url.password]
 
     deadline = time.monotonic() + TIMEOUT_SECONDS
     shown = None
@@ -155,6 +162,8 @@ def main():
     # as it
     if not production:
         return
+    # Production requires it, as checked above
+    assert app_database is not None
     try:
         granted = schema_rights(app_database)
     except Exception as error:

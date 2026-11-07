@@ -2,7 +2,10 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, g, request, make_response, jsonify, current_app
+from collections.abc import Callable
+
+from flask import Blueprint, Response, abort, g, request, make_response, jsonify, current_app
+from flask.typing import ResponseReturnValue
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
@@ -19,13 +22,14 @@ from flask_jwt_extended import (
 from jwt.exceptions import PyJWTError
 from flask_jwt_extended.exceptions import JWTExtendedException
 
+from flask_limiter import RouteLimit
 from flask_limiter.util import get_remote_address
 
 from app import db, limiter
 from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import LoginRequest, RegisterRequest, normalize_email
-from app.utils.errors import error_response, service_unavailable
+from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.log import security_event
 from app.utils.passwords import DUMMY_PASSWORD_HASH, verify_password
 from app.utils.redis_service import get_redis_service
@@ -45,7 +49,7 @@ def _email_digest(email: str) -> str:
     return hmac.new(secret, email.lower().encode(), hashlib.sha256).hexdigest()
 
 
-def _login_email_key():
+def _login_email_key() -> str:
     """Rate-limit key for the account being logged in to, whatever the IP.
 
     A per-IP limit alone either locks out everyone behind a shared address or,
@@ -70,7 +74,8 @@ def account_key(email: str) -> str:
     return 'email:' + _email_digest(email)
 
 
-def account_password_limit(key_func, deduct_when):
+def account_password_limit(
+        key_func: Callable[[], str], deduct_when: Callable[[Response], bool]) -> RouteLimit:
     """Wrong passwords for one account, wherever they are typed: login and
     account deletion share one budget, so guesses spread over both add up.
 
@@ -81,40 +86,45 @@ def account_password_limit(key_func, deduct_when):
         '100 per hour', scope='account-password', key_func=key_func, deduct_when=deduct_when)
 
 
-def _login_email_and_ip_key():
+def _login_email_and_ip_key() -> str:
     """The account and the client's address: a lockout hits only that address"""
     return f'{_login_email_key()}:ip:{get_remote_address()}'
 
 
-def _login_failed(response):
+def _login_failed(response: Response) -> bool:
     """Only wrong passwords count toward the account limits, so the owner's
     own successful logins never use them up."""
     return response.status_code == 401
 
 
-def token_user_id(token, kind):
+def token_user_id(token: str | None, kind: str) -> str | None:
     """The user a valid token of this kind ('access' or 'refresh') belongs
     to, or None.
 
     A per-user rate limit is checked before @jwt_required runs, so its key
     decodes the token itself; decode_token checks the signature and expiry.
     """
+    if token is None:
+        return None
     try:
         claims = decode_token(token)
     except (PyJWTError, JWTExtendedException):
         return None
-    return claims.get('sub') if claims.get('type') == kind else None
+    user_id: str | None = claims.get('sub') if claims.get('type') == kind else None
+    return user_id
 
 
-def _refresh_user_id():
+def _refresh_user_id() -> str | None:
     """The user a valid refresh cookie belongs to, or None"""
     if 'refresh_user_id' not in g:
         g.refresh_user_id = token_user_id(
             request.cookies.get(current_app.config['JWT_REFRESH_COOKIE_NAME']), 'refresh')
-    return g.refresh_user_id
+    user_id: str | None = g.refresh_user_id
+    return user_id
 
 
-def _issue_tokens(user_id: int, auth_time: int, replaces: str | None = None):
+def _issue_tokens(
+        user_id: int, auth_time: int, replaces: str | None = None) -> ResponseReturnValue:
     """Build a 200 response carrying a fresh access token and refresh cookie.
 
     `auth_time` is when the user logged in, carried through every rotation.
@@ -170,7 +180,7 @@ def _issue_tokens(user_id: int, auth_time: int, replaces: str | None = None):
     return response
 
 
-def _already_registered():
+def _already_registered() -> ErrorResponse:
     return error_response(
         code='EMAIL_ALREADY_REGISTERED',
         message='Email already registered',
@@ -178,7 +188,7 @@ def _already_registered():
     )
 
 
-def _terms_outdated():
+def _terms_outdated() -> ErrorResponse:
     return error_response(
         code='TERMS_OUTDATED',
         message='The terms have changed since this page was loaded. Reload the page to read and accept them.',
@@ -188,7 +198,7 @@ def _terms_outdated():
 
 @auth_bp.route('/register', methods=['POST'])
 @limiter.limit('10 per hour')
-def register():
+def register() -> ResponseReturnValue:
     payload = RegisterRequest.model_validate(request.get_json())
 
     # A page loaded before the terms changed showed the old ones, which the
@@ -226,7 +236,7 @@ def register():
 @limiter.limit('20 per minute')
 @limiter.limit('5 per minute', key_func=_login_email_and_ip_key, deduct_when=_login_failed)
 @account_password_limit(key_func=_login_email_key, deduct_when=_login_failed)
-def login():
+def login() -> ResponseReturnValue:
     payload = LoginRequest.model_validate(request.get_json())
 
     stmt = select(User).where(User.email == payload.email)
@@ -262,7 +272,7 @@ def login():
     key_func=lambda: f'user:{_refresh_user_id()}',
     exempt_when=lambda: _refresh_user_id() is None)
 @jwt_required(refresh=True, locations=['cookies'])
-def refresh():
+def refresh() -> ResponseReturnValue:
     """Rotate: issue a new token pair and revoke the refresh token just used"""
     claims = get_jwt()
     return _issue_tokens(current_user.id, auth_time=claims['auth_time'], replaces=claims['jti'])
@@ -270,7 +280,7 @@ def refresh():
 
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required(refresh=True, locations=['cookies'])
-def logout():
+def logout() -> ResponseReturnValue:
     user_id = current_user.id
     # The blocklist loader already refused a refresh token without a jti
     jti = get_jwt()['jti']
@@ -286,7 +296,7 @@ def logout():
 
 
 @auth_bp.route('/clear-cookies', methods=['POST'])
-def clear_cookies():
+def clear_cookies() -> ResponseReturnValue:
     """Expire the refresh cookies when a logout request itself failed.
 
     They are HttpOnly, so the client cannot remove them. No token is needed,
@@ -303,7 +313,7 @@ def clear_cookies():
 
 @auth_bp.route('/logout-all', methods=['POST'])
 @jwt_required(refresh=True, locations=['cookies'])
-def logout_all():
+def logout_all() -> ResponseReturnValue:
     """Revoke all refresh tokens for the current user (logout from all devices)"""
     # Unlike logout, this exists only for its effect on the server: other
     # devices stay signed in unless Redis drops their tokens. Report a failure

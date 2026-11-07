@@ -1,5 +1,6 @@
 import os
 import re
+from collections.abc import Iterable, Mapping
 from datetime import timedelta
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
@@ -38,7 +39,7 @@ DATABASE_URL_VARIABLES = (('MIGRATION_DATABASE_URL', 'MIGRATION_DATABASE_PASSWOR
 DATABASE_NAME = re.compile(r'[A-Za-z0-9_]+')
 
 
-def read_database_url(url_var, password_var) -> URL | None:
+def read_database_url(url_var: str, password_var: str) -> URL | None:
     """One database URL, with its password variable applied; None if unset"""
     value = os.getenv(url_var)
     if not value:
@@ -52,7 +53,7 @@ def read_database_url(url_var, password_var) -> URL | None:
         url = url.set(password=os.getenv(password_var))
     if url.drivername != DATABASE_DRIVER:
         raise ValueError(f'{url_var} must start with {DATABASE_DRIVER}://')
-    if not all([url.username, url.password, url.host, url.database]):
+    if not (url.username and url.password and url.host and url.database):
         raise ValueError(
             f'{url_var} must name a user, password, host and database '
             f'(the password may be in {password_var})')
@@ -61,7 +62,7 @@ def read_database_url(url_var, password_var) -> URL | None:
     return url
 
 
-def database_url(migration=True) -> URL | None:
+def database_url(migration: bool = True) -> URL | None:
     """The database to connect to, or None if no URL is set.
 
     The migration user's when MIGRATION_DATABASE_URL is set (only the
@@ -115,7 +116,7 @@ def redis_url() -> str | None:
     return url.render_as_string(hide_password=False)
 
 
-def refuse_tls_options(url_var, query, refused):
+def refuse_tls_options(url_var: str, query: Mapping[str, object], refused: Iterable[str]) -> None:
     """Fail on any option in a URL's query that could weaken its TLS checks"""
     found = [option for option in refused if option in query]
     if found:
@@ -132,7 +133,7 @@ class Config:
     # with Redis and rate limiting off.
     USES_SERVICES = True
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Parse as a string: os.getenv always returns str, and the bare string
         # "0" is truthy, which would silently enable debug mode wherever
         # FLASK_DEBUG=0 was set.
@@ -149,7 +150,7 @@ class Config:
         self.PASSWORD_HASH_CONCURRENCY = 2
         self.PASSWORD_HASH_WAIT_SECONDS = 5
 
-        self.SQLALCHEMY_DATABASE_URI = database_url()
+        self.SQLALCHEMY_DATABASE_URI: URL | str | None = database_url()
         if self.SQLALCHEMY_DATABASE_URI is None and self.USES_SERVICES:
             raise ValueError('Missing required environment variable: DATABASE_URL')
 
@@ -247,7 +248,7 @@ class UnitTestConfig(Config):
     """Unit tests: in-memory SQLite, no Redis, no rate limiting"""
     USES_SERVICES = False
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
         # MySQL's pool and connection settings mean nothing to SQLite, whose
@@ -259,7 +260,7 @@ class UnitTestConfig(Config):
 class IntegrationConfig(Config):
     """Integration and E2E tests: real database and Redis"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.RATELIMIT_ENABLED = False
         e2e_mode = os.getenv('E2E_MODE', 'false').lower() == 'true'
@@ -271,7 +272,7 @@ class IntegrationConfig(Config):
 class ProductionConfig(Config):
     """Production configuration"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.FLASK_DEBUG = False
         self.TRUSTED_PROXY_COUNT = trusted_proxy_count()
@@ -301,6 +302,8 @@ class ProductionConfig(Config):
                 refuse_tls_options(url_var, database.query, DATABASE_TLS_OPTIONS_REFUSED)
 
         redis = read_redis_url()
+        # Config.__init__ has already refused an unset REDIS_URL
+        assert redis is not None
         if redis.password in PLACEHOLDER_PASSWORDS:
             raise ValueError('The Redis password is still the .env.prod.example placeholder')
         if redis.host != BUNDLED_REDIS_HOST:
@@ -311,7 +314,7 @@ class ProductionConfig(Config):
             refuse_tls_options('REDIS_URL', redis.query, REDIS_TLS_OPTIONS_REFUSED)
 
 
-def trusted_proxy_count():
+def trusted_proxy_count() -> int:
     """How many proxies in production write X-Forwarded-For, 1 by default.
 
     nginx is the one hop in front of the backend wherever it runs, even
@@ -328,7 +331,7 @@ def trusted_proxy_count():
     return int(value)
 
 
-def db_query_timeout():
+def db_query_timeout() -> int:
     """Seconds each MySQL query may take, 15 by default; 0 for no limit."""
     value = os.getenv('DB_QUERY_TIMEOUT', '15')
     if not (value.isascii() and value.isdigit()):
@@ -337,7 +340,7 @@ def db_query_timeout():
     return int(value)
 
 
-def get_config():
+def get_config() -> Config:
     """Get configuration based on environment
 
     APP_ENV is the only switch: no other variable (E2E_MODE included) may
@@ -346,7 +349,7 @@ def get_config():
     """
     app_env = os.getenv('APP_ENV', 'production')
 
-    config_map = {
+    config_map: dict[str, type[Config]] = {
         'development': DevelopmentConfig,
         'unit': UnitTestConfig,
         'integration': IntegrationConfig,

@@ -18,7 +18,7 @@ class NoteCreateRequest(BaseModel):
 
     @field_validator('content')
     @classmethod
-    def check_characters(cls, v):
+    def check_characters(cls, v: str) -> str:
         if not is_plain_text(v):
             raise ValueError(f'Note {UNSUPPORTED_CHARACTERS_MESSAGE}')
         return v

@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app import db
+from app import Model, db
 
 # The schemas validate against this, so an over-long note is a 422, not a
 # database error. frontend/src/features/notes/validation.js mirrors it.
@@ -11,7 +11,7 @@ NOTE_MAX_LENGTH = 256
 NOTES_MAX_PER_USER = 1000
 
 
-class Note(db.Model):
+class Note(Model):
     __tablename__ = 'notes'
     __table_args__ = (
         # GET /api/notes pages through one user's notes by id (a cursor), so

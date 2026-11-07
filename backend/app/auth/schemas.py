@@ -31,12 +31,15 @@ def normalize_email(value: str) -> str:
         result = validate_email(value, allow_smtputf8=False, check_deliverability=False)
     except EmailNotValidError as e:
         raise ValueError(str(e)) from None
-    if len(result.ascii_email) > EMAIL_MAX_LENGTH:
+    # Set whenever SMTPUTF8 is refused, as above
+    ascii_email = result.ascii_email
+    assert ascii_email is not None
+    if len(ascii_email) > EMAIL_MAX_LENGTH:
         raise ValueError(f'Email must be at most {EMAIL_MAX_LENGTH} characters')
-    return result.ascii_email
+    return ascii_email
 
 
-def _normalize_password(value):
+def _normalize_password(value: object) -> object:
     # NFKC, so the same password typed on any device hashes the same: an
     # accented letter can arrive as one character or as a letter plus a
     # combining accent, and full-width letters become plain ones. NIST SP

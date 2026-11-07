@@ -1,4 +1,5 @@
 from flask import Blueprint, abort, jsonify, request
+from flask.typing import ResponseReturnValue
 from flask_jwt_extended import current_user, jwt_required
 from sqlalchemy import func, select
 
@@ -12,20 +13,21 @@ from app.utils.ids import ID_MAX
 notes_bp = Blueprint('notes', __name__, url_prefix='/api/notes')
 
 
-def get_own_note_or_404(note_id):
+def get_own_note_or_404(note_id: int) -> Note:
     """The current user's note with this id. Another user's note is a 404,
     exactly like a missing one, so probing ids reveals nothing."""
     # Checked here rather than with the converter's max=: on two rules sharing
     # a path, werkzeug turns a failed max= into a 405 instead of a 404
     if note_id > ID_MAX:
         abort(404)
-    return db.one_or_404(
+    note: Note = db.one_or_404(
         select(Note).where(Note.id == note_id, Note.user_id == current_user.id))
+    return note
 
 
 @notes_bp.route('', methods=['GET'])
 @jwt_required()
-def get_notes():
+def get_notes() -> ResponseReturnValue:
     """Return one page of the current user's notes, newest first.
 
     Cursor pagination: pass a page's next_cursor as ?before= to get the next
@@ -52,14 +54,14 @@ def get_notes():
 
 @notes_bp.route('', methods=['POST'])
 @jwt_required()
-def create_note():
+def create_note() -> ResponseReturnValue:
     payload = NoteCreateRequest.model_validate(request.get_json())
 
     # The (user_id, id) index answers the count. Two creates racing at the cap
     # can both pass, so a user may end a few notes over it (at most one per
     # request thread): enough to bound storage, without locking the user's row.
-    count = db.session.scalar(
-        select(func.count()).select_from(Note).where(Note.user_id == current_user.id))
+    count = db.session.scalars(
+        select(func.count()).select_from(Note).where(Note.user_id == current_user.id)).one()
     if count >= NOTES_MAX_PER_USER:
         return quota_exceeded(
             f'You can keep at most {NOTES_MAX_PER_USER:,} notes. Delete one to add another.')
@@ -77,7 +79,7 @@ def create_note():
 
 @notes_bp.route('/<int:note_id>', methods=['PUT'])
 @jwt_required()
-def update_note(note_id):
+def update_note(note_id: int) -> ResponseReturnValue:
     payload = NoteUpdateRequest.model_validate(request.get_json())
     note = get_own_note_or_404(note_id)
 
@@ -89,7 +91,7 @@ def update_note(note_id):
 
 @notes_bp.route('/<int:note_id>', methods=['DELETE'])
 @jwt_required()
-def delete_note(note_id):
+def delete_note(note_id: int) -> ResponseReturnValue:
     note = get_own_note_or_404(note_id)
 
     db.session.delete(note)

@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify, make_response, request
+from flask import Blueprint, Response, jsonify, make_response, request
+from flask.typing import ResponseReturnValue
 from flask_jwt_extended import current_user, jwt_required, unset_refresh_cookies
 from sqlalchemy import delete
 
@@ -15,13 +16,13 @@ account_bp = Blueprint('account', __name__, url_prefix='/api/account')
 
 @account_bp.route('', methods=['GET'])
 @jwt_required()
-def get_account():
+def get_account() -> ResponseReturnValue:
     """The signed-in user's account. Every app keeps it, so shared tests use
     it as their protected route; account settings belong here."""
     return jsonify(AccountResponse.model_validate(current_user).model_dump()), 200
 
 
-def _wrong_password(response):
+def _wrong_password(response: Response) -> bool:
     return response.status_code == 403
 
 
@@ -40,7 +41,7 @@ def _wrong_password(response):
 # Keyed as login keys the account, so the two share a budget of wrong passwords
 @account_password_limit(
     key_func=lambda: account_key(current_user.email), deduct_when=_wrong_password)
-def delete_account():
+def delete_account() -> ResponseReturnValue:
     """Delete the signed-in user's account and everything it owns.
 
     POST, not DELETE: a body on DELETE has no defined meaning (RFC 9110), and
