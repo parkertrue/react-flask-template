@@ -47,6 +47,21 @@ nit.
   it. Then follow README's "Starting a New App From This Template", which
   replaces the notes example with that first feature.
 
+## Dependencies
+
+Upgrades waiting on a release or a date; Dependabot proposes the rest
+(`.github/dependabot.yml`).
+
+- **minimatch's glob DoS (low, dev only).** GHSA-g3hv-75wg-m249 is fixed
+  only in minimatch 11.0.1, which eslint, `@eslint/config-array` and
+  `@typescript-eslint/typescript-estree` (through `@vitest/eslint-plugin`)
+  don't accept yet (`^10`). Only the patterns in `eslint.config.js` reach
+  it, and an attack needs its own pattern. Keep the Dependabot alert open:
+  it closes by itself once an eslint bump brings minimatch 11. If it is
+  still open in mid-December 2026, try forcing 11 with an npm `overrides`
+  entry, with `src/__tests__/eslintRules.test.js` (which plants a
+  violation of every glob-scoped rule) as the guard.
+
 ## Production to-dos
 
 What every deployment works through once it has a server that will hold
