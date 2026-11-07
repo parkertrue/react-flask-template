@@ -13,7 +13,8 @@ const noteInput = page => page.getByLabel('New note')
 async function addNote(page, text) {
   await noteInput(page).fill(text)
   await page.getByRole('button', { name: 'Add note' }).click()
-  await expect(page.getByText(text)).toBeVisible()
+  // A list item: getByText alone also matches the field's own value
+  await expect(page.getByRole('listitem').filter({ hasText: text })).toBeVisible()
 }
 
 /** The notes page's message when the list loaded and is empty */
@@ -104,10 +105,16 @@ test.describe('Notes CRUD Operations', () => {
     await page.evaluate(() => { window.samePageLoad = true })
 
     await logout(page)
-    await page.getByRole('link', { name: 'Log in' }).click()
+    const navbar = page.getByRole('navigation', { name: 'Main' })
+    await navbar.getByRole('link', { name: 'Log in' }).click()
+    const release = await holdRequests(page, 'GET', '**/api/notes')
     await login(page, secondUser)
-    await page.getByRole('link', { name: 'My notes' }).click()
+    await expect(page).toHaveURL(/\/notes$/)
 
+    // While the second user's list loads, nothing of the first user's shows
+    await expect(page.getByRole('status')).toHaveText('Loading notes...')
+    await expect(page.getByText(firstUserNote)).toBeHidden()
+    release()
     // The second user's list has loaded, and the first user's note is not in it
     await expect(noNotesYet(page)).toBeVisible()
     await expect(page.getByText(firstUserNote)).toBeHidden()

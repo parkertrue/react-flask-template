@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
 import { getErrorMessage } from '@/api/errors'
 import { useAuth } from '@/auth/useAuth'
 import { fetchNotes, createNote, updateNote, deleteNote } from './notesService'
@@ -28,7 +28,10 @@ export function useNotes() {
     getNextPageParam: lastPage => lastPage.next_cursor,
     enabled: isAuthenticated,
   })
-  const create = useMutation({ mutationFn: content => createNote(content) })
+  // Kept here, not by useMutation, whose flag clears on its own schedule: the
+  // form must leave its busy state in the same render that empties it, or
+  // what the user types in between is wiped
+  const [submitting, setSubmitting] = useState(false)
   // The last add's or Load more's failure; a failed first load is the query's
   const [error, setError] = useState(null)
   // What the last add, save, delete or Load more did, for screen readers.
@@ -48,9 +51,10 @@ export function useNotes() {
   }
 
   const addNote = async (content) => {
+    setSubmitting(true)
     setStatus('')
     try {
-      const newNote = await create.mutateAsync(content)
+      const newNote = await createNote(content)
       // Newest first. The cursor points below the oldest loaded note, so the
       // new one never turns up again on a later page.
       queryClient.setQueryData(NOTES, updatePages((notes, index) =>
@@ -61,6 +65,8 @@ export function useNotes() {
       const failed = failure(err)
       setError(failed.message)
       throw failed
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -101,7 +107,7 @@ export function useNotes() {
     loaded: query.data !== undefined,
     loadingMore: query.isFetchingNextPage,
     hasMore: query.hasNextPage,
-    submitting: create.isPending,
+    submitting,
     error: query.isLoadingError ? getErrorMessage(query.error) : error,
     status: query.isLoading ? 'Loading notes...' : status,
     loadMore,
