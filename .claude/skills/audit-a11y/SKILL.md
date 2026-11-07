@@ -13,7 +13,7 @@ spec), plus `SOURCES.md` (React / frontend, Accessibility) and `DECISIONS.md`
 from the same folder as RULES.md. This check runs Docker: record all four
 Timings (RULES.md, Report).
 
-axe already runs on every shared page in `frontend/e2e/accessibility.spec.js`,
+axe already runs on every shared page in `frontend/e2e/accessibility.spec.ts`,
 and each feature's spec runs it on its own pages, but axe covers only about a
 third of WCAG. This check covers the rest.
 
@@ -35,10 +35,10 @@ Read every page, layout and form component in `frontend/src/` (`pages/`,
   back and forward work.
 - Dynamic content: "Load more" moves or keeps focus sensibly and announces new
   items; the API status demo announces changes without being noisy.
-- Contrast: `styles/__tests__/tokens.test.js` computes every ratio (4.5:1
+- Contrast: `styles/__tests__/tokens.test.ts` computes every ratio (4.5:1
   text, 3:1 large text and UI components, including focus rings, borders of
   inputs, and disabled-looking states). Check that it lists every pairing the
-  CSS actually uses. Motion needs no check: `stylesheets.test.js` refuses a
+  CSS actually uses. Motion needs no check: `stylesheets.test.ts` refuses a
   transition or animation outside `prefers-reduced-motion: no-preference`.
 - Also: `lang` on `<html>`; forced-colors mode (Windows High Contrast) keeps
   focus rings, borders and states visible; `autoComplete` on every field
@@ -59,7 +59,7 @@ with Playwright from a script in the scratch directory. Setup that works:
   the page-level error page by returning malformed `/api/notes` data (a
   layout-level crash can't be forced in a production build: review that one
   in code); reach the expired-session state with `expireAccessToken` from
-  `frontend/e2e/helpers.js`, or by corrupting `access_token` in
+  `frontend/e2e/helpers.ts`, or by corrupting `access_token` in
   localStorage and clearing cookies.
 - After navigation (including back and forward), wait for the focus change
   before reading `document.activeElement`; read straight after `waitForURL`
@@ -75,7 +75,7 @@ Check on every page, logged out and logged in:
   and no clipped content. Text spacing overrides (1.4.12) don't break layout.
 - **Target size:** interactive targets at least 24×24 CSS px or spaced
   (2.5.8). Measure with `getBoundingClientRect`.
-- **States:** read `accessibility.spec.js` and each feature's spec first:
+- **States:** read `accessibility.spec.ts` and each feature's spec first:
   they run axe on most states (form errors, busy and failed actions, a
   failed load, the error page, a session that ended, edit mode, the open
   delete dialog). Run axe (`@axe-core/playwright`, as they do) on any state

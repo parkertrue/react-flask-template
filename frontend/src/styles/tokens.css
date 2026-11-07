@@ -1,7 +1,7 @@
 /* The app's only colors: every other stylesheet names a token
-   (styles/__tests__/stylesheets.test.js). Every pairing meets WCAG AA:
+   (styles/__tests__/stylesheets.test.ts). Every pairing meets WCAG AA:
    text at least 4.5:1, borders and focus rings at least 3:1.
-   styles/__tests__/tokens.test.js lists each pairing and checks it. */
+   styles/__tests__/tokens.test.ts lists each pairing and checks it. */
 :root {
   --color-primary: #207ab7;
   --color-secondary: #667879;

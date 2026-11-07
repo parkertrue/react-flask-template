@@ -23,8 +23,8 @@ DELETE = [
     'backend/migrations/versions/0002_notes.py',
     'frontend/src/features/notes',
     'frontend/src/features/health',
-    'frontend/e2e/notes-crud.spec.js',
-    'frontend/e2e/api-status.spec.js',
+    'frontend/e2e/notes-crud.spec.ts',
+    'frontend/e2e/api-status.spec.ts',
 ]
 
 EDITS = {
@@ -33,21 +33,21 @@ EDITS = {
         ('BLUEPRINTS = [account_bp, auth_bp, health_bp, notes_bp]',
          'BLUEPRINTS = [account_bp, auth_bp, health_bp]'),
     ],
-    'frontend/src/routes.jsx': [
+    'frontend/src/routes.tsx': [
         ("import NotesPage from '@/features/notes/NotesPage'\n", ''),
         ("              { path: 'notes', element: <NotesPage /> },\n", ''),
     ],
-    'frontend/src/__tests__/routes.test.jsx': [
+    'frontend/src/__tests__/routes.test.tsx': [
         ("vi.mock('@/features/notes/NotesPage', () => ({ default: () => <p>Notes page</p> }))\n", ''),
         ("    ['/notes', 'Login page'],\n", ''),
         ("    ['/notes', 'Notes page'],\n", ''),
         ("    ['/login', 'Notes page'],\n", "    ['/login', 'Account page'],\n"),
         ("    ['/register', 'Notes page'],\n", "    ['/register', 'Account page'],\n"),
     ],
-    'frontend/src/auth/GuestRoute.jsx': [
+    'frontend/src/auth/GuestRoute.tsx': [
         ("export const AFTER_LOGIN_PATH = '/notes'", "export const AFTER_LOGIN_PATH = '/account'"),
     ],
-    'frontend/src/components/layout/Navbar.jsx': [
+    'frontend/src/components/layout/Navbar.tsx': [
         ("""          {isAuthenticated ? (
             <NavLink to="/notes" className="nav-link">My notes</NavLink>
           ) : (
@@ -56,18 +56,18 @@ EDITS = {
             <>
 """),
     ],
-    'frontend/src/components/layout/__tests__/Navbar.test.jsx': [
+    'frontend/src/components/layout/__tests__/Navbar.test.tsx': [
         ("expect(links()).toEqual({ Home: '/', 'My notes': '/notes' })",
          "expect(links()).toEqual({ Home: '/' })"),
         ("    ['/notes', ['My notes']],\n", ''),
     ],
-    'frontend/src/pages/HomePage.jsx': [
+    'frontend/src/pages/HomePage.tsx': [
         ("import ApiStatus from '@/features/health/ApiStatus'\n", ''),
         ('        <ApiStatus />\n', ''),
         ('<Link to="/notes" className="btn btn-primary">View my notes</Link>',
          '<Link to="/account" className="btn btn-primary">Your account</Link>'),
     ],
-    'frontend/src/pages/__tests__/HomePage.test.jsx': [
+    'frontend/src/pages/__tests__/HomePage.test.tsx': [
         ("import { describe, it, expect, vi } from 'vitest'",
          "import { describe, it, expect } from 'vitest'"),
         ("vi.mock('@/features/health/ApiStatus', () => ({ default: () => null }))\n", ''),

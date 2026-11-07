@@ -1,0 +1,10 @@
+{
+  // Build and test tooling and the Playwright specs, which run under Node
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM"],
+    "types": ["node"],
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
+  },
+  "include": ["e2e", "*.config.ts"]
+}

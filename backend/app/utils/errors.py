@@ -9,7 +9,7 @@ ErrorResponse = tuple[Response, int]
 SERVICE_UNAVAILABLE_MESSAGE = 'The service is temporarily unavailable, please try again shortly'
 
 
-# Keyword-only, so the error-code sync test (frontend fixtures.test.js) can
+# Keyword-only, so the error-code sync test (frontend fixtures.test.ts) can
 # find every code by its `code='...'`
 def error_response(*, code: str, message: str, status: int = 400) -> ErrorResponse:
     payload = {

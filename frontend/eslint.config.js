@@ -5,6 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tanstackQuery from '@tanstack/eslint-plugin-query'
 import vitest from '@vitest/eslint-plugin'
 import playwright from 'eslint-plugin-playwright'
+import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 import path from 'path'
 
@@ -96,7 +97,7 @@ const WEAK_MATCHERS = {
   toBeOneOf: 'Pin the one answer the code gives.',
 }
 
-// The session lives in one place, auth/storage.js
+// The session lives in one place, auth/storage.ts
 const NO_STORAGE = {
   'no-restricted-globals': ['error', ...['localStorage', 'sessionStorage'].map(name =>
     ({ name, message: 'Read and write the session through @/auth/storage.' }))],
@@ -144,9 +145,20 @@ const relativeWithinFolder = {
 export default defineConfig([
   globalIgnores(['dist', 'coverage', 'playwright-report', 'test-results']),
   {
-    files: ['**/*.{js,jsx}'],
+    // This file stays JavaScript: ESLint loads a TypeScript config only
+    // through an extra loader
+    files: ['eslint.config.js'],
+    extends: [js.configs.recommended],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
+      // Type-aware, and the strictest preset, as mypy runs strict on the
+      // backend: no any, no unhandled promise, no ! assertion, no
+      // @ts-ignore, no condition the types say is always the same
+      tseslint.configs.strictTypeChecked,
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
       // Query keys that miss a value the fetch uses, a client made on every
@@ -156,7 +168,8 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
       parserOptions: {
-        ecmaFeatures: { jsx: true },
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     // Debug output and temporary markers stay out of shipped code
@@ -168,6 +181,11 @@ export default defineConfig([
       'no-eval': 'error',
       'no-implied-eval': 'error',
       'no-new-func': 'error',
+      // A count or a length in a message is fine; an object or undefined
+      // there is still a bug
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      // onClick={() => setOpen(false)} is how React code reads
+      '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
     },
   },
   {
@@ -181,7 +199,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['src/auth/storage.js'],
+    files: ['src/auth/storage.ts'],
     rules: ALLOW_STORAGE,
   },
   {
@@ -193,7 +211,7 @@ export default defineConfig([
   {
     // Shared code never depends on a feature or a page, so deleting a
     // feature folder cannot break it
-    files: ['src/{api,auth,components,utils,styles}/**', 'src/{appName,legal}.js'],
+    files: ['src/{api,auth,components,utils,styles}/**', 'src/{appName,legal}.ts'],
     rules: restrictImports({
       group: ['@/features/*', '@/pages/*', '@/routes'],
       message: 'Shared code must not import a feature or a page.',
@@ -227,7 +245,7 @@ export default defineConfig([
   },
   {
     // Build and test tooling runs under Node, not in the browser
-    files: ['*.config.js', 'e2e/**'],
+    files: ['*.config.ts', 'e2e/**'],
     languageOptions: {
       globals: globals.node,
     },
@@ -237,7 +255,7 @@ export default defineConfig([
   },
   {
     // Tests use the real localStorage, and clear it after each one
-    files: ['src/**/__tests__/**', 'src/test/**', '**/*.{test,spec}.{js,jsx}'],
+    files: ['src/**/__tests__/**', 'src/test/**', '**/*.{test,spec}.{ts,tsx}'],
     languageOptions: {
       globals: globals.node,
     },
@@ -248,7 +266,7 @@ export default defineConfig([
   },
   {
     // Shared test helpers assert too, so they take the same hedge rules as
-    // the tests that call them (e2e/helpers.js below)
+    // the tests that call them (e2e/helpers.ts below)
     files: ['src/test/**'],
     rules: restrictSyntax(FORM_CONTROL, ...NO_HEDGES, NO_CONDITIONAL_EXPECT),
   },
@@ -257,7 +275,7 @@ export default defineConfig([
     // none that almost any value passes, and no test without one, skipped
     // or focused (backend: tests/unit/test_assertions.py). The presets ship
     // some rules as warnings, which `npm run lint` fails on too
-    files: ['src/**/*.{test,spec}.{js,jsx}'],
+    files: ['src/**/*.{test,spec}.{ts,tsx}'],
     extends: [vitest.configs.recommended],
     rules: {
       ...restrictSyntax(FORM_CONTROL, ...NO_HEDGES, NO_CONDITIONAL_EXPECT),
@@ -265,11 +283,18 @@ export default defineConfig([
       // A run checks one branch only, even when the assert comes after it
       'vitest/no-conditional-in-test': 'error',
       'vitest/no-large-snapshots': 'error',
+      // act(async () => ...) waits for what the callback set off, awaiting
+      // nothing itself
+      '@typescript-eslint/require-await': 'off',
+      // expect(api.post) passes a method without calling it, which is fine;
+      // Vitest's own version of the rule knows that
+      '@typescript-eslint/unbound-method': 'off',
+      'vitest/unbound-method': 'error',
     },
   },
   {
     // FormField's own tests keep its folder's raw form controls
-    files: ['src/components/forms/**/*.{test,spec}.{js,jsx}'],
+    files: ['src/components/forms/**/*.{test,spec}.{ts,tsx}'],
     rules: restrictSyntax(...NO_HEDGES, NO_CONDITIONAL_EXPECT),
   },
   {
@@ -279,12 +304,23 @@ export default defineConfig([
     },
   },
   {
-    files: ['e2e/**/*.spec.js'],
+    files: ['e2e/**/*.spec.ts'],
     extends: [playwright.configs['flat/recommended']],
     rules: {
-      // e2e/helpers.js's expect* helpers (expectNoViolations, ...) assert too
+      // e2e/helpers.ts's expect* helpers (expectNoViolations, ...) assert too
       'playwright/expect-expect': ['error', { assertFunctionPatterns: ['^expect[A-Z]'] }],
       'playwright/no-restricted-matchers': ['error', WEAK_MATCHERS],
+    },
+  },
+  {
+    // The app, its tests and its tooling are TypeScript, checked by tsc
+    // (npm run typecheck), which a .js file would slip past. Last, since a
+    // later block's no-restricted-syntax would replace this one's
+    files: ['src/**/*.{js,jsx,mjs,cjs}', 'e2e/**/*.{js,jsx,mjs,cjs}', '*.config.{js,mjs,cjs}'],
+    ignores: ['eslint.config.js'],
+    languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
+    rules: {
+      'no-restricted-syntax': ['error', { selector: 'Program', message: 'Write TypeScript (.ts, .tsx), which tsc checks.' }],
     },
   },
 ])

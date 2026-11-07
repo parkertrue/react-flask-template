@@ -84,7 +84,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # Fails under the coverage thresholds in vite.config.js
+      # tsc, strict, over the app, its tests and its tooling (tsconfig.json)
+      - name: Type check
+        run: npm run typecheck
+
+      # Fails under the coverage thresholds in vite.config.ts
       - name: Run unit tests
         run: npm run test:coverage
 
@@ -127,10 +131,11 @@ jobs:
           mypy
           ./run_tests.sh unit
 
-      - name: Frontend lint and unit tests
+      - name: Frontend lint, type check and unit tests
         working-directory: frontend
         run: |
           npm run lint
+          npm run typecheck
           npm run test:coverage
 
   compose:
@@ -297,7 +302,7 @@ jobs:
 
       # Security analyzer (gixy-ng, the maintained fork of Yandex's gixy).
       # Skipped: hsts_header fires on the port-80 redirect server, where
-      # browsers ignore HSTS anyway (RFC 6797 8.1), and e2e/nginx.spec.js
+      # browsers ignore HSTS anyway (RFC 6797 8.1), and e2e/nginx.spec.ts
       # asserts it over HTTPS; try_files_is_evil_too is a performance opinion
       # that doesn't matter for a few static files.
       - name: Lint

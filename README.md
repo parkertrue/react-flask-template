@@ -2,7 +2,7 @@
 
 A ready-to-use starting point for a React + Flask + MySQL web app, with auth, tests, CI and a hardened production setup already wired.
 
-* **Frontend**: React (Vite)
+* **Frontend**: React (Vite), in TypeScript
 * **Backend**: Flask + SQLAlchemy + Alembic, MySQL, Redis (sessions and rate limits)
 * **Production**: Docker Compose behind an HTTPS Nginx reverse proxy, with MySQL and Redis bundled or external (RDS, ElastiCache), or on a container platform such as Amazon ECS
 * **Auth**: JWT access tokens plus rotating, revocable refresh tokens in HttpOnly cookies
@@ -107,6 +107,7 @@ mypy                         # Type check (strict)
 
 # From frontend/
 npm run lint
+npm run typecheck            # Type check (strict)
 npm run test:run             # Unit tests once (npm run test for watch mode)
 npm run test:coverage        # What CI runs
 npx playwright install chromium   # E2E: first time, and after each Playwright update
@@ -169,9 +170,9 @@ The app is at `https://<SERVER_NAME>`. On a server, deploy with `deploy.sh` inst
 
 **Where a feature plugs in:**
 - `backend/app/features.py`: its blueprint
-- `frontend/src/routes.jsx`: its page's route, and `frontend/src/__tests__/routes.test.jsx`
-- `frontend/src/components/layout/Navbar.jsx` and `frontend/src/pages/HomePage.jsx`: the links to it, and their tests
-- `AFTER_LOGIN_PATH` in `frontend/src/auth/GuestRoute.jsx`: where logging in leads
+- `frontend/src/routes.tsx`: its page's route, and `frontend/src/__tests__/routes.test.tsx`
+- `frontend/src/components/layout/Navbar.tsx` and `frontend/src/pages/HomePage.tsx`: the links to it, and their tests
+- `AFTER_LOGIN_PATH` in `frontend/src/auth/GuestRoute.tsx`: where logging in leads
 
 CI's Scaffold job deletes the examples and edits exactly these files (`.github/scripts/remove_examples.py`), then runs lint and the unit suites, so shared code can't come to depend on an example. Changing a wiring point means changing the script with it.
 
@@ -179,11 +180,11 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
 
 1. Rename the Compose projects (`name:` at the top of each compose file: `app_dev`, `app_test`, `app`) and the databases in `.env.dev` and `.env.test` (`appdb_dev`, `appdb_test`). Two apps built from this template then never share containers or volumes, and your dev and test stacks start with empty databases.
 2. Replace notes with your first feature, in one of two ways:
-   - **Rename it** into your feature, the quickest start when that feature is also short text items a user adds, edits and deletes: `backend/app/notes/`, `frontend/src/features/notes/` and their tests (`backend/tests/unit/notes/`, `backend/tests/integration/notes/`, `frontend/e2e/notes-crud.spec.js`).
+   - **Rename it** into your feature, the quickest start when that feature is also short text items a user adds, edits and deletes: `backend/app/notes/`, `frontend/src/features/notes/` and their tests (`backend/tests/unit/notes/`, `backend/tests/integration/notes/`, `frontend/e2e/notes-crud.spec.ts`).
    - **Delete it**, and build your feature in the same shape: delete those folders and files.
 
    Either way, delete `backend/migrations/versions/0002_notes.py` (step 4 generates yours) and update the wiring points above. Then delete `.github/scripts/remove_examples.py` and the Scaffold job in `.github/workflows/ci.yml`, and remove `Scaffold` from the list of required status checks under [CI](#continuous-integration) (the Workflows job fails while that list names a job that doesn't exist) and from Settings > Branches: they only prove that the template's examples can be removed, and the import rules keep shared code off your features.
-3. Remove the API-status demo, unless you want it: delete `frontend/src/features/health/` and `frontend/e2e/api-status.spec.js`, the `ApiStatus` import and element in `frontend/src/pages/HomePage.jsx`, and the `vi.mock` of `ApiStatus` in `frontend/src/pages/__tests__/HomePage.test.jsx`, with `vi` in its import.
+3. Remove the API-status demo, unless you want it: delete `frontend/src/features/health/` and `frontend/e2e/api-status.spec.ts`, the `ApiStatus` import and element in `frontend/src/pages/HomePage.tsx`, and the `vi.mock` of `ApiStatus` in `frontend/src/pages/__tests__/HomePage.test.tsx`, with `vi` in its import.
 4. Generate a migration for your tables. From `backend/`, with `.env.dev` loaded as in [Database Schema Changes](#database-schema-changes). If the dev backend ran after step 1 while `0002_notes.py` still existed, the database refers to a migration that is gone: reset it first (`docker compose --env-file .env.dev -f docker-compose.dev.yml down -v`, then start it again).
 
    ```bash
@@ -192,7 +193,7 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
    ```
 
    Upgrade first: Alembic only writes a migration against an up-to-date database. In the generated file, keep only the `op.drop_table(...)` lines in `downgrade()`: MySQL will not drop an index that a foreign key uses, and dropping the table drops its indexes anyway. Then run `./run_tests.sh integration`, whose `test_migrations.py` checks that the migrations match the models and undo cleanly.
-5. Name the app, without using anyone else's trademark: `APP_NAME` in `frontend/src/appName.js` and the `<title>` in `frontend/index.html` (a test checks they match), and describe it in `APP_TAGLINE` beside the name. Replace the placeholder icon, `frontend/public/favicon.svg`.
+5. Name the app, without using anyone else's trademark: `APP_NAME` in `frontend/src/appName.ts` and the `<title>` in `frontend/index.html` (a test checks they match), and describe it in `APP_TAGLINE` beside the name. Replace the placeholder icon, `frontend/public/favicon.svg`.
 6. Rewrite this README, `docs/` and `CLAUDE.md` for your app, and choose its license: replace `LICENSE` and the `license` field in `frontend/package.json`, then run `npm install` in `frontend/` so `package-lock.json` matches (the template is MIT-0, so your app owes it no notice). Delete `.claude/skills/audit-scaffold/`, which acts out these steps on the template, and remove it from `/audit`'s `periodic` tier and Docker order (`.claude/skills/audit/SKILL.md`); keep the other audits in `.claude/skills/` and update their references to notes and to `audit-scaffold`, or delete them. Keep `.claude/skills/_audit-shared/OPEN-ISSUES.md` as your app's list of open work, starting with its getting-started issues, and `DECISIONS.md` beside it as its accepted trade-offs.
 7. Write the legal pages and work through the "Before launch" list in [docs/personal-data.md](docs/personal-data.md).
 

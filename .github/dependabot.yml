@@ -25,6 +25,12 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint takes only the TypeScript releases it was tested
+      # with (its peerDependencies, below 6.1 today), and npm ci refuses any
+      # other. Bump TypeScript by hand once typescript-eslint's range covers it.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Base images in backend/Dockerfile and nginx/Dockerfile; the compose
   # files' MySQL and Redis images are the docker-compose entry below

@@ -61,7 +61,7 @@ Ground rules when using these:
   Feature folders, one-way imports, API layer, testing. Here: `features/`
   layout and the import direction rules in CLAUDE.md came from this.
 - **TanStack Query docs**: https://tanstack.com/query/latest
-  The app's data fetching and cache (`api/queryClient.js`, `useNotes`).
+  The app's data fetching and cache (`api/queryClient.ts`, `useNotes`).
 - **Lint**
   - ESLint rules: https://eslint.org/docs/latest/rules/ (core rules and their defaults)
   - @vitest/eslint-plugin: https://github.com/vitest-dev/eslint-plugin-vitest (its `recommended` preset)
@@ -76,7 +76,7 @@ Ground rules when using these:
   - WCAG 2.2 Quick Reference: https://www.w3.org/WAI/WCAG22/quickref/
   - WAI-ARIA Authoring Practices Guide (APG): https://www.w3.org/WAI/ARIA/apg/
     (patterns for dialogs, menus, live regions)
-  - axe-core rules: https://github.com/dequelabs/axe-core (what e2e/accessibility.spec.js runs)
+  - axe-core rules: https://github.com/dequelabs/axe-core (what e2e/accessibility.spec.ts runs)
   - MDN Accessibility: https://developer.mozilla.org/en-US/docs/Web/Accessibility
 
 ## Flask / Python backend
