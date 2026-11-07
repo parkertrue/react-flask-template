@@ -76,7 +76,12 @@ handlers, the api client's refresh logic). For each, break the code in a
 change the code there, never in the main tree), run only the relevant tests, and
 record whether any test failed. If the targeted tests pass, run the whole
 suite before concluding: a mutation that survives the whole suite is a high
-finding. List every mutation tried (file:line, change, result) in the
+finding. Include at least one mutation that only an integration test can
+catch (a column size, a cascade, the Redis token store under the app's
+ACL user) and one that only E2E can catch (an nginx promise, a full
+journey). Run those in the same worktree against the test stack, under
+RULES.md's Docker rules, and take the stack down afterwards. List every
+mutation tried (file:line, change, result) in the
 report's appendix, so the next run re-checks the survivors first. Remove the
 worktree as RULES.md describes (unlink `node_modules` first).
 

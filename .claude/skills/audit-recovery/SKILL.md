@@ -96,7 +96,7 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
   session at once?
 - **Operator documentation:** do README and `docs/deployment.md` tell an operator how to restart,
   roll back a bad deploy, back up and restore, rotate secrets, and read
-  logs? Certificate renewal waits for the work on the test server
+  logs? Certificate renewal waits for a real deployment
   (DECISIONS.md, Known gaps), so a missing renewal step is a finding only
   where the docs present it as covered, or give one that is wrong.
 

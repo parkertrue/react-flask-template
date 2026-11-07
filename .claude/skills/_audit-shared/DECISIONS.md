@@ -577,9 +577,11 @@ findings.
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.
-- **Certificate renewal waits for the work on the test server.** The Let's
+- **Certificate renewal waits for a real deployment.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
   nginx template (which breaks CI and the test stack if followed, and leaves
-  a `deploy.sh` clone dirty), and renewal is manual. It gets written and
-  tried on that server rather than on paper; until then the docs and
-  recovery checks don't report it. A CDN is not set up either.
+  a `deploy.sh` clone dirty), and renewal is manual. The planned DNS-01
+  renewal needs a real domain, which the test server will not get (user,
+  2026-11-05), so it gets written and tried on the first real deployment
+  rather than on paper; until then the docs and recovery checks don't
+  report it. A CDN is not set up either.
