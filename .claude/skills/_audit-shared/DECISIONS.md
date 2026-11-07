@@ -344,14 +344,25 @@ lockfile packages (all MIT) are mostly Node-only and not bundled. *Revisit
 when:* the client needs streaming or `AbortSignal` beyond what axios offers,
 or a major axios release changes the interceptor API.
 
-**Pages load data in effects, not React Router loaders.** `AccountPage` and
-`useNotes` fetch in `useEffect`, while the app already uses
-`createBrowserRouter`. A loader would fire before `ProtectedRoute` renders,
-so a signed-out visit would send an unauthenticated request and land on the
-`errorElement` instead of `/login`. Using loaders means moving both guards
-into loaders (`throw redirect(...)`) and rebuilding the "Loading..." live
-regions on `useNavigation`. *Revisit when:* together with TanStack Query
-(below), or when a page needs data before first paint.
+**Pages load data with TanStack Query hooks, not React Router loaders.**
+`AccountPage` and `useNotes` fetch as they render (`useQuery`,
+`useInfiniteQuery`), while the app already uses `createBrowserRouter`. A
+loader would fire before `ProtectedRoute` renders, so a signed-out visit
+would send an unauthenticated request and land on the `errorElement` instead
+of `/login`. Using loaders means moving both guards into loaders
+(`throw redirect(...)`) and rebuilding the "Loading..." live regions on
+`useNavigation`; a loader would then fill the same cache
+(`queryClient.ensureQueryData`), not replace it. *Revisit when:* a page
+needs its data before first paint.
+
+**TanStack Query's retries and refetches are off** (`api/queryClient.js`).
+A query is tried once: the api client already refreshes an expired token,
+and a 503 or a network error shows at once rather than after three silent
+tries with backoff. Nothing refetches on window focus or reconnect: an
+infinite list refetches every page it has loaded, and would move the rows a
+user is reading or editing. A page refetches when it mounts, showing the
+cached data meanwhile. *Revisit when:* a page needs fresher data than a
+visit gives.
 
 **pytest-cov stays.** `coverage run -m pytest` plus `coverage report` could
 replace it, but that saves one small dev package in exchange for rewriting
@@ -550,12 +561,6 @@ since an overlay network keeps the names `db` and `redis`, so
 `ProductionConfig` would not ask for TLS.
 
 ## Deferred until the app grows
-
-**TanStack Query.** It would replace the hand-written loading, error and
-pagination code in `useNotes` and `useHealth`, but it costs a dependency and a
-provider, needs retry and refetch-on-focus defaults turned off, and must be
-cleared on logout. *Revisit when:* there are several server lists, or data
-shared across pages.
 
 **React 19 form actions (`<form action>`, `useActionState`).** In a
 client-only SPA React resets the form after every submit (a failed login would

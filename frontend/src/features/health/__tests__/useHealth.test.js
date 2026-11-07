@@ -2,12 +2,18 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { useHealth } from '../useHealth'
 import { checkHealth } from '../healthService'
+import { queryWrapper } from '@/test/query'
 
 vi.mock('../healthService')
 
 // The poll's state updates happen when the timer fires, so advance the clock
-// inside act() for React to apply them before the test looks
-const advance = ms => act(() => vi.advanceTimersByTimeAsync(ms))
+// inside act() for React to apply them before the test looks. TanStack Query
+// hands each result to React in a setTimeout(0) set once the fetch settles,
+// which fake timers run only on a later millisecond: step one past.
+const advance = ms => act(async () => {
+  await vi.advanceTimersByTimeAsync(ms)
+  await vi.advanceTimersByTimeAsync(1)
+})
 
 describe('useHealth', () => {
   afterEach(() => {
@@ -17,7 +23,7 @@ describe('useHealth', () => {
   it('should initialize with checking status', () => {
     checkHealth.mockImplementation(() => new Promise(() => {}))
 
-    const { result } = renderHook(() => useHealth())
+    const { result } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
 
     expect(result.current).toBe('checking')
   })
@@ -25,7 +31,7 @@ describe('useHealth', () => {
   it('should fetch health status on mount', async () => {
     checkHealth.mockResolvedValue({ status: 'ok' })
 
-    const { result } = renderHook(() => useHealth())
+    const { result } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
 
     await waitFor(() => {
       expect(result.current).toBe('ok')
@@ -37,7 +43,7 @@ describe('useHealth', () => {
   it('should handle health check error', async () => {
     checkHealth.mockRejectedValue(new Error('Connection failed'))
 
-    const { result } = renderHook(() => useHealth())
+    const { result } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
 
     await waitFor(() => {
       expect(result.current).toBe('error')
@@ -49,7 +55,7 @@ describe('useHealth', () => {
     vi.useFakeTimers()
     checkHealth.mockResolvedValue({ status: 'ok' })
 
-    renderHook(() => useHealth())
+    renderHook(() => useHealth(), { wrapper: queryWrapper() })
     await advance(0)
     expect(checkHealth).toHaveBeenCalledTimes(1)
 
@@ -64,7 +70,7 @@ describe('useHealth', () => {
     vi.useFakeTimers()
     checkHealth.mockResolvedValue({ status: 'ok' })
 
-    const { unmount } = renderHook(() => useHealth())
+    const { unmount } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
     await advance(0)
     unmount()
 
@@ -79,7 +85,7 @@ describe('useHealth', () => {
       .mockResolvedValueOnce({ status: 'ok' })
       .mockResolvedValueOnce({ status: 'degraded' })
 
-    const { result } = renderHook(() => useHealth())
+    const { result } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
     await advance(0)
     expect(result.current).toBe('ok')
 
@@ -94,7 +100,7 @@ describe('useHealth', () => {
       .mockResolvedValueOnce({ status: 'ok' })
       .mockReturnValueOnce(new Promise(() => {}))
 
-    const { result } = renderHook(() => useHealth())
+    const { result } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
     await advance(0)
     await advance(30000)
 
@@ -108,7 +114,7 @@ describe('useHealth', () => {
       .mockRejectedValueOnce(new Error('Failed'))
       .mockResolvedValueOnce({ status: 'ok' })
 
-    const { result } = renderHook(() => useHealth())
+    const { result } = renderHook(() => useHealth(), { wrapper: queryWrapper() })
     await advance(0)
     expect(result.current).toBe('error')
 

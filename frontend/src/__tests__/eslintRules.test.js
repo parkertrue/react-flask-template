@@ -86,6 +86,12 @@ describe('code rules', () => {
     ['src/utils/x.js', "eval('x')", 'no-eval'],
     ['src/utils/x.js', "setTimeout('x()')", 'no-implied-eval'],
     ['src/utils/x.js', "new Function('x')", 'no-new-func'],
+    // TanStack Query: a key that misses what the fetch uses would serve one
+    // note's data for another, and a client made on every render forgets
+    // its cache
+    ['src/features/notes/x.js', "export const useX = id => useQuery({ queryKey: ['x'], queryFn: () => get(id) })", '@tanstack/query/exhaustive-deps'],
+    ['src/auth/x.jsx', "import { QueryClient, QueryClientProvider } from '@tanstack/react-query'; export function X() { const client = new QueryClient(); return <QueryClientProvider client={client} /> }", '@tanstack/query/stable-query-client'],
+    ['src/pages/x.js', "import { useQuery } from '@tanstack/react-query'; export function useX() { const { data, ...rest } = useQuery({ queryKey: ['x'], queryFn: get }); return [data, rest] }", '@tanstack/query/no-rest-destructuring'],
   ])('refuses %s: %s', async (filePath, code, ruleId) => {
     expect(await ruleIds(filePath, code)).toContain(ruleId)
   })

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor, act } from '@testing-library/react'
+import { render, renderHook, screen, waitFor, act } from '@testing-library/react'
 import { useNotes } from '../useNotes'
 import { fetchNotes, createNote, updateNote, deleteNote } from '../notesService'
 import { AuthProvider } from '@/auth/AuthProvider'
@@ -131,6 +131,23 @@ describe('useNotes', () => {
       })
 
       expect(result.current.notes).toEqual([newNote, ...existingNotes])
+    })
+
+    it('puts it on the first page when several are loaded', async () => {
+      fetchNotes.mockResolvedValueOnce(page([{ id: 5, content: 'Five' }], 5))
+      createNote.mockResolvedValue({ id: 6, content: 'Six' })
+      const { result } = renderHook(() => useNotes(), { wrapper })
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      fetchNotes.mockResolvedValueOnce(page([{ id: 4, content: 'Four' }]))
+      await act(async () => {
+        await result.current.loadMore()
+      })
+
+      await act(async () => {
+        await result.current.addNote('Six')
+      })
+
+      expect(result.current.notes.map(note => note.id)).toEqual([6, 5, 4])
     })
 
     it('should handle create error', async () => {
@@ -320,6 +337,7 @@ describe('useNotes', () => {
       })
 
       expect(result.current.notes).toEqual(first)
+      expect(result.current.loaded).toBe(true)
       expect(result.current.error).toBe('Network error')
       expect(result.current.hasMore).toBe(true)
     })
@@ -384,6 +402,52 @@ describe('useNotes', () => {
       expect(result.current.notes.notes).toEqual([])
       expect(result.current.notes.hasMore).toBe(false)
       expect(fetchNotes).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves the list empty when an add finishes after logout', async () => {
+      signIn()
+      fetchNotes.mockResolvedValue(page([{ id: 1, content: 'Note' }]))
+      let resolveCreate
+      createNote.mockReturnValue(new Promise(resolve => { resolveCreate = resolve }))
+      const { result } = renderHook(
+        () => ({ notes: useNotes(), auth: useAuth() }),
+        { wrapper }
+      )
+      await waitFor(() => expect(result.current.notes.notes).toHaveLength(1))
+
+      let pending
+      act(() => { pending = result.current.notes.addNote('Late') })
+      act(() => result.current.auth.logout())
+      await act(async () => {
+        resolveCreate({ id: 2, content: 'Late' })
+        await pending
+      })
+
+      expect(result.current.notes.notes).toEqual([])
+      expect(result.current.notes.error).toBeNull()
+    })
+  })
+
+  describe('coming back to the list', () => {
+    // Notes stands in for the page: shown, then left, then shown again
+    function Notes() {
+      const { notes } = useNotes()
+      return <p>{notes.map(note => note.content).join(', ')}</p>
+    }
+    const Page = ({ shown }) => <AuthProvider>{shown && <Notes />}</AuthProvider>
+
+    it('shows the notes it had at once, while it fetches them again', async () => {
+      signIn()
+      fetchNotes.mockResolvedValueOnce(page([{ id: 1, content: 'Cached' }]))
+      const { rerender } = render(<Page shown />)
+      await screen.findByText('Cached')
+      rerender(<Page shown={false} />)
+
+      fetchNotes.mockReturnValueOnce(new Promise(() => {}))
+      rerender(<Page shown />)
+
+      expect(screen.getByText('Cached')).toBeInTheDocument()
+      expect(fetchNotes).toHaveBeenCalledTimes(2)
     })
   })
 })

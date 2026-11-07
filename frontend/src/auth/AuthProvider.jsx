@@ -1,4 +1,6 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createQueryClient } from '@/api/queryClient'
 import { storage } from './storage'
 import { AuthContext } from './AuthContext'
 
@@ -9,6 +11,24 @@ export function AuthProvider({ children }) {
   const token = useSyncExternalStore(storage.subscribe, storage.getAccessToken)
   const email = useSyncExternalStore(storage.subscribe, storage.getEmail)
   const sessionEnded = useSyncExternalStore(storage.subscribe, storage.getSessionEnded)
+
+  // The session owns the cache of server data
+  const [queryClient] = useState(createQueryClient)
+
+  // Empty the cache whenever the account changes: every way a session ends
+  // (logout, a refused refresh, another tab) clears storage, and another
+  // tab may sign in as someone else. It runs as storage changes, before
+  // React renders, so no page ever shows the last account's data. Not on
+  // the access token, which changes on every refresh.
+  useEffect(() => {
+    let account = storage.getEmail()
+    return storage.subscribe(() => {
+      const current = storage.getEmail()
+      if (current === account) return
+      account = current
+      queryClient.clear()
+    })
+  }, [queryClient])
 
   const login = (accessToken, csrf, userEmail) => {
     storage.clearSessionEnded()
@@ -27,7 +47,9 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
     </AuthContext.Provider>
   )
 }

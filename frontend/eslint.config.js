@@ -2,6 +2,7 @@ import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
+import tanstackQuery from '@tanstack/eslint-plugin-query'
 import vitest from '@vitest/eslint-plugin'
 import playwright from 'eslint-plugin-playwright'
 import { defineConfig, globalIgnores } from 'eslint/config'
@@ -148,6 +149,9 @@ export default defineConfig([
       js.configs.recommended,
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
+      // Query keys that miss a value the fetch uses, a client made on every
+      // render, and the like
+      tanstackQuery.configs['flat/recommended'],
     ],
     languageOptions: {
       globals: globals.browser,

@@ -1,94 +1,66 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getErrorMessage } from '@/api/errors'
 import { useAuth } from '@/auth/useAuth'
 import { fetchNotes, createNote, updateNote, deleteNote } from './notesService'
 
+const NOTES = ['notes']
+
 // A failed request as an Error whose message is ready to show
 const failure = err => new Error(getErrorMessage(err), { cause: err })
 
+// Applies a change to every loaded page. A cache emptied in the meantime (the
+// session ended) stays empty: returning undefined leaves it alone.
+const updatePages = (update) => data => data && {
+  ...data,
+  pages: data.pages.map((page, index) => ({ ...page, notes: update(page.notes, index) })),
+}
+
 export function useNotes() {
   const { isAuthenticated } = useAuth()
-  const [notes, setNotes] = useState([])
-  const [nextCursor, setNextCursor] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const queryClient = useQueryClient()
+  // Pages of notes, newest first. Each page's next_cursor fetches the next;
+  // it is null on the last page, which ends the list.
+  const query = useInfiniteQuery({
+    queryKey: NOTES,
+    queryFn: ({ pageParam }) => fetchNotes(pageParam),
+    initialPageParam: undefined,
+    getNextPageParam: lastPage => lastPage.next_cursor,
+    enabled: isAuthenticated,
+  })
+  const create = useMutation({ mutationFn: content => createNote(content) })
+  // The last add's or Load more's failure; a failed first load is the query's
   const [error, setError] = useState(null)
-  // Whether the first page has arrived, so a failed load never claims the
-  // user has no notes
-  const [loaded, setLoaded] = useState(false)
-  // What the last add, save, delete or Load more did, for screen readers,
-  // or that the first load is running. Cleared when the next one starts, so
-  // the same words are read again.
+  // What the last add, save, delete or Load more did, for screen readers.
+  // Cleared when the next one starts, so the same words are read again.
   const [status, setStatus] = useState('')
 
-  const loadNotes = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    setStatus('Loading notes...')
-
-    try {
-      const page = await fetchNotes()
-      setNotes(page.notes)
-      setNextCursor(page.next_cursor)
-      setLoaded(true)
-    } catch (err) {
-      setError(getErrorMessage(err))
-    } finally {
-      setLoading(false)
-      setStatus('')
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isAuthenticated) return
-
-    // Fetching on login is what this effect is for; the loading flag that
-    // loadNotes sets before its first await is the one extra render we want.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadNotes()
-    // Drop this session's notes when it ends, so the next user never sees them
-    return () => {
-      setNotes([])
-      setNextCursor(null)
-      setLoaded(false)
-      setStatus('')
-    }
-  }, [isAuthenticated, loadNotes])
-
   const loadMore = async () => {
-    if (nextCursor === null || loadingMore) return
-    setLoadingMore(true)
+    if (!query.hasNextPage || query.isFetchingNextPage) return
     setStatus('')
     try {
-      const page = await fetchNotes(nextCursor)
-      setNotes(prev => [...prev, ...page.notes])
-      setNextCursor(page.next_cursor)
+      const result = await query.fetchNextPage({ throwOnError: true })
       setError(null)
-      setStatus(page.next_cursor === null ? 'All notes loaded' : 'More notes loaded')
+      setStatus(result.hasNextPage ? 'More notes loaded' : 'All notes loaded')
     } catch (err) {
       setError(getErrorMessage(err))
-    } finally {
-      setLoadingMore(false)
     }
   }
 
   const addNote = async (content) => {
-    setSubmitting(true)
     setStatus('')
     try {
-      const newNote = await createNote(content)
+      const newNote = await create.mutateAsync(content)
       // Newest first. The cursor points below the oldest loaded note, so the
       // new one never turns up again on a later page.
-      setNotes(prev => [newNote, ...prev])
+      queryClient.setQueryData(NOTES, updatePages((notes, index) =>
+        index === 0 ? [newNote, ...notes] : notes))
       setError(null)
       setStatus('Note added')
     } catch (err) {
       const failed = failure(err)
       setError(failed.message)
       throw failed
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -98,7 +70,8 @@ export function useNotes() {
     setStatus('')
     try {
       const updated = await updateNote(id, content)
-      setNotes(prev => prev.map(note => note.id === id ? updated : note))
+      queryClient.setQueryData(NOTES, updatePages(notes =>
+        notes.map(note => note.id === id ? updated : note)))
       setStatus('Note saved')
     } catch (err) {
       throw failure(err)
@@ -111,7 +84,8 @@ export function useNotes() {
     setStatus('')
     try {
       await deleteNote(id)
-      setNotes(prev => prev.filter(note => note.id !== id))
+      queryClient.setQueryData(NOTES, updatePages(notes =>
+        notes.filter(note => note.id !== id)))
       setStatus('Note deleted')
     } catch (err) {
       throw failure(err)
@@ -119,14 +93,17 @@ export function useNotes() {
   }
 
   return {
-    notes,
-    loading,
-    loaded,
-    loadingMore,
-    hasMore: nextCursor !== null,
-    submitting,
-    error,
-    status,
+    notes: query.data?.pages.flatMap(page => page.notes) ?? [],
+    // The first page only; a refetch in the background keeps the list shown
+    loading: query.isLoading,
+    // Whether a page has arrived, so a failed load never claims the user has
+    // no notes
+    loaded: query.data !== undefined,
+    loadingMore: query.isFetchingNextPage,
+    hasMore: query.hasNextPage,
+    submitting: create.isPending,
+    error: query.isLoadingError ? getErrorMessage(query.error) : error,
+    status: query.isLoading ? 'Loading notes...' : status,
     loadMore,
     addNote,
     editNote,

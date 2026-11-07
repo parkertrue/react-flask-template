@@ -54,7 +54,8 @@ Upgrades waiting on a release or a date; Dependabot proposes the rest
 
 - **minimatch's glob DoS (low, dev only).** GHSA-g3hv-75wg-m249 is fixed
   only in minimatch 11.0.1, which eslint, `@eslint/config-array` and
-  `@typescript-eslint/typescript-estree` (through `@vitest/eslint-plugin`)
+  `@typescript-eslint/typescript-estree` (through `@vitest/eslint-plugin`
+  and `@tanstack/eslint-plugin-query`)
   don't accept yet (`^10`). Only the patterns in `eslint.config.js` reach
   it, and an attack needs its own pattern. Keep the Dependabot alert open:
   it closes by itself once an eslint bump brings minimatch 11. If it is

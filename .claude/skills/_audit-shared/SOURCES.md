@@ -61,7 +61,7 @@ Ground rules when using these:
   Feature folders, one-way imports, API layer, testing. Here: `features/`
   layout and the import direction rules in CLAUDE.md came from this.
 - **TanStack Query docs**: https://tanstack.com/query/latest
-  For deciding when hand-written data hooks should give way to a query library.
+  The app's data fetching and cache (`api/queryClient.js`, `useNotes`).
 - **Lint**
   - ESLint rules: https://eslint.org/docs/latest/rules/ (core rules and their defaults)
   - @vitest/eslint-plugin: https://github.com/vitest-dev/eslint-plugin-vitest (its `recommended` preset)

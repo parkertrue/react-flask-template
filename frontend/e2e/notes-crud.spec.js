@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test'
 import {
   expectNoCspViolations, expectNoViolations, expectReflow, expectTargetSize,
-  expectVisibleFocus, holdRequests, logout, registerAndLogin, serviceUnavailable,
+  expectVisibleFocus, holdRequests, login, logout, registerAndLogin, registration,
+  serviceUnavailable, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName.js'
 
@@ -89,17 +90,28 @@ test.describe('Notes CRUD Operations', () => {
     await expect(page.getByText(persistentNote)).toBeVisible()
   })
 
-  test('notes are private to user', async ({ page }) => {
+  // In one page load, so the first user's notes are still in the page's
+  // cache when the second user signs in: only emptying it on logout keeps
+  // them from showing
+  test('notes are private to user, even on a shared device', async ({ page }) => {
+    const secondUser = uniqueEmail('second-user')
+    const register = await page.request.post('/api/auth/register', {
+      data: registration(secondUser),
+    })
+    expect(register.status()).toBe(201)
     const firstUserNote = `Private note ${Date.now()}`
     await addNote(page, firstUserNote)
+    await page.evaluate(() => { window.samePageLoad = true })
 
     await logout(page)
-    await registerAndLogin(page, 'second-user')
-    await page.goto('/notes')
+    await page.getByRole('link', { name: 'Log in' }).click()
+    await login(page, secondUser)
+    await page.getByRole('link', { name: 'My notes' }).click()
 
     // The second user's list has loaded, and the first user's note is not in it
     await expect(noNotesYet(page)).toBeVisible()
     await expect(page.getByText(firstUserNote)).toBeHidden()
+    expect(await page.evaluate(() => window.samePageLoad)).toBe(true)
   })
 
   test('older notes load a page at a time', async ({ page }) => {
