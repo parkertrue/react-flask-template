@@ -468,6 +468,40 @@ class TestDeleteAccountLimit:
         assert [line['message'] for line in logged() if line['logger'] == 'flask-limiter'] == []
 
 
+class TestExportLimit:
+    """An export reads every row a user owns, so each user gets ten an hour"""
+
+    def headers(self, app, email, ip='203.0.113.7'):
+        with app.app_context():
+            user_id = db.session.scalar(select(User.id).where(User.email == email))
+            token = create_access_token(identity=str(user_id))
+        return {'Authorization': f'Bearer {token}', 'X-Forwarded-For': ip}
+
+    def test_eleventh_export_in_an_hour_is_rate_limited(self, owner_app):
+        client = owner_app.test_client()
+        headers = self.headers(owner_app, 'owner@example.com')
+
+        statuses = [client.get('/api/account/export', headers=headers).status_code
+                    for _ in range(11)]
+
+        assert statuses == [200] * 10 + [429]
+
+    def test_users_sharing_an_address_have_their_own_buckets(self, owner_app):
+        with owner_app.app_context():
+            other = User(email='other@example.com')
+            other.set_password('OtherPassword123')
+            db.session.add(other)
+            db.session.commit()
+        client = owner_app.test_client()
+        for _ in range(11):
+            client.get('/api/account/export', headers=self.headers(owner_app, 'owner@example.com'))
+
+        response = client.get(
+            '/api/account/export', headers=self.headers(owner_app, 'other@example.com'))
+
+        assert response.status_code == 200
+
+
 def test_unlimited_routes_have_no_per_ip_quota(limited_app):
     """Only routes that declare a limit have one.
 

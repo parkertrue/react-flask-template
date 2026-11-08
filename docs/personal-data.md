@@ -21,6 +21,8 @@ Every app built from the template collects personal data from its first sign-up,
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
 | Refresh token | Cookie `__Secure-refresh_token` (HttpOnly) | Up to 30 days |
 
+Downloading the data (the Account page's "Download your data") gives the user one JSON file: the `users` row without its password hash, and every feature's rows (GDPR Art. 15 and 20). Each feature registers its own tables for it (`register_export`, `backend/app/utils/exports.py`), and a test fails on a table that references `users.id` and is in no export. The logs are not in it: a request for them goes by email.
+
 Deleting an account (the Account page asks for the password) deletes its `users` row, every feature's rows that reference it, and its sessions in Redis, at once. What the logs hold about it goes as they age out, and so would its copies in backups, by their own retention: state that in the privacy notice.
 
 No analytics, no third-party requests and no email: the template itself sends nothing to a third party, though your host and any managed service you add are processors. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.

@@ -61,10 +61,11 @@ export default function PrivacyPage() {
 
       <h2>Your rights</h2>
       <p>
-        You can delete your account, and everything in it, on your Account
-        page. You can also ask us for a copy of your data, in a
-        machine-readable form you can take elsewhere (portability); to
-        correct it; or to restrict or object to how we use it. Write to us
+        On your Account page you can download a copy of your data, in a
+        machine-readable form you can take elsewhere (portability), and
+        delete your account and everything in it. You can also ask us for
+        what our logs hold about you; to correct your data; or to restrict
+        or object to how we use it. Write to us
         at <a href={`mailto:${OPERATOR.email}`} className="text-link">{OPERATOR.email}</a> from the
         email address of your account. We answer within one month. [If the
         CCPA applies: we will not discriminate against you for using your

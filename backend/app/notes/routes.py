@@ -9,10 +9,13 @@ from app.notes.schemas import (
     NoteCreateRequest, NoteResponse, NotesListQuery, NotesPageResponse, NoteUpdateRequest,
 )
 from app.utils.errors import quota_exceeded
+from app.utils.exports import register_export
 from app.utils.ids import ID_MAX
 
 
 notes_bp = Blueprint('notes', __name__, url_prefix='/api/notes')
+# The user's notes in their data export (GET /api/account/export)
+register_export(notes_bp, 'notes', Note, NoteResponse)
 
 
 def get_own_note_or_404(note_id: int) -> Note:
