@@ -98,3 +98,10 @@ class LoginRequest(BaseModel):
     password: Password
 
     model_config = ConfigDict(extra='forbid')
+
+
+class TokensResponse(BaseModel):
+    """A login's or refresh's new access token, and the CSRF value of the
+    refresh token set in the cookie (none when CSRF protection is off)"""
+    access_token: str
+    refresh_csrf: str | None = None
