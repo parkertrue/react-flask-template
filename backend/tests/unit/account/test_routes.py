@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.auth.models import User
+from app.utils.exports import registered_exports
 
 
 def test_returns_the_signed_in_users_account(client, sample_user, auth_headers):
@@ -62,7 +63,8 @@ class TestExportAccount:
 
         body = response.get_json()
         assert set(body) == {'exported_at', 'account', 'data'}
-        assert body['data'] == {name: [] for name in app.extensions['data_exports']}
+        with app.app_context():
+            assert body['data'] == {name: [] for name in registered_exports()}
 
     def test_states_when_it_was_made_in_utc(self, client, sample_user, auth_headers):
         before = datetime.now(timezone.utc)

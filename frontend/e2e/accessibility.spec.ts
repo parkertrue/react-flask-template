@@ -277,6 +277,8 @@ test.describe('Accessibility', () => {
 
       await dialog.getByRole('button', { name: 'Delete account' }).click()
 
+      // The account page has a status line of its own; wait until it is gone
+      await expect(page).toHaveURL(/\/login$/)
       await expect(page.getByRole('status')).toHaveText('Your account has been deleted.')
       await expectNoViolations(page)
     })

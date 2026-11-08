@@ -61,5 +61,7 @@ def export_user_data(user_id: int) -> dict[str, list[dict[str, JsonValue]]]:
         rows = db.session.execute(
             select(export.model).where(export.owner == user_id)
             .order_by(*export.model.__table__.primary_key)).scalars()
-        data[name] = [export.schema.model_validate(row).model_dump(mode='json') for row in rows]
+        data[name] = [
+            export.schema.model_validate(row, from_attributes=True).model_dump(mode='json')
+            for row in rows]
     return data
