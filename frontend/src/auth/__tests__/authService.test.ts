@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   registerUser, loginUser, logoutUser, logoutAllDevices, clearAuthCookies, deleteAccount,
+  getAccount, exportAccountData,
 } from '../authService'
 import { api } from '@/api/api'
-import { tokens } from '@/test/fixtures'
+import { account, dataExport, tokens } from '@/test/fixtures'
 
 vi.mock('@/api/api')
 
@@ -28,6 +29,16 @@ describe('authService', () => {
 
     expect(api.post).toHaveBeenCalledTimes(1)
     expect(api.post).toHaveBeenCalledWith(path, ...(body === undefined ? [] : [body]))
+  })
+
+  it.each([
+    ['getAccount', getAccount, '/account', account()],
+    ['exportAccountData', exportAccountData, '/account/export', dataExport()],
+  ])('%s gets the right endpoint and returns its body', async (_, call, path, body) => {
+    vi.mocked(api.get).mockResolvedValue({ data: body })
+
+    expect(await call()).toEqual(body)
+    expect(api.get).toHaveBeenCalledExactlyOnceWith(path)
   })
 
   it('loginUser returns the tokens the backend issued', async () => {

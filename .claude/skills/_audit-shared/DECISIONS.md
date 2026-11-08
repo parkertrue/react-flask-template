@@ -384,6 +384,51 @@ user is reading or editing. A page refetches when it mounts, showing the
 cached data meanwhile. *Revisit when:* a page needs fresher data than a
 visit gives.
 
+**The data export is one synchronous JSON response, with no password asked
+for** (user, 2026-11-08). `GET /api/account/export` reads every registered
+feature's rows in one request. Large services build an export in the
+background and email a link; that needs a job queue and email, and every
+feature here caps a user's rows (the notes example: 1000 of 256 characters,
+about 300 KB), which bounds the response. Account deletion asks for the
+password because it cannot be undone; the export does not, since a stolen
+session can already read every row through the other routes. The logs are
+not in it: the privacy notice takes requests for them by email.
+*Revisit when:* a feature's per-user data can outgrow one response (file
+uploads, a long history), or the export holds anything the other routes
+never show, which should then ask for the password.
+
+**Caching: nothing beyond the defaults until a feature needs it** (user,
+2026-11-08). Weighed for a standard app, not just the example feature:
+- *Frontend.* Every query keeps TanStack Query's `staleTime` of 0, so a
+  page shows its cached data and refetches on mount. A longer `staleTime`
+  hides changes made on another device or in another tab; `Infinity` on the
+  account query was weighed and dropped, since email and password changes
+  are coming and an email change usually completes in the tab its
+  verification link opens. That feature should instead refetch the account
+  query on window focus (overriding the default per query; infinite lists
+  keep it off, entry above) or invalidate it when the change completes.
+  Prefetching (the next notes page, a page's data on hover) spends a
+  request whether or not it is used.
+- *HTTP.* Every API response is `no-store` (`app/__init__.py`): it carries
+  tokens and private data, which an ETag or `private, no-cache` would let
+  the browser keep on disk after logout. A public, non-user route (a
+  catalog, public posts) is where `Cache-Control: public` or an ETag pays
+  off: the route sets its own header, which `no_store`'s `setdefault`
+  leaves alone. nginx already caches `/assets/` for a year and revalidates
+  HTML.
+- *Backend.* Every read is a lookup by primary key or a page of an index,
+  which MySQL's buffer pool already serves from memory. A Redis cache is for
+  a costly read (an aggregate, a slow external API): its keys need their own
+  prefix added to the `app` ACL user's key patterns (`~refresh_tokens:*`,
+  `~LIMITS:*`) in every compose file (`check_compose.py`) and
+  `test_redis_acl.py`, and each entry must be dropped when its data changes.
+- Every cache holding a user's data is emptied when the session ends or
+  changes account, as `AuthProvider` does for the query cache.
+
+*Revisit when:* a feature lets data change outside the tab that shows it
+(email change: the account query), adds a public route, or adds a read
+costly enough to show in `upstream_response_time`.
+
 **pytest-cov stays.** `coverage run -m pytest` plus `coverage report` could
 replace it, but that saves one small dev package in exchange for rewriting
 `run_tests.sh`'s `--cov`/`--cov-append`/`--cov-fail-under` flags. *Revisit
@@ -611,8 +656,8 @@ A check mentions these only when its findings bear on one (for example, a
 docs check that finds the certificate steps wrong). They are not new
 findings.
 
-- **Email verification**; **data export** (GDPR Art. 15, 20) and **email
-  change** (Art. 16), which the privacy notice handles by email meanwhile.
+- **Email verification** and **email change** (GDPR Art. 16), which the
+  privacy notice handles by email meanwhile.
 - **Account security beyond the basics:** no password change, password
   reset, multi-factor login, or common/breached-password check (ASVS 5.0
   chapter 6, Authentication). Reset and change wait on email verification.

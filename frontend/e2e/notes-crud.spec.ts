@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import {
   expectNoCspViolations, expectNoViolations, expectReflow, expectTargetSize,
-  expectVisibleFocus, holdRequests, login, logout, registerAndLogin, registration,
-  serviceUnavailable, uniqueEmail,
+  expectVisibleFocus, downloadData, holdRequests, login, logout, openAccount, registerAndLogin,
+  registration, serviceUnavailable, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -126,6 +126,16 @@ test.describe('Notes CRUD Operations', () => {
     await expect(noNotesYet(page)).toBeVisible()
     await expect(page.getByText(firstUserNote)).toBeHidden()
     expect(await page.evaluate(() => window.samePageLoad)).toBe(true)
+  })
+
+  test('the notes are in the data download, oldest first', async ({ page }) => {
+    await addNote(page, 'First note')
+    await addNote(page, 'Second note')
+    await openAccount(page)
+
+    const { data } = await downloadData(page)
+
+    expect(data.data.notes?.map(note => note.content)).toEqual(['First note', 'Second note'])
   })
 
   test('older notes load a page at a time', async ({ page }) => {

@@ -3,15 +3,22 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/useAuth'
 import { useLogout } from '@/auth/useLogout'
-import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
+import {
+  getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData,
+} from '@/auth/authService'
 import { errorCode, errorResponse, getErrorMessage } from '@/api/errors'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import FormDialog from '@/components/dialogs/FormDialog'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
+import { saveJsonFile, slugify } from '@/utils/download'
 import { validatePassword, PASSWORD_MAX_LENGTH } from '@/utils/validation'
+import { APP_NAME } from '@/appName'
 import type { LoginState } from './LoginPage'
+
+// The export's file name starts with the app's name
+const EXPORT_FILE_PREFIX = slugify(APP_NAME)
 
 export default function AccountPage() {
   const { email } = useAuth()
@@ -26,6 +33,10 @@ export default function AccountPage() {
   const [askingDelete, setAskingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  // Cleared when the next export starts, so the same words are read again
+  const [exportStatus, setExportStatus] = useState('')
 
   // Not while a request is in flight: its button is busy
   const askToLogoutAll = () => {
@@ -50,6 +61,26 @@ export default function AccountPage() {
       await clearAuthCookies()
     }
     await logOut()
+  }
+
+  // Fetched, then saved from memory: the request needs the access token, so
+  // the browser cannot download it from a plain link
+  const handleExport = async () => {
+    if (exporting) return
+    setExportError(null)
+    setExportStatus('')
+    setExporting(true)
+    try {
+      const data = await exportAccountData()
+      // Dated by the server's clock, in UTC, like the export's own timestamp
+      const filename = `${EXPORT_FILE_PREFIX}-data-${data.exported_at.slice(0, 10)}.json`
+      saveJsonFile(filename, data)
+      setExportStatus(`Download started: ${filename}`)
+    } catch (err) {
+      setExportError(getErrorMessage(err))
+    } finally {
+      setExporting(false)
+    }
   }
 
   // Each time afresh: no password or message from an earlier try
@@ -134,6 +165,21 @@ export default function AccountPage() {
             </p>
           </ConfirmDialog>
         )}
+      </section>
+
+      <section aria-labelledby="data-heading">
+        <h2 id="data-heading">Your data</h2>
+        <p>Download a copy of everything this account holds, as a JSON file.</p>
+        {exportError && <div className="error-message" role="alert">{exportError}</div>}
+        <button
+          type="button"
+          onClick={() => void handleExport()}
+          aria-disabled={exporting}
+          className="btn btn-secondary"
+        >
+          {exporting ? 'Preparing download...' : 'Download your data'}
+        </button>
+        <p className="visually-hidden" role="status">{exportStatus}</p>
       </section>
 
       <section aria-labelledby="delete-heading">

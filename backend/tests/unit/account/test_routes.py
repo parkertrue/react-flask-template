@@ -1,10 +1,11 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
 
 from app.auth.models import User
+from app.utils.exports import registered_exports
 
 
 def test_returns_the_signed_in_users_account(client, sample_user, auth_headers):
@@ -37,6 +38,63 @@ def test_requires_a_token(client):
 
     assert response.status_code == 401
     assert response.get_json()['error']['code'] == 'AUTH_MISSING_TOKEN'
+
+
+class TestExportAccount:
+    """GET /api/account/export: the account, plus each feature's rows (tests
+    of a feature's own rows live in its folder)"""
+
+    def test_returns_the_account_without_its_password_hash(
+            self, client, sample_user, auth_headers):
+        response = client.get('/api/account/export', headers=auth_headers)
+
+        assert response.status_code == 200
+        assert response.get_json()['account'] == {
+            'email': sample_user.email,
+            'created_at': sample_user.created_at.isoformat() + '+00:00',
+            'terms_version': sample_user.terms_version,
+            'terms_accepted_at': sample_user.terms_accepted_at.isoformat() + '+00:00',
+        }
+        assert sample_user.password_hash not in response.get_data(as_text=True)
+
+    def test_holds_every_registered_feature_empty_for_a_new_user(
+            self, app, client, sample_user, auth_headers):
+        response = client.get('/api/account/export', headers=auth_headers)
+
+        body = response.get_json()
+        assert set(body) == {'exported_at', 'account', 'data'}
+        with app.app_context():
+            assert body['data'] == {name: [] for name in registered_exports()}
+
+    def test_states_when_it_was_made_in_utc(self, client, sample_user, auth_headers):
+        before = datetime.now(timezone.utc)
+
+        response = client.get('/api/account/export', headers=auth_headers)
+
+        exported_at = datetime.fromisoformat(response.get_json()['exported_at'])
+        assert exported_at.utcoffset() == timedelta(0)
+        assert before <= exported_at <= datetime.now(timezone.utc)
+
+    def test_another_users_token_gets_their_own_account(
+            self, client, sample_user, second_user, second_auth_headers):
+        response = client.get('/api/account/export', headers=second_auth_headers)
+
+        assert response.get_json()['account']['email'] == second_user.email
+
+    def test_requires_a_token(self, client):
+        response = client.get('/api/account/export')
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_MISSING_TOKEN'
+
+    def test_is_a_security_event(self, client, sample_user, auth_headers, security_events, logged):
+        user_id, email = sample_user.id, sample_user.email
+
+        client.get('/api/account/export', headers=auth_headers)
+
+        assert security_events() == [
+            {'message': 'data_exported', 'ip': '127.0.0.1', 'user_id': user_id}]
+        assert email not in json.dumps(logged())
 
 
 PASSWORD = 'TestPassword123'  # sample_user's

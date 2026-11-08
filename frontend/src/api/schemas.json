@@ -16,6 +16,31 @@
       "title": "AccountDeleteRequest",
       "type": "object"
     },
+    "AccountExport": {
+      "description": "The account's own row in an export, without its password hash",
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "terms_accepted_at": {
+          "type": "string"
+        },
+        "terms_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "email",
+        "created_at",
+        "terms_version",
+        "terms_accepted_at"
+      ],
+      "title": "AccountExport",
+      "type": "object"
+    },
     "AccountResponse": {
       "description": "GET /api/account: the signed-in user's own account",
       "properties": {
@@ -33,6 +58,36 @@
       "title": "AccountResponse",
       "type": "object"
     },
+    "DataExportResponse": {
+      "description": "GET /api/account/export: everything the app keeps on the signed-in\nuser. data holds each feature's rows under its name (utils/exports.py).",
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/AccountExport"
+        },
+        "data": {
+          "additionalProperties": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "exported_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "exported_at",
+        "account",
+        "data"
+      ],
+      "title": "DataExportResponse",
+      "type": "object"
+    },
     "HealthResponse": {
       "description": "GET /api/health: \"ok\" whenever the backend answers",
       "properties": {
@@ -46,6 +101,7 @@
       "title": "HealthResponse",
       "type": "object"
     },
+    "JsonValue": {},
     "LoginRequest": {
       "additionalProperties": false,
       "properties": {

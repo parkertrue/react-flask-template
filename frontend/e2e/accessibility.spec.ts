@@ -147,7 +147,7 @@ test.describe('Accessibility', () => {
       await expect(memberSince(page)).toBeVisible()
 
       await expectReflow(page)
-      await expectVisibleFocus(page, 9)
+      await expectVisibleFocus(page, 10)
       await expectTargetSize(page)
     })
 
@@ -160,6 +160,22 @@ test.describe('Accessibility', () => {
 
       release()
       await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
+    })
+
+    test('downloading the data, busy and then failed, has no violations', async ({ page }) => {
+      await page.goto('/account')
+      await expect(memberSince(page)).toBeVisible()
+      const release = await holdRequests(page, 'GET', '**/api/account/export', serviceUnavailable)
+
+      await page.getByRole('button', { name: 'Download your data' }).click()
+
+      await expect(page.getByRole('button', { name: 'Preparing download...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expect(page.getByRole('button', { name: 'Download your data' })).toBeFocused()
       await expectNoViolations(page)
     })
 
@@ -261,6 +277,8 @@ test.describe('Accessibility', () => {
 
       await dialog.getByRole('button', { name: 'Delete account' }).click()
 
+      // The account page has a status line of its own; wait until it is gone
+      await expect(page).toHaveURL(/\/login$/)
       await expect(page.getByRole('status')).toHaveText('Your account has been deleted.')
       await expectNoViolations(page)
     })

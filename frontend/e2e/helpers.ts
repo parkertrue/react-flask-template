@@ -4,6 +4,7 @@ import { createHmac, randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { APP_NAME } from '../src/appName'
+import type { DataExportResponse } from '../src/api/schemas'
 import { TERMS_VERSION } from '../src/legal'
 
 // What the helpers below leave on the page's window
@@ -93,6 +94,18 @@ export async function openAccount(page: Page) {
 
 /** The account page's line once GET /api/account has answered */
 export const memberSince = (page: Page) => page.getByText(/^Member since /)
+
+/**
+ * On the account page, download the account's data; returns the saved
+ * file's name and what it holds
+ */
+export async function downloadData(page: Page) {
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download your data' }).click()
+  const download = await downloading
+  const data = JSON.parse(readFileSync(await download.path(), 'utf-8')) as DataExportResponse
+  return { filename: download.suggestedFilename(), data }
+}
 
 /**
  * On the account page, ask to log out all devices; returns the dialog that

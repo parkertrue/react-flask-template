@@ -6,13 +6,21 @@ import AccountPage from '../AccountPage'
 import type { LoginState } from '../LoginPage'
 import ProtectedRoute from '@/auth/ProtectedRoute'
 import { storage } from '@/auth/storage'
-import { getAccount, logoutAllDevices, clearAuthCookies, deleteAccount } from '@/auth/authService'
+import {
+  getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData,
+} from '@/auth/authService'
+import { saveJsonFile } from '@/utils/download'
 import type { ErrorCode } from '@/api/errors'
-import { account, errorBody, httpError } from '@/test/fixtures'
+import { account, dataExport, errorBody, httpError } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
 import { APP_NAME } from '@/appName'
 
 vi.mock('@/auth/authService')
+// Only the browser's download is stood in for; the file's name is the page's
+vi.mock('@/utils/download', async importOriginal => ({
+  ...await importOriginal<typeof import('@/utils/download')>(),
+  saveJsonFile: vi.fn(),
+}))
 
 // Says whether it was reached from a deleted account, as LoginPage does
 function LoginStand() {
@@ -41,6 +49,9 @@ async function confirmLogoutAll(user: UserEvent) {
   await user.click(within(logoutAllDialog()).getByRole('button', { name: 'Log out all devices' }))
 }
 
+// The account details' live region, the first in the document
+const details = () => screen.getAllByRole('status')[0] as HTMLElement
+
 // A failed request, with the backend's error body when there is a code
 const failure = (status: number, code?: ErrorCode, message?: string) =>
   httpError(status, code ? errorBody(code, message) : {})
@@ -51,6 +62,7 @@ describe('AccountPage', () => {
     vi.mocked(logoutAllDevices).mockResolvedValue()
     vi.mocked(clearAuthCookies).mockResolvedValue()
     vi.mocked(deleteAccount).mockResolvedValue()
+    vi.mocked(exportAccountData).mockResolvedValue(dataExport())
   })
 
   it('shows who is signed in, then loads when they joined', async () => {
@@ -59,10 +71,10 @@ describe('AccountPage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Account' })).toBeInTheDocument()
     expect(screen.getByText('user@example.com')).toBeInTheDocument()
     expect(document.title).toBe(`Account | ${APP_NAME}`)
-    expect(screen.getByRole('status')).toHaveTextContent('Loading account details...')
+    expect(details()).toHaveTextContent('Loading account details...')
 
     // Announced on the same live region that said it was loading
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/^Member since /))
+    await waitFor(() => expect(details()).toHaveTextContent(/^Member since /))
     expect(screen.getByText(/2026/, { selector: 'time' }))
       .toHaveAttribute('dateTime', '2026-01-15T10:30:00+00:00')
     expect(getAccount).toHaveBeenCalledTimes(1)
@@ -73,7 +85,7 @@ describe('AccountPage', () => {
     renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Service temporarily unavailable')
-    expect(screen.getByRole('status')).toHaveTextContent('')
+    expect(details()).toHaveTextContent('')
     expect(logoutAll()).toBeInTheDocument()
   })
 
@@ -168,6 +180,62 @@ describe('AccountPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(logoutAllDevices).toHaveBeenCalledTimes(1)
     await act(async () => finish(undefined))
+  })
+
+  describe('downloading the data', () => {
+    const section = () => within(screen.getByRole('region', { name: 'Your data' }))
+    const downloadButton = () => section().getByRole('button', { name: /download your data|preparing download/i })
+
+    it('saves the export as a file named after the app and the day, and says so', async () => {
+      const { user } = renderPage()
+
+      await user.click(downloadButton())
+
+      // The server's UTC date, whatever the local clock says
+      const filename = 'react-flask-template-data-2026-03-14.json'
+      expect(await section().findByRole('status')).toHaveTextContent(`Download started: ${filename}`)
+      expect(saveJsonFile).toHaveBeenCalledExactlyOnceWith(filename, dataExport())
+    })
+
+    it('says why when the export fails, saving nothing', async () => {
+      vi.mocked(exportAccountData).mockRejectedValue(failure(429, 'RATE_LIMITED', 'Too many requests'))
+      const { user } = renderPage()
+
+      await user.click(downloadButton())
+
+      expect(await section().findByRole('alert')).toHaveTextContent('Too many requests')
+      expect(section().getByRole('status')).toHaveTextContent('')
+      expect(saveJsonFile).not.toHaveBeenCalled()
+      expect(downloadButton()).toHaveTextContent('Download your data')
+    })
+
+    it('clears an earlier error when trying again', async () => {
+      vi.mocked(exportAccountData).mockRejectedValueOnce(failure(503, 'SERVICE_UNAVAILABLE'))
+      const { user } = renderPage()
+      await user.click(downloadButton())
+      await section().findByRole('alert')
+
+      await user.click(downloadButton())
+
+      await waitFor(() => expect(section().getByRole('status')).toHaveTextContent(/^Download started/))
+      expect(section().queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('keeps focus and ignores repeat clicks while preparing', async () => {
+      const { promise, resolve: finish } = Promise.withResolvers<ReturnType<typeof dataExport>>()
+      vi.mocked(exportAccountData).mockReturnValue(promise)
+      const { user } = renderPage()
+
+      await user.click(downloadButton())
+      await user.click(downloadButton())
+
+      expect(downloadButton()).toHaveTextContent('Preparing download...')
+      expect(downloadButton()).toHaveAttribute('aria-disabled', 'true')
+      expect(downloadButton()).toHaveFocus()
+      expect(exportAccountData).toHaveBeenCalledTimes(1)
+      await act(async () => finish(dataExport()))
+      expect(downloadButton()).toHaveAttribute('aria-disabled', 'false')
+    })
   })
 
   describe('deleting the account', () => {

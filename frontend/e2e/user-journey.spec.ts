@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import {
-  askToDeleteAccount, fillRegistration, login, logout, memberSince, openAccount, register,
+  askToDeleteAccount, downloadData, fillRegistration, login, logout, memberSince, openAccount, register,
   registerAndLogin, submitRegistration, TEST_PASSWORD, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
@@ -76,6 +76,18 @@ test.describe('Critical User Journey', () => {
     await page.getByLabel(/password/i).fill(TEST_PASSWORD)
     await page.getByRole('button', { name: /^log in$/i }).click()
     await expect(page.getByRole('alert')).toHaveText(/invalid email or password/i)
+  })
+
+  test('downloading the data saves the account in a file, and says so', async ({ page }) => {
+    const email = await registerAndLogin(page, 'e2e-export')
+    await openAccount(page)
+
+    const { filename, data } = await downloadData(page)
+
+    expect(filename).toMatch(/-data-\d{4}-\d{2}-\d{2}\.json$/)
+    expect(data.account.email).toBe(email)
+    await expect(page.getByRole('status').filter({ hasText: 'Download started' }))
+      .toHaveText(`Download started: ${filename}`)
   })
 
   test('deleting the account with a wrong password keeps it', async ({ page }) => {

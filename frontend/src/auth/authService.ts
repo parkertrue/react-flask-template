@@ -1,6 +1,7 @@
 import { api } from '@/api/api'
 import type {
-  AccountDeleteRequest, AccountResponse, LoginRequest, RegisterRequest, TokensResponse,
+  AccountDeleteRequest, AccountResponse, DataExportResponse, LoginRequest, RegisterRequest,
+  TokensResponse,
 } from '@/api/schemas'
 
 // The body of a successful login or refresh. No refresh_csrf when the
@@ -9,6 +10,10 @@ export type Tokens = TokensResponse
 
 // The body of GET /api/account; created_at is an ISO 8601 time in UTC
 export type Account = AccountResponse
+
+// The body of GET /api/account/export: the account, and each feature's rows
+// under its name
+export type DataExport = DataExportResponse
 
 // termsVersion: the version of the terms the user was shown and accepted
 export async function registerUser(email: string, password: string, termsVersion: number) {
@@ -22,6 +27,11 @@ export async function loginUser(email: string, password: string) {
 
 export async function getAccount() {
   const response = await api.get<Account>('/account')
+  return response.data
+}
+
+export async function exportAccountData() {
+  const response = await api.get<DataExport>('/account/export')
   return response.data
 }
 
