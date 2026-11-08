@@ -28,11 +28,12 @@ from flask_limiter.util import get_remote_address
 from app import db, limiter
 from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
-from app.auth.schemas import LoginRequest, RegisterRequest, normalize_email
+from app.auth.schemas import LoginRequest, RegisterRequest, TokensResponse, normalize_email
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.log import security_event
 from app.utils.passwords import DUMMY_PASSWORD_HASH, verify_password
 from app.utils.redis_service import get_redis_service
+from app.utils.schemas import MessageResponse
 
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
@@ -171,11 +172,11 @@ def _issue_tokens(
 
     # Only advertise a CSRF token when cookie CSRF protection is actually on;
     # IntegrationConfig turns it off for headless API tests.
-    response_data = {'access_token': access_token}
+    tokens = TokensResponse(access_token=access_token)
     if current_app.config['JWT_COOKIE_CSRF_PROTECT']:
-        response_data['refresh_csrf'] = get_csrf_token(refresh_token)
+        tokens.refresh_csrf = get_csrf_token(refresh_token)
 
-    response = make_response(jsonify(response_data), 200)
+    response = make_response(jsonify(tokens.model_dump(exclude_none=True)), 200)
     set_refresh_cookies(response, refresh_token)
     return response
 
@@ -225,7 +226,7 @@ def register() -> ResponseReturnValue:
         return _already_registered()
 
     security_event('registered', user_id=user.id)
-    return jsonify({'message': 'User created'}), 201
+    return jsonify(MessageResponse(message='User created').model_dump()), 201
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -290,7 +291,7 @@ def logout() -> ResponseReturnValue:
         redis_service.revoke_token(user_id, jti)
     security_event('logout', user_id=user_id)
 
-    response = make_response(jsonify({'message': 'Logged out'}), 200)
+    response = make_response(jsonify(MessageResponse(message='Logged out').model_dump()), 200)
     unset_refresh_cookies(response)
     return response
 
@@ -306,7 +307,7 @@ def clear_cookies() -> ResponseReturnValue:
     if not request.is_json:
         abort(415)
 
-    response = make_response(jsonify({'message': 'Cookies cleared'}), 200)
+    response = make_response(jsonify(MessageResponse(message='Cookies cleared').model_dump()), 200)
     unset_refresh_cookies(response)
     return response
 
@@ -325,6 +326,6 @@ def logout_all() -> ResponseReturnValue:
 
     security_event('logout_all', user_id=current_user.id, sessions=count)
     message = f'Logged out from {count} device(s)' if count > 0 else 'No active sessions found'
-    response = make_response(jsonify({'message': message}), 200)
+    response = make_response(jsonify(MessageResponse(message=message).model_dump()), 200)
     unset_refresh_cookies(response)
     return response

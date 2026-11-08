@@ -43,3 +43,10 @@ class NoteResponse(BaseModel):
     created_at: UtcDatetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NotesPageResponse(BaseModel):
+    """GET /api/notes: one page, newest first. next_cursor fetches the page
+    after it (?before=), and is null on the last page."""
+    notes: list[NoteResponse]
+    next_cursor: int | None

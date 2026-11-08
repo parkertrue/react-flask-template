@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from pydantic import PlainSerializer
+from pydantic import BaseModel, PlainSerializer
 
 # A timestamp in a response schema. MySQL's DATETIME holds no zone, so the
 # database hands back naive values; every timestamp is UTC (config pins the
@@ -9,5 +9,10 @@ from pydantic import PlainSerializer
 # local time.
 UtcDatetime = Annotated[
     datetime,
-    PlainSerializer(lambda dt: dt.replace(tzinfo=timezone.utc).isoformat()),
+    PlainSerializer(lambda dt: dt.replace(tzinfo=timezone.utc).isoformat(), return_type=str),
 ]
+
+
+class MessageResponse(BaseModel):
+    """A reply that only says what happened: registered, logged out, ..."""
+    message: str

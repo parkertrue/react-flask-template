@@ -595,6 +595,16 @@ One user's bug is reproduced on the server, with their consent, as a
 support case. *Revisit when:* dev needs something only real data shows,
 which generated data cannot.
 
+**The API's types come from JSON Schema, not an OpenAPI document**
+(`backend/export_schemas.py`, `npm run api-types`). Pydantic writes JSON
+Schema itself, and json-schema-to-typescript turns it into the frontend's
+types; nothing in the stack would read an OpenAPI document, and
+openapi-typescript, the usual generator from one, requires TypeScript 5
+while the frontend is on 6. The types cover bodies, not routes: which URL
+takes and returns which model is still written in each service module.
+*Revisit when:* the API needs published docs or a typed client per route,
+which the same models can feed as an OpenAPI document.
+
 ## Known gaps (open work, not new findings)
 
 A check mentions these only when its findings bear on one (for example, a

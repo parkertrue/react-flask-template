@@ -124,6 +124,13 @@ jobs:
       - name: Remove the examples
         run: python .github/scripts/remove_examples.py
 
+      # As a new app does once its models change: the drift tests below
+      # then hold the regenerated files to the models left
+      - name: Regenerate the API types
+        run: |
+          python backend/export_schemas.py
+          npm run api-types --prefix frontend
+
       - name: Backend lint, type check and unit tests
         working-directory: backend
         run: |

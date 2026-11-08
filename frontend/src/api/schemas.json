@@ -1,0 +1,234 @@
+{
+  "$defs": {
+    "AccountDeleteRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/account/delete: the account's password, typed again",
+      "properties": {
+        "password": {
+          "maxLength": 128,
+          "minLength": 8,
+          "type": "string"
+        }
+      },
+      "required": [
+        "password"
+      ],
+      "title": "AccountDeleteRequest",
+      "type": "object"
+    },
+    "AccountResponse": {
+      "description": "GET /api/account: the signed-in user's own account",
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "created_at"
+      ],
+      "title": "AccountResponse",
+      "type": "object"
+    },
+    "HealthResponse": {
+      "description": "GET /api/health: \"ok\" whenever the backend answers",
+      "properties": {
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "HealthResponse",
+      "type": "object"
+    },
+    "LoginRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "maxLength": 128,
+          "minLength": 8,
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "password"
+      ],
+      "title": "LoginRequest",
+      "type": "object"
+    },
+    "MessageResponse": {
+      "description": "A reply that only says what happened: registered, logged out, ...",
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "MessageResponse",
+      "type": "object"
+    },
+    "NoteCreateRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "NoteCreateRequest",
+      "type": "object"
+    },
+    "NoteResponse": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "content",
+        "created_at"
+      ],
+      "title": "NoteResponse",
+      "type": "object"
+    },
+    "NoteUpdateRequest": {
+      "additionalProperties": false,
+      "description": "PUT /api/notes/<id>: the note's new content, under the same rules",
+      "properties": {
+        "content": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "NoteUpdateRequest",
+      "type": "object"
+    },
+    "NotesListQuery": {
+      "additionalProperties": false,
+      "description": "GET /api/notes query string: ?before=<next_cursor>&limit=<n>",
+      "properties": {
+        "before": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "title": "NotesListQuery",
+      "type": "object"
+    },
+    "NotesPageResponse": {
+      "description": "GET /api/notes: one page, newest first. next_cursor fetches the page\nafter it (?before=), and is null on the last page.",
+      "properties": {
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/NoteResponse"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes",
+        "next_cursor"
+      ],
+      "title": "NotesPageResponse",
+      "type": "object"
+    },
+    "RegisterRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "maxLength": 128,
+          "minLength": 8,
+          "type": "string"
+        },
+        "terms_version": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "email",
+        "password",
+        "terms_version"
+      ],
+      "title": "RegisterRequest",
+      "type": "object"
+    },
+    "TokensResponse": {
+      "description": "A login's or refresh's new access token, and the CSRF value of the\nrefresh token set in the cookie (none when CSRF protection is off)",
+      "properties": {
+        "access_token": {
+          "type": "string"
+        },
+        "refresh_csrf": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "access_token"
+      ],
+      "title": "TokensResponse",
+      "type": "object"
+    }
+  }
+}
