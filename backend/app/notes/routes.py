@@ -5,7 +5,9 @@ from sqlalchemy import func, select
 
 from app import db
 from app.notes.models import NOTES_MAX_PER_USER, Note
-from app.notes.schemas import NoteCreateRequest, NoteResponse, NotesListQuery, NoteUpdateRequest
+from app.notes.schemas import (
+    NoteCreateRequest, NoteResponse, NotesListQuery, NotesPageResponse, NoteUpdateRequest,
+)
 from app.utils.errors import quota_exceeded
 from app.utils.ids import ID_MAX
 
@@ -46,10 +48,9 @@ def get_notes() -> ResponseReturnValue:
 
     page = notes[:query.limit]
     next_cursor = page[-1].id if len(notes) > query.limit else None
-    return jsonify({
-        'notes': [NoteResponse.model_validate(note).model_dump() for note in page],
-        'next_cursor': next_cursor,
-    }), 200
+    body = NotesPageResponse(
+        notes=[NoteResponse.model_validate(note) for note in page], next_cursor=next_cursor)
+    return jsonify(body.model_dump()), 200
 
 
 @notes_bp.route('', methods=['POST'])

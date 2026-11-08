@@ -102,12 +102,14 @@ pip install -r requirements-dev.txt
 ./run_tests.sh unit          # Fast: in-memory SQLite, no Docker
 ./run_tests.sh integration   # Real MySQL + Redis in Docker
 ./run_tests.sh combined      # Both, with one coverage report
+python export_schemas.py     # After changing a schema (then npm run api-types)
 ruff check .                 # Lint
 mypy                         # Type check (strict)
 
 # From frontend/
 npm run lint
 npm run typecheck            # Type check (strict)
+npm run api-types            # The API's types, from the backend's schemas
 npm run test:run             # Unit tests once (npm run test for watch mode)
 npm run test:coverage        # What CI runs
 npx playwright install chromium   # E2E: first time, and after each Playwright update
@@ -183,7 +185,7 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
    - **Rename it** into your feature, the quickest start when that feature is also short text items a user adds, edits and deletes: `backend/app/notes/`, `frontend/src/features/notes/` and their tests (`backend/tests/unit/notes/`, `backend/tests/integration/notes/`, `frontend/e2e/notes-crud.spec.ts`).
    - **Delete it**, and build your feature in the same shape: delete those folders and files.
 
-   Either way, delete `backend/migrations/versions/0002_notes.py` (step 4 generates yours) and update the wiring points above. Then delete `.github/scripts/remove_examples.py` and the Scaffold job in `.github/workflows/ci.yml`, and remove `Scaffold` from the list of required status checks under [CI](#continuous-integration) (the Workflows job fails while that list names a job that doesn't exist) and from Settings > Branches: they only prove that the template's examples can be removed, and the import rules keep shared code off your features.
+   Either way, delete `backend/migrations/versions/0002_notes.py` (step 4 generates yours) and update the wiring points above, and regenerate the API's types: `python export_schemas.py` from `backend/`, then `npm run api-types` from `frontend/` (again whenever a schema changes). Then delete `.github/scripts/remove_examples.py` and the Scaffold job in `.github/workflows/ci.yml`, and remove `Scaffold` from the list of required status checks under [CI](#continuous-integration) (the Workflows job fails while that list names a job that doesn't exist) and from Settings > Branches: they only prove that the template's examples can be removed, and the import rules keep shared code off your features.
 3. Remove the API-status demo, unless you want it: delete `frontend/src/features/health/` and `frontend/e2e/api-status.spec.ts`, the `ApiStatus` import and element in `frontend/src/pages/HomePage.tsx`, and the `vi.mock` of `ApiStatus` in `frontend/src/pages/__tests__/HomePage.test.tsx`, with `vi` in its import.
 4. Generate a migration for your tables. From `backend/`, with `.env.dev` loaded as in [Database Schema Changes](#database-schema-changes). If the dev backend ran after step 1 while `0002_notes.py` still existed, the database refers to a migration that is gone: reset it first (`docker compose --env-file .env.dev -f docker-compose.dev.yml down -v`, then start it again).
 

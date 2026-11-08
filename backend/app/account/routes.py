@@ -10,6 +10,7 @@ from app.auth.routes import account_key, account_password_limit
 from app.utils.errors import error_response, service_unavailable
 from app.utils.log import security_event
 from app.utils.redis_service import get_redis_service
+from app.utils.schemas import MessageResponse
 
 account_bp = Blueprint('account', __name__, url_prefix='/api/account')
 
@@ -74,6 +75,6 @@ def delete_account() -> ResponseReturnValue:
     db.session.commit()
 
     security_event('account_deleted', user_id=user_id)
-    response = make_response(jsonify({'message': 'Account deleted'}), 200)
+    response = make_response(jsonify(MessageResponse(message='Account deleted').model_dump()), 200)
     unset_refresh_cookies(response)
     return response
