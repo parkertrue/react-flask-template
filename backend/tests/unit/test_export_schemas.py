@@ -1,4 +1,7 @@
 """export_schemas.py, whose output the frontend's API types are generated from."""
+import pytest
+from pydantic import BaseModel
+
 import export_schemas
 
 
@@ -11,9 +14,22 @@ def test_the_frontend_has_the_current_schemas():
         'from backend/, then `npm run api-types` from frontend/')
 
 
-def test_requests_are_what_the_client_sends_and_responses_what_it_gets():
-    models = {model.__name__: export_schemas.mode(model) for model in export_schemas.schema_models()}
+class PingRequest(BaseModel):
+    pass
 
-    assert models['LoginRequest'] == 'validation'
-    assert models['NotesListQuery'] == 'validation'
-    assert models['NoteResponse'] == 'serialization'
+
+class PingQuery(BaseModel):
+    pass
+
+
+class PingResponse(BaseModel):
+    pass
+
+
+@pytest.mark.parametrize(('model', 'expected'), [
+    (PingRequest, 'validation'),
+    (PingQuery, 'validation'),
+    (PingResponse, 'serialization'),
+])
+def test_requests_are_what_the_client_sends_and_responses_what_it_gets(model, expected):
+    assert export_schemas.mode(model) == expected
