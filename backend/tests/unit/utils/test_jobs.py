@@ -4,9 +4,11 @@ import json
 import logging
 import threading
 from datetime import timedelta
+from unittest.mock import MagicMock
 
 import pytest
 from dramatiq import Message, Worker
+from dramatiq.brokers.redis import RedisBroker
 from flask import Blueprint, current_app
 from redis import ConnectionError as RedisConnectionError
 
@@ -154,6 +156,16 @@ class TestRun:
 
         assert len(attempts) == 1
         assert len(app.extensions['jobs_broker'].dead_letters) == 1
+
+
+def test_closing_closes_a_redis_brokers_client(app, monkeypatch):
+    """Dramatiq's RedisBroker.close closes nothing, and the client is ours"""
+    client = MagicMock()
+    monkeypatch.setitem(app.extensions, 'jobs_broker', RedisBroker(client=client))
+
+    jobs.close_jobs(app)
+
+    client.close.assert_called_once_with()
 
 
 def test_logs_name_a_message_by_its_id_alone():

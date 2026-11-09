@@ -10,6 +10,7 @@ from app import create_app, db as _db
 from app.auth.emails import REGISTRATION_LINK
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import normalize_email
+from app.utils.jobs import close_jobs
 from app.utils.links import make_link_token
 
 # Every config requires SECRET_KEY, including the ones tests build directly.
@@ -172,7 +173,7 @@ def close_app(app):
     service = app.extensions['redis_service']
     if service is not None:
         service.get_client().close()
-    app.extensions['jobs_broker'].close()
+    close_jobs(app)
     with app.app_context():
         _db.engine.dispose()
 

@@ -155,6 +155,16 @@ def init_jobs(app: Flask) -> None:
     app.extensions['jobs'] = {}
 
 
+def close_jobs(app: Flask) -> None:
+    """Close the app's broker and its Redis connections. Dramatiq's
+    RedisBroker.close does nothing, and its client is ours, so it is closed
+    here."""
+    broker = app.extensions['jobs_broker']
+    broker.close()
+    if isinstance(broker, RedisBroker):
+        broker.client.close()
+
+
 class _MessageIdOnly(logging.Filter):
     """Dramatiq logs a failed message with its arguments, which may hold an
     email address: log its id instead"""
@@ -198,4 +208,4 @@ def run_worker(app: Flask) -> None:
     app.logger.info('Worker stopping')
     READY_FILE.unlink(missing_ok=True)
     worker.stop(timeout=_millis(SHUTDOWN_TIMEOUT))
-    broker.close()
+    close_jobs(app)
