@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import type { UserEvent } from '@testing-library/user-event'
 import CompleteRegistrationPage from '../CompleteRegistrationPage'
-import GuestRoute from '@/auth/GuestRoute'
+import GuestRoute, { AFTER_LOGIN_PATH } from '@/auth/GuestRoute'
 import { completeRegistration } from '@/auth/authService'
 import { storage } from '@/auth/storage'
 import { errorBody, httpError, tokens } from '@/test/fixtures'
@@ -19,7 +19,8 @@ function renderPage(entry = LINK) {
     element: <GuestRoute />,
     children: [{ path: '/register/complete', element: <CompleteRegistrationPage /> }],
   },
-  { path: '/notes', element: <p>Signed in</p> },
+  // Wherever signing in leads, a feature's page the test need not know
+  { path: AFTER_LOGIN_PATH, element: <p>Signed in</p> },
   ], entry)
 }
 
