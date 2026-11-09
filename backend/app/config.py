@@ -122,6 +122,10 @@ def redis_url() -> str | None:
     return url.render_as_string(hide_password=False)
 
 
+# Have I Been Pwned's Pwned Passwords range API, which production checks a new
+# password against (app/utils/breached.py)
+PWNED_PASSWORDS_API = 'https://api.pwnedpasswords.com/range/'
+
 # EMAIL_URL's schemes: how the connection to the mail server is secured, and
 # the port each uses unless the URL names one. Plain smtp:// is for a local
 # mail catcher (Mailpit); production refuses it.
@@ -286,6 +290,10 @@ class Config:
         self.EMAIL_FROM = read_email_from()
         self.APP_URL = read_app_url()
 
+        # Where a new password is checked against breached ones: off outside
+        # production unless set, so tests and dev never call a third party
+        self.PWNED_PASSWORDS_URL = os.getenv('PWNED_PASSWORDS_URL') or None
+
         # Rate Limiter configuration
         self.RATELIMIT_ENABLED = True
         self.RATELIMIT_STORAGE_URI = self.REDIS_URL
@@ -419,6 +427,11 @@ class ProductionConfig(Config):
             if self.EMAIL_SERVER.security == 'none':
                 raise ValueError(
                     'EMAIL_URL needs TLS in production: start it with smtps:// or smtp+starttls://')
+        # On by default; PWNED_PASSWORDS_URL set but empty turns it off
+        self.PWNED_PASSWORDS_URL = os.getenv('PWNED_PASSWORDS_URL', PWNED_PASSWORDS_API) or None
+        if self.PWNED_PASSWORDS_URL and not self.PWNED_PASSWORDS_URL.startswith('https://'):
+            raise ValueError('PWNED_PASSWORDS_URL must start with https:// in production')
+
         # The worker's links: the first name nginx serves, unless APP_URL
         # says otherwise (a platform's container has no SERVER_NAME)
         server_names = os.getenv('SERVER_NAME', '').split()

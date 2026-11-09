@@ -33,14 +33,16 @@ expiry, the CSP, and React's escaping. Keeps the client simple: no cookie for
 API calls, so no CSRF on them. See the comment in `frontend/src/auth/storage.ts`.
 *Revisit when:* the app renders third-party or user-supplied HTML.
 
-**The sign-up page hides the password rules until a password breaks one.**
-The user chose a shorter first view of the form (2026-10-15). WCAG 3.3.2 is
-still met: the field is labelled, the first failed submit names the broken
-rule, and from then on the full rule list shows beside it as the field's
-hint (`CompleteRegistrationPage.tsx`, the emailed link's page). The cost is one failed submit for a user who
-guesses wrong. Spaces and emoji are left out of the list; their own messages
-explain them when they come up. *Revisit when:* email verification is added,
-which reworks registration anyway.
+**A breached-password check that fails open** (user, 2026-11-09). Sign-up
+checks a new password against Have I Been Pwned's Pwned Passwords
+(`backend/app/utils/breached.py`), as NIST SP 800-63B requires, through its
+range API: 5 characters of the password's SHA-1 leave the server, padded, so
+the service learns nothing it could tie to the user. If the service is down
+or slow (2 s), the password is accepted and `breach_check_failed` logged,
+since a third party's outage must not stop sign-up; a breached password can
+slip through meanwhile. Login and account deletion never check: they only
+compare. *Revisit when:* the service's outages show up often in the log, or
+the app holds data that justifies refusing sign-up while it is down.
 
 **No refresh-token reuse detection.** A replayed, already rotated refresh token
 gets 401 `AUTH_TOKEN_REVOKED`, but does not revoke the rest of that user's
@@ -193,16 +195,15 @@ the only safeguard: a build check would have to tell the production image
 apart from the test stack's, which serves the same placeholders on purpose
 (LEGAL-21). *Revisit when:* the first real deployment is prepared.
 
-**Password composition rules and no spaces.** Every password the app
-accepts (register, login, account deletion) must hold upper and lower case
-and a digit, and no spaces. That gives up ASVS 6.2.5 ("passwords of any
-composition") and NIST's advice to allow spaces, in exchange for the current,
-simpler rule set (the user's choice). Login and account deletion apply the
-same rules as registration, so no password registration refuses is ever
-checked; nothing was deployed, so no account predates them. *Revisit when:* a
-common or breached-password check is added, which makes composition rules
-redundant; loosen a rule everywhere at once, since the schemas share one
-`Password` type.
+**One set of password rules, at login too, raised with no migration**
+(user, 2026-11-09). Every password the app accepts (register, login, account
+deletion) is one `Password` type: 15 to 128 characters, NIST's minimum for a
+password that is the only factor, with no composition rules. Login applies
+the length too, so an account whose password predates the rule (8
+characters were enough before 2026-11-09) cannot log in; no real account
+existed, and the test accounts were deleted. *Revisit when:* the rules
+tighten again on a deployment with real users, which then needs login to
+accept the old ones while a password change replaces them.
 
 **scrypt at Werkzeug's default cost.** Password hashes use `scrypt:32768:8:1`
 (N=2^15), below OWASP's N=2^17. Raising it costs about 4× the CPU and memory
@@ -706,8 +707,7 @@ findings.
 - **Email change** (GDPR Art. 16), which the privacy notice handles by
   email meanwhile.
 - **Account security beyond the basics:** no password change, password
-  reset, multi-factor login, or common/breached-password check (ASVS 5.0
-  chapter 6, Authentication). Reset and change can build on what sign-up
+  reset or multi-factor login (ASVS 5.0 chapter 6, Authentication). Reset and change can build on what sign-up
   uses: the worker, email and signed links (`backend/app/utils/links.py`).
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on

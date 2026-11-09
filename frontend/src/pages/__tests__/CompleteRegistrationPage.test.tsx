@@ -39,7 +39,7 @@ interface Values {
 }
 
 async function fill(user: UserEvent, values: Values = {}) {
-  const { password = 'Password123', acceptTerms = true } = values
+  const { password = 'a valid passphrase', acceptTerms = true } = values
   const { confirmPassword = password } = values
   await user.type(field.password(), password)
   await user.type(field.confirmPassword(), confirmPassword)
@@ -56,7 +56,6 @@ describe('CompleteRegistrationPage', () => {
     expect(emailField()).toHaveAttribute('autocomplete', 'username')
     expect(field.password()).toHaveAttribute('autocomplete', 'new-password')
     expect(field.confirmPassword()).toHaveAttribute('autocomplete', 'new-password')
-    expect(field.password()).toHaveAccessibleDescription('')
     expect(document.title).toBe(`Finish signing up | ${APP_NAME}`)
   })
 
@@ -96,36 +95,35 @@ describe('CompleteRegistrationPage', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  describe('the password rules', () => {
-    const RULES = 'At least 8 characters, with an uppercase letter, a lowercase letter and a number.'
+  describe('the password rule', () => {
+    const RULE = 'At least 15 characters. A few words make a good one.'
 
-    it('show with the first password message, and stay once it is fixed', async () => {
+    it('shows from the start, as the field\'s hint', () => {
+      renderPage()
+
+      expect(field.password()).toHaveAccessibleDescription(RULE)
+    })
+
+    it('stays beside a message about the password', async () => {
       const { user } = renderPage()
-      await fill(user, { password: 'password' })
+      await fill(user, { password: 'too short' })
       await user.click(submitButton())
 
       expect(field.password())
-        .toHaveAccessibleDescription(`Password must contain at least one uppercase letter ${RULES}`)
-
-      await user.type(field.password(), 'A')
-
-      expect(field.password()).toHaveAccessibleDescription(RULES)
+        .toHaveAccessibleDescription(`Password must be at least 15 characters ${RULE}`)
     })
 
-    it('stay hidden when only another field is wrong', async () => {
-      const { user } = renderPage()
-      await fill(user, { confirmPassword: 'Different123' })
-      await user.click(submitButton())
+    it('lets a password of emoji reach the limit in characters, not UTF-16 units', () => {
+      renderPage()
 
-      expect(field.confirmPassword()).toHaveAttribute('aria-invalid', 'true')
-      expect(field.password()).toHaveAccessibleDescription('')
+      expect(field.password()).toHaveAttribute('maxlength', String(2 * 128))
     })
   })
 
   describe('validation', () => {
     // One example per field: the rules themselves are covered in validation.test.ts
     it.each<[string, Values, keyof typeof field | 'acceptTerms', string]>([
-      ['a weak password', { password: 'password' }, 'password', 'uppercase'],
+      ['a short password', { password: 'too short' }, 'password', 'at least 15 characters'],
       ['passwords that differ', { confirmPassword: 'Different123' }, 'confirmPassword', 'Passwords do not match'],
       ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to register'],
     ])('stops %s, explains, and focuses the first bad field', async (_, values, name, message) => {
@@ -151,7 +149,7 @@ describe('CompleteRegistrationPage', () => {
       await user.click(submitButton())
 
       expect(await screen.findByText('Signed in')).toBeInTheDocument()
-      expect(completeRegistration).toHaveBeenCalledExactlyOnceWith('a-token', 'Password123', TERMS_VERSION)
+      expect(completeRegistration).toHaveBeenCalledExactlyOnceWith('a-token', 'a valid passphrase', TERMS_VERSION)
       expect(storage.getAccessToken()).toBe('new-access')
       expect(storage.getEmail()).toBe('user@example.com')
     })
@@ -172,6 +170,23 @@ describe('CompleteRegistrationPage', () => {
       expect(alert).toHaveFocus()
       expect(screen.getByRole('link', { name: action })).toHaveAttribute('href', href)
       expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    })
+
+    // The field's own message, focused, like a failed submit's
+    it('ties a breached password to the Password field, and lets the user try another', async () => {
+      vi.mocked(completeRegistration).mockRejectedValue(httpError(422, errorBody(
+        'PASSWORD_BREACHED', 'This password has appeared in a data breach. Choose another.')))
+      const { user } = renderPage()
+      await fill(user)
+
+      await user.click(submitButton())
+
+      await waitFor(() => expect(field.password()).toHaveFocus())
+      expect(field.password()).toHaveAttribute('aria-invalid', 'true')
+      expect(field.password()).toHaveAccessibleDescription(expect.stringContaining(
+        'This password has appeared in a data breach. Choose another.'))
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
     })
 
     it.each([

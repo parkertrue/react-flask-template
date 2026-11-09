@@ -5,9 +5,12 @@ from pydantic import ValidationError
 
 from app.auth import schemas
 from app.auth.models import EMAIL_MAX_LENGTH, TERMS_VERSION, User
-from app.auth.schemas import LINK_TOKEN_MAX_LENGTH, PASSWORD_MAX_LENGTH, LoginRequest
+from app.auth.schemas import (
+    LINK_TOKEN_MAX_LENGTH, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, LoginRequest)
 
 TOKEN = 'a-link-token'
+# Long enough, and nothing else asked of it
+PASSWORD = 'a valid passphrase'
 
 
 # Named like the class it stands in for
@@ -25,13 +28,13 @@ def RegisterRequest(**fields):
 
 def RegisterCompleteRequest(**fields):
     return schemas.RegisterCompleteRequest(**{
-        'token': TOKEN, 'password': 'ValidPass123', 'terms_version': TERMS_VERSION, **fields})
+        'token': TOKEN, 'password': PASSWORD, 'terms_version': TERMS_VERSION, **fields})
 
 
 class TestRegisterCompleteRequest:
     @pytest.mark.parametrize('field', ['token', 'password', 'terms_version'])
     def test_each_field_is_required(self, field):
-        fields = {'token': TOKEN, 'password': 'ValidPass123', 'terms_version': TERMS_VERSION}
+        fields = {'token': TOKEN, 'password': PASSWORD, 'terms_version': TERMS_VERSION}
         del fields[field]
 
         with pytest.raises(ValidationError) as exc_info:
@@ -63,31 +66,19 @@ class TestRegisterRequest:
     """Sign-up's address and password, through RegisterRequest above"""
 
     def test_valid_registration(self):
-        """Schema should accept valid registration data."""
-        data = {
-            'email': 'test@example.com',
-            'password': 'ValidPass123'
-        }
-        request = RegisterRequest(**data)
+        request = RegisterRequest(email='test@example.com', password=PASSWORD)
 
-        assert request.email == 'test@example.com'
-        assert request.password == 'ValidPass123'
+        assert (request.email, request.password) == ('test@example.com', PASSWORD)
 
-    def test_missing_email(self):
-        """Schema should reject missing email."""
+    @pytest.mark.parametrize('field', ['email', 'password'])
+    def test_each_is_required(self, field):
+        fields = {'email': 'test@example.com', 'password': PASSWORD}
+        del fields[field]
+
         with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(password='ValidPass123')
+            RegisterRequest(**fields)
 
-        errors = exc_info.value.errors()
-        assert any(e['loc'] == ('email',) for e in errors)
-
-    def test_missing_password(self):
-        """Schema should reject missing password."""
-        with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(email='test@example.com')
-
-        errors = exc_info.value.errors()
-        assert any(e['loc'] == ('password',) for e in errors)
+        assert [e['loc'] for e in exc_info.value.errors()] == [(field,)]
 
     @pytest.mark.parametrize('invalid_email', [
         'notanemail',
@@ -98,12 +89,8 @@ class TestRegisterRequest:
         'user@domain',
     ])
     def test_invalid_email_format(self, invalid_email):
-        """Schema should reject invalid email formats."""
         with pytest.raises(ValidationError):
-            RegisterRequest(
-                email=invalid_email,
-                password='ValidPass123'
-            )
+            RegisterRequest(email=invalid_email, password=PASSWORD)
 
     @pytest.mark.parametrize('valid_email', [
         'user@example.com',
@@ -113,208 +100,104 @@ class TestRegisterRequest:
         'a@b.co',
     ])
     def test_valid_email_formats(self, valid_email):
-        """Schema should accept various valid email formats."""
-        request = RegisterRequest(
-            email=valid_email,
-            password='ValidPass123'
-        )
-        assert request.email == valid_email
-
-    @pytest.mark.parametrize('password', ['Pass1', 'Ab1', 'Short7'])
-    def test_password_min_length(self, password):
-        """Schema should reject passwords under 8 characters."""
-        with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(
-                email='test@example.com',
-                password=password
-            )
-
-        errors = exc_info.value.errors()
-        assert any('min_length' in str(e) for e in errors)
-
-    def test_password_max_length(self):
-        """Schema should reject passwords over 128 characters."""
-        # 129 characters
-        long_password = 'A1' + 'a' * 127
-
-        with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(
-                email='test@example.com',
-                password=long_password
-            )
-
-        errors = exc_info.value.errors()
-        assert any('max_length' in str(e) for e in errors)
-
-    def test_password_exactly_8_chars(self):
-        """Schema should accept password with exactly 8 characters."""
-        request = RegisterRequest(
-            email='test@example.com',
-            password='Valid123'
-        )
-        assert len(request.password) == 8
-
-    def test_password_exactly_128_chars(self):
-        """Schema should accept password with exactly 128 characters."""
-        # 128 characters with uppercase, lowercase, and digit
-        password = 'A1' + 'a' * 126
-        request = RegisterRequest(
-            email='test@example.com',
-            password=password
-        )
-        assert len(request.password) == 128
-
-    def test_password_requires_uppercase(self):
-        """Schema should reject passwords without uppercase letter."""
-        with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(
-                email='test@example.com',
-                password='lowercase123'
-            )
-
-        errors = exc_info.value.errors()
-        error_messages = [str(e) for e in errors]
-        assert any('uppercase' in msg.lower() for msg in error_messages)
-
-    def test_password_requires_lowercase(self):
-        """Schema should reject passwords without lowercase letter."""
-        with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(
-                email='test@example.com',
-                password='UPPERCASE123'
-            )
-
-        errors = exc_info.value.errors()
-        error_messages = [str(e) for e in errors]
-        assert any('lowercase' in msg.lower() for msg in error_messages)
-
-    def test_password_requires_number(self):
-        """Schema should reject passwords without number."""
-        with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(
-                email='test@example.com',
-                password='NoNumbersHere'
-            )
-
-        errors = exc_info.value.errors()
-        error_messages = [str(e) for e in errors]
-        assert any('number' in msg.lower() for msg in error_messages)
-
-    @pytest.mark.parametrize('password', [
-        'ValidPass123',
-        'Abcdefg1',
-        'P@ssw0rd',
-        'MyPassword1',
-        'Test1234',
-    ])
-    def test_password_with_all_requirements(self, password):
-        """Schema should accept password meeting all requirements."""
-        request = RegisterRequest(
-            email='test@example.com',
-            password=password
-        )
-        assert request.password == password
-
-    def test_password_with_special_characters(self):
-        """Schema should accept passwords with special characters."""
-        password = 'P@ssw0rd!#$%'
-        request = RegisterRequest(
-            email='test@example.com',
-            password=password
-        )
-        assert request.password == password
+        assert RegisterRequest(email=valid_email, password=PASSWORD).email == valid_email
 
     def test_extra_fields_forbidden(self):
-        """Schema should reject extra fields."""
         with pytest.raises(ValidationError) as exc_info:
-            RegisterRequest(
-                email='test@example.com',
-                password='ValidPass123',
-                extra_field='not allowed'
-            )
+            RegisterRequest(email='test@example.com', password=PASSWORD, extra_field='not allowed')
 
-        errors = exc_info.value.errors()
-        assert any('extra_forbidden' in str(e) for e in errors)
+        assert any('extra_forbidden' in str(e) for e in exc_info.value.errors())
 
-    def test_none_values_rejected(self):
-        """Schema should reject None values."""
+    @pytest.mark.parametrize('fields', [
+        {'email': None, 'password': PASSWORD}, {'email': 'test@example.com', 'password': None}])
+    def test_none_values_rejected(self, fields):
         with pytest.raises(ValidationError):
-            RegisterRequest(email=None, password='ValidPass123')
-
-        with pytest.raises(ValidationError):
-            RegisterRequest(email='test@example.com', password=None)
+            RegisterRequest(**fields)
 
 
 class TestLoginRequest:
-    """Test suite for LoginRequest schema."""
-
     def test_valid_login(self):
-        """Schema should accept valid login data."""
-        data = {
-            'email': 'test@example.com',
-            'password': 'ValidPass123'
-        }
-        request = LoginRequest(**data)
+        request = LoginRequest(email='test@example.com', password=PASSWORD)
 
-        assert request.email == 'test@example.com'
-        assert request.password == 'ValidPass123'
+        assert (request.email, request.password) == ('test@example.com', PASSWORD)
 
-    def test_missing_email(self):
-        """Schema should reject missing email."""
+    @pytest.mark.parametrize('fields', [{'password': PASSWORD}, {'email': 'test@example.com'}])
+    def test_each_is_required(self, fields):
         with pytest.raises(ValidationError):
-            LoginRequest(password='ValidPass123')
-
-    def test_missing_password(self):
-        """Schema should reject missing password."""
-        with pytest.raises(ValidationError):
-            LoginRequest(email='test@example.com')
+            LoginRequest(**fields)
 
     def test_invalid_email_format(self):
-        """Schema should reject invalid email format."""
         with pytest.raises(ValidationError):
-            LoginRequest(
-                email='notanemail',
-                password='ValidPass123'
-            )
-
-    def test_empty_password_rejected(self):
-        with pytest.raises(ValidationError):
-            LoginRequest(email='test@example.com', password='')
-
-    def test_password_max_length(self):
-        """Schema should enforce maximum password length."""
-        long_password = 'a' * 129
-
-        with pytest.raises(ValidationError):
-            LoginRequest(
-                email='test@example.com',
-                password=long_password
-            )
+            LoginRequest(email='notanemail', password=PASSWORD)
 
     def test_extra_fields_forbidden(self):
-        """Schema should reject extra fields."""
         with pytest.raises(ValidationError):
-            LoginRequest(
-                email='test@example.com',
-                password='ValidPass123',
-                remember_me=True
-            )
+            LoginRequest(email='test@example.com', password=PASSWORD, remember_me=True)
 
-    def test_model_dump(self):
-        """Schema should serialize to dict correctly."""
-        request = LoginRequest(
-            email='test@example.com',
-            password='ValidPass123'
-        )
-        data = request.model_dump()
 
-        assert data['email'] == 'test@example.com'
-        assert data['password'] == 'ValidPass123'
+class TestPasswordRules:
+    """One set of rules at sign-up and login alike, so a password sign-up
+    refuses is never checked against an account: NIST SP 800-63B's, length
+    alone, counted in characters (code points)"""
+
+    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
+    @pytest.mark.parametrize('password', [
+        'a' * PASSWORD_MIN_LENGTH,
+        'a' * PASSWORD_MAX_LENGTH,
+        'correct horse battery staple',
+        'alllowercaseletters',
+        '123456789012345',
+        # Each emoji is one character, however many UTF-16 units it takes
+        '😀' * PASSWORD_MIN_LENGTH,
+        '👨‍👩‍👧 family of three',  # joined by zero-width joiners
+        '🇺🇸 a flag, and a keycap 1⃣',
+        'Ünïcödé pässwörd 日本語',
+        '!@#$%^&*()_+-=[]{};:\'",.<>/?\\|`~',
+        '©°€£¥×÷± symbols too',
+        '  spaces at both ends  ',
+    ])
+    def test_accepts(self, schema, password):
+        assert schema(email='test@example.com', password=password).password == password
+
+    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
+    @pytest.mark.parametrize(('password', 'message'), [
+        ('', f'at least {PASSWORD_MIN_LENGTH} characters'),
+        ('a' * (PASSWORD_MIN_LENGTH - 1), f'at least {PASSWORD_MIN_LENGTH} characters'),
+        ('😀' * (PASSWORD_MIN_LENGTH - 1), f'at least {PASSWORD_MIN_LENGTH} characters'),
+        ('a' * (PASSWORD_MAX_LENGTH + 1), f'at most {PASSWORD_MAX_LENGTH} characters'),
+    ])
+    def test_refuses_the_wrong_length(self, schema, password, message):
+        with pytest.raises(ValidationError, match=message):
+            schema(email='test@example.com', password=password)
+
+    # 15, written out: the tests above follow the constant wherever it moves
+    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
+    def test_the_minimum_is_nists_for_a_single_factor(self, schema):
+        with pytest.raises(ValidationError, match='at least 15 characters'):
+            schema(email='test@example.com', password='a' * 14)
+
+    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
+    @pytest.mark.parametrize('password', [
+        PASSWORD + '\t',
+        PASSWORD + '\n',
+        PASSWORD + '\x00',
+        PASSWORD + '\x7f',
+    ], ids=['tab', 'line break', 'null', 'delete'])
+    def test_refuses_control_characters(self, schema, password):
+        with pytest.raises(ValidationError, match='must not contain control characters'):
+            schema(email='test@example.com', password=password)
+
+    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
+    def test_refuses_a_lone_surrogate(self, schema):
+        """Half an emoji, which JSON can carry but UTF-8 cannot encode, so it
+        could never be hashed: pydantic refuses it as no string at all"""
+        with pytest.raises(ValidationError) as exc_info:
+            schema(email='test@example.com', password=PASSWORD + '\ud83d')
+
+        assert [e['type'] for e in exc_info.value.errors()] == ['string_unicode']
 
 
 class TestSchemaConsistency:
-    """Test consistency between registration and login schemas."""
-
     def test_email_limit_matches_column(self):
         assert EMAIL_MAX_LENGTH == User.__table__.c.email.type.length
 
@@ -323,51 +206,13 @@ class TestSchemaConsistency:
         email = 'a' * (EMAIL_MAX_LENGTH - len('@example.com') + 1) + '@example.com'
 
         with pytest.raises(ValidationError):
-            schema(email=email, password='ValidPass123')
+            schema(email=email, password=PASSWORD)
 
     def test_both_accept_valid_credentials(self):
-        """Valid credentials should work for both register and login."""
-        email = 'test@example.com'
-        password = 'ValidPass123'
+        register = RegisterRequest(email='test@example.com', password=PASSWORD)
+        login = LoginRequest(email='test@example.com', password=PASSWORD)
 
-        register = RegisterRequest(email=email, password=password)
-        login = LoginRequest(email=email, password=password)
-
-        assert register.email == login.email
-        assert register.password == login.password
-
-    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
-    @pytest.mark.parametrize(('password', 'message'), [
-        ('Pass123', 'at least 8 characters'),
-        ('testpassword123', 'must contain uppercase letter'),
-        ('TESTPASSWORD123', 'must contain lowercase letter'),
-        ('TestPassword', 'must contain number'),
-    ])
-    def test_both_apply_the_strength_rules(self, schema, password, message):
-        """Login refuses what registration would, so no password registration
-        refuses is ever checked against an account"""
-        with pytest.raises(ValidationError, match=message):
-            schema(email='test@example.com', password=password)
-
-    def test_password_length_consistency(self):
-        """Both schemas should have same password length requirements."""
-        password_8 = 'Valid123'
-
-        RegisterRequest(email='test@example.com', password=password_8)
-        LoginRequest(email='test@example.com', password=password_8)
-
-        password_128 = 'A1' + 'a' * 126
-
-        RegisterRequest(email='test@example.com', password=password_128)
-        LoginRequest(email='test@example.com', password=password_128)
-
-        password_129 = 'A1' + 'a' * 127
-
-        with pytest.raises(ValidationError):
-            RegisterRequest(email='test@example.com', password=password_129)
-
-        with pytest.raises(ValidationError):
-            LoginRequest(email='test@example.com', password=password_129)
+        assert (register.email, register.password) == (login.email, login.password)
 
 
 class TestEmailFormat:
@@ -382,11 +227,11 @@ class TestEmailFormat:
         'josé@example.com',         # non-ASCII before the @ needs SMTPUTF8
         '😀@example.com',
         'a@😀.com',                  # IDNA refuses emoji in a domain
-        'a@example.com\u200d',
+        'a@example.com‍',
     ])
     def test_rejects(self, schema, email):
         with pytest.raises(ValidationError):
-            schema(email=email, password='ValidPass123')
+            schema(email=email, password=PASSWORD)
 
     @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
     @pytest.mark.parametrize(('email', 'stored'), [
@@ -396,7 +241,7 @@ class TestEmailFormat:
         ('User@EXAMPLE.com', 'User@example.com'),
     ])
     def test_stores_the_ascii_form(self, schema, email, stored):
-        assert schema(email=email, password='ValidPass123').email == stored
+        assert schema(email=email, password=PASSWORD).email == stored
 
     def test_counts_the_length_of_the_stored_form(self):
         """The column holds the ASCII form, which is longer than the Unicode one"""
@@ -405,75 +250,31 @@ class TestEmailFormat:
         assert len(email) == EMAIL_MAX_LENGTH
 
         with pytest.raises(ValidationError, match=f'at most {EMAIL_MAX_LENGTH}'):
-            RegisterRequest(email=email, password='ValidPass123')
-
-
-class TestPasswordCharacters:
-    """The same characters at login as at sign-up"""
-
-    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
-    @pytest.mark.parametrize('password', [
-        'Valid Pass123',            # space
-        'ValidPass123\t',
-        'Valid\u00a0Pass123',       # no-break space
-        'Valid\u3000Pass123',       # ideographic space
-    ])
-    def test_rejects_spaces(self, schema, password):
-        with pytest.raises(ValidationError, match='must not contain spaces'):
-            schema(email='test@example.com', password=password)
-
-    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
-    @pytest.mark.parametrize('password', [
-        'ValidPass123😀',
-        'ValidPass123🚀',
-        'ValidPass123\u2764',        # heavy heart, a symbol emoji
-        'ValidPass123\U0001F1FA\U0001F1F8',  # a flag: regional indicators
-        'ValidPass1\u20e3',          # keycap: 1 + combining enclosing keycap
-        'ValidPass123\ufe0f',        # emoji variation selector
-        'ValidPass123\U0001F3FB',    # skin-tone modifier
-        'ValidPass123\u200d',        # zero-width joiner
-        'ValidPass123\U00020000',    # a CJK letter beyond the Basic Multilingual Plane
-        'ValidPass123©',
-        'ValidPass123°',
-    ])
-    def test_rejects_emoji_and_other_symbols(self, schema, password):
-        with pytest.raises(ValidationError, match='must not contain emoji'):
-            schema(email='test@example.com', password=password)
-
-    @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
-    @pytest.mark.parametrize('password', [
-        'ValidPass123!@#$%^&*()_+-=[]{};:\'",.<>/?\\|`~',
-        'ValidPass123€£¥',
-        'ValidPass123éßøñ',
-        'ValidPass123日本語',
-        'ValidPass123×÷±',
-    ])
-    def test_accepts_letters_punctuation_and_symbols_of_any_language(self, schema, password):
-        assert schema(email='test@example.com', password=password).password == password
+            RegisterRequest(email=email, password=PASSWORD)
 
 
 class TestPasswordNormalization:
     @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
     @pytest.mark.parametrize(('typed', 'hashed'), [
         # é as one character, or as e plus a combining accent
-        ('Caf\u00e9Pass123', 'Caf\u00e9Pass123'),
-        ('Cafe\u0301Pass123', 'Caf\u00e9Pass123'),
+        ('café au lait please', 'café au lait please'),
+        ('café au lait please', 'café au lait please'),
         # Full-width letters and digits
-        ('\uff36alid\uff30ass\uff11\uff12\uff13', 'ValidPass123'),
+        ('ＶalidＰassphrase１２３', 'ValidPassphrase123'),
     ])
     def test_normalizes_to_nfkc(self, schema, typed, hashed):
         assert schema(email='test@example.com', password=typed).password == hashed
 
     @pytest.mark.parametrize('schema', [RegisterRequest, LoginRequest])
     def test_counts_the_length_after_normalizing(self, schema):
-        """\ufdfa is one character that NFKC expands to eighteen"""
-        assert len('Aa1' + '\ufdfa' * 8) == 11
+        """ﷺ is one character that NFKC expands to eighteen"""
+        assert len('ﷺ' * 8) == 8
 
         with pytest.raises(ValidationError, match=f'at most {PASSWORD_MAX_LENGTH}'):
-            schema(email='test@example.com', password='Aa1' + '\ufdfa' * 8)
+            schema(email='test@example.com', password='ﷺ' * 8)
 
     def test_counts_the_minimum_length_after_normalizing(self):
-        """4 characters as typed, but NFKC expands \u3315 to the five of \u30ad\u30ed\u30b0\u30e9\u30e0"""
-        password = RegisterRequest(email='test@example.com', password='Aa1\u3315').password
+        """3 characters as typed, but NFKC expands each ㌕ to the five of キログラム"""
+        password = RegisterRequest(email='test@example.com', password='㌕' * 3).password
 
-        assert password == 'Aa1\u30ad\u30ed\u30b0\u30e9\u30e0'
+        assert password == 'キログラム' * 3

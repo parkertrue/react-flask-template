@@ -1,4 +1,3 @@
-import re
 import unicodedata
 from typing import Annotated
 
@@ -9,12 +8,18 @@ from pydantic import (
 # Checked after normalizing, so the stored form always fits the users.email
 # column.
 from app.auth.models import EMAIL_MAX_LENGTH
-from app.utils.text import UNSUPPORTED_CHARACTERS_MESSAGE, is_plain_text
 
-# Only the hash is stored, so these are policy rather than a column size.
+# Only the hash is stored, so these are policy rather than a column size:
+# NIST SP 800-63B's minimum for a password that is the only factor, and well
+# above its 64 for the maximum. Counted in code points, as NIST counts.
 # frontend/src/utils/validation.ts mirrors them.
-PASSWORD_MIN_LENGTH = 8
+PASSWORD_MIN_LENGTH = 15
 PASSWORD_MAX_LENGTH = 128
+# The characters no password may hold: control characters (a tab, a line
+# break), which no keyboard types alike everywhere. Pydantic itself refuses
+# a lone surrogate (half an emoji, which JSON can carry), which has no UTF-8
+# form to hash.
+PASSWORD_REFUSED_CATEGORY = 'Cc'
 # Well above a sign-up link's token (about 100 characters), so only a body
 # that is not one is refused for its length
 LINK_TOKEN_MAX_LENGTH = 1024
@@ -52,27 +57,17 @@ def _normalize_password(value: object) -> object:
 
 
 def _check_password_characters(value: str) -> str:
-    if any(c.isspace() for c in value):
-        raise ValueError('Password must not contain spaces')
-    if not is_plain_text(value):
-        raise ValueError(f'Password {UNSUPPORTED_CHARACTERS_MESSAGE}')
-    return value
-
-
-def _check_strength(value: str) -> str:
-    if not re.search(r'[A-Z]', value):
-        raise ValueError('Password must contain uppercase letter')
-    if not re.search(r'[a-z]', value):
-        raise ValueError('Password must contain lowercase letter')
-    if not re.search(r'[0-9]', value):
-        raise ValueError('Password must contain number')
+    if any(unicodedata.category(c) == PASSWORD_REFUSED_CATEGORY for c in value):
+        raise ValueError('Password must not contain control characters, such as a tab')
     return value
 
 
 # Every password the app accepts, at registration, login and before a change
 # only the owner may make. One set of rules, so a rule loosened in one place
 # is loosened in all of them, and no password registration refuses can be
-# tried anywhere.
+# tried anywhere. NIST SP 800-63B's: length alone, no rules on which kinds of
+# character it holds; spaces and every script and emoji welcome (passphrases).
+# Sign-up also refuses a breached one (app/utils/breached.py).
 Password = Annotated[
     str,
     # Before the validator, so pydantic counts characters (its message says
@@ -80,7 +75,6 @@ Password = Annotated[
     Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
     BeforeValidator(_normalize_password),
     AfterValidator(_check_password_characters),
-    AfterValidator(_check_strength),
 ]
 
 # Every email the app accepts, stored and looked up in normalize_email's form

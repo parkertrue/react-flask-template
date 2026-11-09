@@ -25,7 +25,7 @@ const field = {
 }
 const submitButton = () => screen.getByRole('button', { name: /^log in$|logging in/i })
 
-async function fill(user: UserEvent, { email = 'user@example.com', password = 'Password123' } = {}) {
+async function fill(user: UserEvent, { email = 'user@example.com', password = 'a valid passphrase' } = {}) {
   if (email) await user.type(field.email(), email)
   if (password) await user.type(field.password(), password)
 }
@@ -38,6 +38,8 @@ describe('LoginPage', () => {
     expect(screen.getByRole('form', { name: 'Log in' })).toBeInTheDocument()
     expect(field.email()).toHaveAttribute('autocomplete', 'email')
     expect(field.password()).toHaveAttribute('autocomplete', 'current-password')
+    // Room for the longest password in emoji, two UTF-16 units each
+    expect(field.password()).toHaveAttribute('maxlength', String(2 * 128))
     expect(screen.getByRole('link', { name: 'Register' })).toHaveAttribute('href', '/register')
     expect(document.title).toBe(`Log in | ${APP_NAME}`)
   })
@@ -71,18 +73,10 @@ describe('LoginPage', () => {
       ['a malformed email', { email: 'not-an-email' }, 'email', 'Please enter a valid email address'],
       ['an empty password', { password: '' }, 'password', 'Password is required'],
       // Every rule registration applies, so no password it refuses is checked
-      ['a short password', { password: 'Pass123' }, 'password',
-        'Password must be at least 8 characters'],
-      ['a password without an uppercase letter', { password: 'password123' }, 'password',
-        'Password must contain at least one uppercase letter'],
-      ['a password without a lowercase letter', { password: 'PASSWORD123' }, 'password',
-        'Password must contain at least one lowercase letter'],
-      ['a password without a number', { password: 'Password' }, 'password',
-        'Password must contain at least one number'],
-      ['a password with a space', { password: 'Pass word123' }, 'password',
-        'Password must not contain spaces'],
-      ['a password with an emoji', { password: 'Password123😀' }, 'password',
-        'Password must not contain emoji or other symbols like © or °'],
+      ['a short password', { password: 'too short' }, 'password',
+        'Password must be at least 15 characters'],
+      ['a short password in emoji', { password: '😀'.repeat(14) }, 'password',
+        'Password must be at least 15 characters'],
       ['an email with non-ASCII before the @', { email: 'josé@example.com' }, 'email',
         'Before the @, an email can use only English letters, numbers and symbols like . _ + -'],
     ])('stops %s, explains, and focuses the field', async (_, values, name, message) => {
@@ -117,7 +111,7 @@ describe('LoginPage', () => {
       await user.click(submitButton())
 
       expect(await screen.findByText('After-login page')).toBeInTheDocument()
-      expect(loginUser).toHaveBeenCalledWith('user@example.com', 'Password123')
+      expect(loginUser).toHaveBeenCalledWith('user@example.com', 'a valid passphrase')
       expect(storage.getAccessToken()).toBe('access')
       expect(storage.getRefreshCsrf()).toBe('csrf')
       expect(storage.getEmail()).toBe('user@example.com')

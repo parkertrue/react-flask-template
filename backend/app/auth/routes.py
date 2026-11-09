@@ -31,6 +31,7 @@ from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import (
     LoginRequest, RegisterCompleteRequest, RegisterRequest, TokensResponse, normalize_email)
+from app.utils.breached import is_breached
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.jobs import job
 from app.utils.links import LinkExpired, LinkInvalid, read_link_token
@@ -254,6 +255,13 @@ def complete_registration() -> ResponseReturnValue:
     stmt = select(User).where(User.email == email)
     if db.session.execute(stmt).scalar_one_or_none():
         return _already_registered()
+
+    # Last, so a request refused anyway never reaches the third party
+    if is_breached(payload.password):
+        return error_response(
+            code='PASSWORD_BREACHED',
+            message='This password has appeared in a data breach. Choose another.',
+            status=422)
 
     user = User(email=email, terms_version=payload.terms_version)
     user.set_password(payload.password)

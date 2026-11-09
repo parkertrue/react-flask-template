@@ -13,7 +13,7 @@ import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
 import { saveJsonFile, slugify } from '@/utils/download'
-import { validatePassword, PASSWORD_MAX_LENGTH } from '@/utils/validation'
+import { validatePassword, PASSWORD_INPUT_MAX_LENGTH } from '@/utils/validation'
 import { APP_NAME } from '@/appName'
 import type { LoginState } from './LoginPage'
 
@@ -208,7 +208,7 @@ export default function AccountPage() {
               error={deletion.errors['delete-password']}
               readOnly={deleting}
               required
-              maxLength={PASSWORD_MAX_LENGTH}
+              maxLength={PASSWORD_INPUT_MAX_LENGTH}
             />
             {deleteError && <div className="error-message" role="alert">{deleteError}</div>}
           </FormDialog>
