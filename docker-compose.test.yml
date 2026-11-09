@@ -71,8 +71,27 @@ services:
       - ">${REDIS_PASSWORD}"
       - "~refresh_tokens:*"
       - "~LIMITS:*"
+      - "~dramatiq"
+      - "~dramatiq:*"
       - "+@all"
       - "-@dangerous"
+      - "-@search"
+      - "-@json"
+      - "-@timeseries"
+      - "-@bloom"
+      - "-@cuckoo"
+      - "-@cms"
+      - "-@topk"
+      - "-@tdigest"
+      - --user
+      - worker
+      - "on"
+      - ">${REDIS_WORKER_PASSWORD}"
+      - "~dramatiq"
+      - "~dramatiq:*"
+      - "+@all"
+      - "-@dangerous"
+      - "+keys"
       - "-@search"
       - "-@json"
       - "-@timeseries"
@@ -96,6 +115,26 @@ services:
     restart: "no"
     ports:
       - "127.0.0.1:6380:6379"
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+
+  # Catches every email the worker sends: the integration suite and
+  # Playwright read them through its API (port 8026)
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    security_opt:  # as db
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: "no"
+    ports:
+      - "127.0.0.1:1026:1025"
+      - "127.0.0.1:8026:8025"
     mem_limit: 128m
     cpus: 0.25
     pids_limit: 64
@@ -180,6 +219,51 @@ services:
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 128
+    profiles:
+      - e2e
+
+  # As in docker-compose.yml, sending to Mailpit
+  worker:
+    build: ./backend
+    command: ["python", "worker.py"]
+    dns_opt:  # as in docker-compose.yml
+      - timeout:1
+      - attempts:1
+    # Same hardening as docker-compose.yml, so E2E catches anything it breaks
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      APP_ENV: integration
+      DATABASE_URL: mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}
+      REDIS_URL: redis://worker:${REDIS_WORKER_PASSWORD}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      EMAIL_URL: smtp://mailpit:1025
+      EMAIL_FROM: ${EMAIL_FROM}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:  # as in docker-compose.yml
+      test: ["CMD", "test", "-f", "/tmp/worker-ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
     profiles:
       - e2e
 

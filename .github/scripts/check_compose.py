@@ -5,9 +5,11 @@ that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
 the app's data-only user; nothing else compares the copies. It also pins
 production's ports to IPv4, its db to run without a binary log, its
-backend, migrate and nginx to run read-only, and its backend's wait for
-`migrate` to succeed, which a plain `docker compose up` (README, Build and
-Start) relies on; deploy.sh runs migrate itself. Each file is read as
+backend, migrate, worker and nginx to run read-only, the services that run
+the backend image to drop every capability, the mail server's password to
+the worker alone, and its backend's wait for `migrate` to succeed, which a
+plain `docker compose up` (README, Build and Start) relies on; deploy.sh
+runs migrate itself. Each file is read as
 `docker compose config` resolves it, anchors and merges applied.
 """
 import json
@@ -23,7 +25,11 @@ HARDENING = ('security_opt', 'cap_drop', 'cap_add', 'read_only', 'pids')
 
 # The services whose root filesystem production keeps read-only. db and redis
 # stay writable: their entrypoints write on first start (DECISIONS.md).
-READ_ONLY = ('backend', 'migrate', 'nginx')
+READ_ONLY = ('backend', 'migrate', 'worker', 'nginx')
+# The services that run the backend image, which needs no capability
+BACKEND_IMAGE = ('backend', 'migrate', 'worker')
+# What only the worker, which sends email, may be given
+WORKER_ONLY = ('EMAIL_URL', 'EMAIL_PASSWORD')
 
 
 def config(*args):
@@ -88,6 +94,13 @@ def problems(prod, test, dev):
     for name in READ_ONLY:
         if not prod[name].get('read_only'):
             yield f'{name}: production does not run with a read-only root filesystem'
+    for name in BACKEND_IMAGE:
+        if prod[name].get('cap_drop') != ['ALL']:
+            yield f'{name}: production does not drop every capability'
+    for name, service in prod.items():
+        given = [var for var in WORKER_ONLY if var in (service.get('environment') or {})]
+        if given and name != 'worker':
+            yield f"{name}: gets {', '.join(given)}, which only the worker may hold"
     if '--disable-log-bin' not in prod['db'].get('command', []):
         yield 'db: production does not run with --disable-log-bin'
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
@@ -105,7 +118,9 @@ def main():
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
                      'ports are IPv4 only, the db keeps no binary log, '
-                     'the backend, migrate and nginx are read-only, '
+                     'the backend, migrate, worker and nginx are read-only, '
+                     'the backend image drops every capability, '
+                     'only the worker holds the mail password, '
                      'and the backend waits for migrate\n')
 
 

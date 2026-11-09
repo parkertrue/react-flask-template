@@ -1,21 +1,22 @@
 # Deploying to Production
 
-The details behind the production quick start in the [README](../README.md#production): how the stack is laid out, its secrets and database users, TLS, safe redeploys, external MySQL and Redis, container platforms, logs, and operating it: what is not included, restarts, backups and restoring, and secrets.
+The details behind the production quick start in the [README](../README.md#production): how the stack is laid out, its secrets and database users, TLS, sending email, safe redeploys, external MySQL and Redis, container platforms, logs, and operating it: what is not included, restarts, backups and restoring, and secrets.
 
 **Architecture (Prod)**
 
 * MySQL → Docker, or external ([External Database or Redis](#external-database-or-redis))
 * Redis → Docker, or external
 * Flask (Gunicorn) → Docker
+* Worker (background jobs such as email) → Docker, from Flask's image
 * React → Built & served by Nginx
 
-Only Nginx is published (ports 80 and 443). Nginx reaches only Flask; the bundled MySQL and Redis sit on an internal network with no outbound access, reachable only from Flask. Every container runs with `no-new-privileges`; Flask and Nginx run on read-only filesystems, Flask with no Linux capabilities. Redis's `default` user is disabled; the app connects as an ACL user limited to its own keys, with dangerous commands (FLUSHALL, CONFIG, KEYS, ...) refused.
+Only Nginx is published (ports 80 and 443). Nginx reaches only Flask; the bundled MySQL and Redis sit on an internal network with no outbound access, reachable only from Flask and the worker. Every container runs with `no-new-privileges`; Flask, the worker and Nginx run on read-only filesystems, Flask and the worker with no Linux capabilities. Redis's `default` user is disabled; the app connects as an ACL user limited to its own keys, with dangerous commands (FLUSHALL, CONFIG, KEYS, ...) refused, and the worker as one limited to the job queue's keys, which may run KEYS alone of them. Only the worker holds the mail server's password.
 
 ---
 
 ## Environment File
 
-`.env.prod` holds only the nine values that differ per deployment (including `SERVER_NAME`, the domain nginx serves), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
+`.env.prod` holds only the twelve values that differ per deployment (including `SERVER_NAME`, the domain nginx serves, and the mail server and sender, [Sending Email](#sending-email)), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
 openssl rand -hex 32
@@ -25,7 +26,7 @@ nginx reaches the backend at a fixed address, `10.217.0.10`, on a network of its
 
 **Database users.** The database has two users. The app's (`DB_USER`) may read and write rows but never change the schema, so a compromised backend cannot drop or alter a table. The migration user (`DB_MIGRATION_USER`) owns the schema, and only the one-off `migrate` service gets its password; the root password reaches only the `db` container. The bundled MySQL creates both when its volume is first created (`db/init/01-app-user.sh`), in every environment; for an external database, you create them ([External Database or Redis](#external-database-or-redis)). In production, the backend refuses to start if the app's user can do more than read and write rows.
 
-**What the app reads.** The backend reads one URL per service: `DATABASE_URL` (the app's user), `REDIS_URL`, and, for `migrate` alone, `MIGRATION_DATABASE_URL`. `docker-compose.yml` builds them from the values above, and `.env.dev` and `.env.test` spell them out. On a container platform, each password may instead come from a variable of its own (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`), which replaces the one in its URL, so a secrets store can supply just the password ([Deploying to a Platform](#deploying-to-a-platform)). `docker-compose.yml` passes none of them to its containers, so with Compose the password stays in the URL. A password written inside a URL must be percent-encoded; the generator above only produces characters that need none.
+**What the app reads.** The backend reads one URL per service: `DATABASE_URL` (the app's user), `REDIS_URL`, and, for `migrate` alone, `MIGRATION_DATABASE_URL`. `docker-compose.yml` builds them from the values above, and `.env.dev` and `.env.test` spell them out. The worker reads the same, with its own Redis user's URL as `REDIS_URL` (`REDIS_WORKER_URL` in `.env.prod` replaces the one built from `REDIS_WORKER_PASSWORD`), plus `EMAIL_URL` and `EMAIL_FROM`. On a container platform, each password may instead come from a variable of its own (`DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD`, `EMAIL_PASSWORD`), which replaces the one in its URL, so a secrets store can supply just the password ([Deploying to a Platform](#deploying-to-a-platform)). `docker-compose.yml` passes none of them to its containers, so with Compose the password stays in the URL. A password written inside a URL must be percent-encoded; the generator above only produces characters that need none.
 
 ### Changing a Value Later
 
@@ -35,7 +36,7 @@ The database keeps its own copy of its users and passwords; `.env.prod` only tel
 docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<user>'@'%' IDENTIFIED BY '<new password>'"
 ```
 
-For a new `DB_ROOT_PASSWORD`, change both `'root'@'%'` and `'root'@'localhost'`; nothing outside the `db` container holds it. A new `REDIS_PASSWORD` needs only `up -d`. A new `SECRET_KEY` signs every user out.
+For a new `DB_ROOT_PASSWORD`, change both `'root'@'%'` and `'root'@'localhost'`; nothing outside the `db` container holds it. A new `REDIS_PASSWORD` or `REDIS_WORKER_PASSWORD` (with the bundled Redis, which reads them at each start) needs only `up -d`, and so does a new `EMAIL_URL` or `EMAIL_FROM`. A new `SECRET_KEY` signs every user out.
 
 ---
 
@@ -75,9 +76,30 @@ Let's Encrypt certificates expire after 90 days. Renew with `certbot renew` (the
 
 ---
 
+## Sending Email
+
+The worker sends the app's email (`backend/app/utils/mail.py`) over SMTP, through a mail provider: Amazon SES, Postmark, SendGrid, Mailgun, Resend or any other that offers SMTP, as they all do. Email sent straight from the server would mostly land in spam or nowhere: a new server's address has no sending reputation, many hosts block outbound port 25, and the large mailbox providers require the sending domain to be set up with SPF, DKIM and DMARC.
+
+1. Sign up with a provider and add your sending domain. A subdomain such as `mail.yourdomain.com` keeps its reputation apart from your own mail.
+2. Add the DNS records it gives you: SPF and DKIM, and a DMARC record (`_dmarc`), starting at `p=none` while you read its reports.
+3. Create SMTP credentials and set them in `.env.prod`, in one of two forms:
+
+   ```bash
+   EMAIL_URL=smtps://<user>:<password>@<smtp host>           # TLS from the start, port 465 unless the URL names one
+   EMAIL_URL=smtp+starttls://<user>:<password>@<smtp host>   # upgraded to TLS, port 587 unless the URL names one
+   EMAIL_FROM="App <no-reply@mail.yourdomain.com>"
+   ```
+
+   Percent-encode any `@`, `:` or `/` in the user or password (a provider's user is often an API key or an address). Production refuses plain `smtp://`, the example file's placeholder password and its `example.com` sender. The worker reads both at start and refuses to start without them, so a deploy with a missing or refused value fails there and is rolled back.
+4. Deploy, then send one email end to end. A new provider account usually starts in a sandbox that delivers only to addresses you have verified: ask for production access before launch.
+
+The provider is a processor of your users' data: name it in the privacy notice ([Personal Data and Legal Pages](personal-data.md), "Before launch", step 3).
+
+A failed send is retried, backing off from 15 seconds to an hour, for about three hours; one the mail server refuses for good (the address does not exist) is not. The worker's log shows each outcome: `email_sent` with the email's Message-ID, which the provider's own log shows too, or Dramatiq's line about a failed job, naming its message by id. The provider's bounce and complaint reports are yours to read: the app does not act on them, and a provider suspends an account whose bounces or complaints run high.
+
 ## Redeploying
 
-A one-shot `migrate` container applies migrations as the migration user and exits. The backend then starts Gunicorn as the app's user, whose credentials cannot change the schema (see [Database users](#environment-file)), and nginx starts once the backend passes its health check.
+A one-shot `migrate` container applies migrations as the migration user and exits. The backend then starts Gunicorn as the app's user, whose credentials cannot change the schema (see [Database users](#environment-file)), the worker starts beside it, and nginx starts once the backend passes its health check.
 
 Frontend and backend code are both copied into their images, so a code change needs new images. `deploy.sh`, at the repository root, builds them on the server from the commit you name and deploys them, on any host that runs Docker:
 
@@ -90,7 +112,7 @@ Frontend and backend code are both copied into their images, so a code change ne
 1. It refuses to start with uncommitted changes to tracked files in the clone, while another deploy runs, for a commit that isn't on `origin/main`, or for a local branch name such as `main`, which nothing keeps up to date (pass `origin/main`).
 2. It checks the clone out at the commit (detached), so the compose file and `db/init` match its code, and builds the backend and nginx images, tagged with the commit: `<project>-backend:<commit>` and `<project>-nginx:<commit>`, the full commit hash. The build pulls its base images afresh, so their upstream fixes arrive with each new commit. The running app keeps serving while it builds. If the build fails, it switches back and nothing has changed.
 3. It brings the bundled `db` and `redis` whose profiles are on up to the commit's settings: one whose image, command or values changed is recreated, so MySQL or Redis restarts under the running app (an external one is left alone). If one does not come up, it puts them back on the previous commit's settings, and the previous commit keeps serving. Then it runs `migrate`. If that fails, it switches back; the backend and nginx were never touched.
-4. It replaces the backend, waits for it to pass its health check, then replaces nginx, and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If any of that fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error. On a server's first deploy there is no previous commit: it leaves the failed containers as they are, so read their logs, fix the cause and deploy again.
+4. It replaces the backend, waits for it to pass its health check, then does the same for the worker (which runs the backend's image), then replaces nginx, and checks `/api/health` through nginx at the first name in `SERVER_NAME`. If any of that fails, it brings the previous commit back up the same way, from that commit's images, still on the server, and exits with an error. On a server's first deploy there is no previous commit: it leaves the failed containers as they are, so read their logs, fix the cause and deploy again.
 5. Once a deploy succeeds, it removes the app's images of every other commit but the one before, so a rollback builds nothing.
 
 A migration must keep the code before it working: the old backend serves after it runs, and a rollback brings the old code back without undoing it (add a column in one release, and drop the old one in a later release). A `db` or `redis` that came up healthy in step 3 stays too, through a failed `migrate` or a rollback, so MySQL is never downgraded; the previous code must run on it, and a MySQL upgrade that crashes partway can leave its data to repair by hand, which no rollback undoes. Take a backup ([Backups and Restoring](#backups-and-restoring)) before a commit that changes `db`'s image.
@@ -200,11 +222,11 @@ With cron instead, in the deploy user's crontab (`sudo crontab -u deploy -e`), k
 The bundled MySQL and Redis containers are optional: production can use a MySQL 8 database and a Redis (or Valkey) server that run elsewhere, such as Amazon RDS and ElastiCache. Each one is switched on its own, with no code change:
 
 1. Remove its profile from `COMPOSE_PROFILES` in `.env.prod` (`bundled-db`, `bundled-redis`), so its container no longer runs.
-2. Set its URLs in `.env.prod`: `DATABASE_URL` and `MIGRATION_DATABASE_URL` for the database, `REDIS_URL` for Redis (the example file's last lines show their shape). They replace the URLs `docker-compose.yml` would build. The bundled values it no longer uses can stay; Compose warns about each one you remove.
+2. Set its URLs in `.env.prod`: `DATABASE_URL` and `MIGRATION_DATABASE_URL` for the database, `REDIS_URL` and `REDIS_WORKER_URL` for Redis (the example file's last lines show their shape). They replace the URLs `docker-compose.yml` would build. The bundled values it no longer uses can stay; Compose warns about each one you remove.
 
 Each managed service is a processor of your users' data: see [Personal Data and Legal Pages](personal-data.md), "Before launch", step 3.
 
-`migrate` and the backend reach an external service through the `edge` network, the one with a route out of the host.
+`migrate`, the backend and the worker reach an external service through the `edge` network, the one with a route out of the host.
 
 **TLS is required.** Production treats any host other than the bundled services' names, `db` and `redis`, as outside the server, and refuses to start unless the connection is encrypted and checks the server's certificate and name. Keep those two names if you rename the services.
 
@@ -215,6 +237,8 @@ Each managed service is a processor of your users' data: see [Personal Data and 
     migrate:
       volumes: ["./certs/rds-global-bundle.pem:/etc/ssl/rds.pem:ro"]
     backend:
+      volumes: ["./certs/rds-global-bundle.pem:/etc/ssl/rds.pem:ro"]
+    worker:
       volumes: ["./certs/rds-global-bundle.pem:/etc/ssl/rds.pem:ro"]
   ```
 
@@ -237,7 +261,8 @@ The database name may hold only letters, digits and `_`, and `_` is a wildcard i
 **Redis settings the app cannot check.** Its ACL user may not read the server's configuration, so set these yourself:
 
 * `maxmemory-policy noeviction`. Every refresh token carries an expiry, so a policy that evicts keys with one (ElastiCache's default, `volatile-lru`) silently signs users out once memory fills. On ElastiCache, use a custom parameter group.
-* A user named in `REDIS_URL` (required), with the bundled ACL's rules (the `redis` service in `docker-compose.yml`): its own keys, `+@all -@dangerous`, and minus the command category of each module the server loads (`-@search -@json -@timeseries -@bloom -@cuckoo -@cms -@topk -@tdigest`), which `@dangerous` doesn't cover. On ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~LIMITS:* +@all -@dangerous`, plus a `-@<category>` for each module your engine version offers (not yet checked against ElastiCache). An AUTH token alone, on the `default` user, is refused.
+* A user named in `REDIS_URL` (required), with the bundled ACL's rules (the `redis` service in `docker-compose.yml`): its own keys, `+@all -@dangerous`, and minus the command category of each module the server loads (`-@search -@json -@timeseries -@bloom -@cuckoo -@cms -@topk -@tdigest`), which `@dangerous` doesn't cover. On ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~LIMITS:* ~dramatiq ~dramatiq:* +@all -@dangerous`, plus a `-@<category>` for each module your engine version offers (not yet checked against ElastiCache). An AUTH token alone, on the `default` user, is refused.
+* A second user for the worker, named in `REDIS_WORKER_URL`, with the bundled ACL's `worker` rules: the job queue's keys alone, and `KEYS`, which the queue's upkeep calls, as its one dangerous command. On ElastiCache, the access string `on ~dramatiq ~dramatiq:* +@all -@dangerous +keys`, minus the same module categories.
 * Cluster mode disabled: the app's Redis client is not cluster-aware. That rules out ElastiCache Serverless, which is always clustered and whose eviction policy is fixed at `volatile-lru`; use a node-based cluster.
 
 **Network access.** Let only the server reach the database and Redis (security groups, a private network, or the provider's allowlist), never the internet.
@@ -268,7 +293,9 @@ docker build --platform linux/amd64 -f nginx/Dockerfile -t <registry>/<repo>/ngi
 | Filesystem | read-only root, plus a writable `/tmp` (gunicorn's worker heartbeats) | read-only root, plus writable `/etc/nginx/conf.d` (the config it renders at start), `/var/cache/nginx` and `/run` |
 | Health | `GET /api/health` on 5000. Allow 60 s to start: it waits up to 60 s for MySQL and Redis, then checks its database user's grants | none of its own; the load balancer checks `/api/health` through it |
 
-**Secrets.** Keep each URL without its password in plain configuration, and inject `DATABASE_PASSWORD`, `REDIS_PASSWORD` and `SECRET_KEY` from the platform's secret store. Each password variable replaces its URL's password.
+**The worker** runs from the backend image too, with the command `python worker.py`, as a service of its own with no port and no load balancer. Its environment is the backend's, except that `REDIS_URL` names the worker's Redis user (and `REDIS_PASSWORD`, if used, holds that user's password), plus `EMAIL_URL` (its password inline or in `EMAIL_PASSWORD`) and `EMAIL_FROM`. It needs a writable `/tmp`, where it writes its ready file: its health check is `test -f /tmp/worker-ready`, with 60 s to start. It needs outbound access to the mail server (port 465 or 587), and nothing reaches it. On SIGTERM it lets running jobs finish for up to 25 s: give it a stop timeout of 30 s.
+
+**Secrets.** Keep each URL without its password in plain configuration, and inject `DATABASE_PASSWORD`, `REDIS_PASSWORD`, `EMAIL_PASSWORD` and `SECRET_KEY` from the platform's secret store. Each password variable replaces its URL's password.
 
 **Migrations** run once per deploy, before the new backend starts: the backend image with the command `flask db upgrade`, plus `MIGRATION_DATABASE_URL` (its password inline or in `MIGRATION_DATABASE_PASSWORD`; the variable alone does nothing) and `DB_QUERY_TIMEOUT=0`. Give that job its own task or job definition, so the long-running backend never holds the migration user's credentials. Rolling deploys run old and new backends side by side for a while, so a migration must keep the old code working: add a column in one release, and drop the old one in a later release.
 
@@ -276,7 +303,7 @@ docker build --platform linux/amd64 -f nginx/Dockerfile -t <registry>/<repo>/ngi
 
 **Keep nginx in front of the backend.** It's the layer the E2E suite and the audits test: security headers and CSP, the 16 KB body cap, per-IP rate limits, JSON error bodies and unknown-host refusal. It costs about 10-20 MB per task. Replacing it means rebuilding all of that in the load balancer or CDN. Its per-IP limits count per task, so three tasks give one client three times the budget. The backend's own limits (login, register, refresh, account deletion) count in Redis and stay exact. For exact limits at the edge, use the load balancer's WAF.
 
-CI's Platform smoke job runs this layout (the backend and a `behind-proxy` nginx sharing one network namespace) and checks health, headers, the body cap, the HTTPS redirect and the client's address. Only the Compose stack gets the full E2E suite.
+CI's Platform smoke job runs this layout (the backend and a `behind-proxy` nginx sharing one network namespace, and the worker on its own) and checks health, headers, the body cap, the HTTPS redirect, the client's address and that the worker starts. Only the Compose stack gets the full E2E suite.
 
 ### What Replaces Each Compose Piece
 
@@ -299,14 +326,15 @@ A sketch of one working layout, not infrastructure code. Translate it into your 
 
 1. **Images:** push both to ECR.
 2. **Database and Redis:** RDS for MySQL 8 and ElastiCache for Redis OSS or Valkey (node-based, cluster mode off), set up as [External Database or Redis](#external-database-or-redis) describes. On Fargate there's no host to mount the RDS CA bundle from. It's public, so copy it into your app's backend image (`COPY certs/rds-global-bundle.pem /etc/ssl/rds.pem`).
-3. **Secrets:** `SECRET_KEY`, `DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD` and `REDIS_PASSWORD` in Secrets Manager, referenced from the task definitions' `secrets`.
+3. **Secrets:** `SECRET_KEY`, `DATABASE_PASSWORD`, `MIGRATION_DATABASE_PASSWORD`, `REDIS_PASSWORD` (the app's user's, and the worker's for the worker), and `EMAIL_PASSWORD` in Secrets Manager, referenced from the task definitions' `secrets`.
 4. **The service's task definition** (`awsvpc`; start at 1 vCPU and 2 GB):
    - `backend`: port 5000, `readonlyRootFilesystem: true` with a volume at `/tmp`, `linuxParameters.capabilities.drop: ["ALL"]`, and a health check running the same command as `docker-compose.yml`'s with `startPeriod: 60`.
    - `nginx`: port 80, `readonlyRootFilesystem: true` with volumes at `/etc/nginx/conf.d`, `/var/cache/nginx` and `/run`, `dependsOn` backend `HEALTHY`, with the `behind-proxy` variables above (`NGINX_TRUSTED_PROXIES` set to the ALB's subnets). Fargate can't add capabilities, so leave nginx's default set rather than dropping them all.
    - Both log through `awslogs` to CloudWatch Logs groups with a retention you choose ([Logs](#logs)).
-5. **Migrations:** a second task definition, the backend image only, with the command and variables from "Migrations" above. The deploy runs it (`aws ecs run-task`), waits for exit code 0, then updates the service.
-6. **Load balancer:** an ALB with an ACM certificate. The HTTPS listener forwards to the service's port 80, and the HTTP listener redirects to HTTPS. The target group's health check is `/api/health`, and the service's health-check grace period is at least 60 s.
-7. **Security groups:** the ALB accepts 80 and 443 from the internet. The tasks accept port 80 from the ALB only, never 5000 (gunicorn listens on every interface inside the task). RDS and ElastiCache accept connections from the tasks only.
+5. **The worker:** a service of its own, from a task definition holding one container, the backend image with the command `python worker.py` and the variables from "The worker" above, `readonlyRootFilesystem: true` with a volume at `/tmp`, capabilities dropped, and no load balancer.
+6. **Migrations:** another task definition, the backend image only, with the command and variables from "Migrations" above. The deploy runs it (`aws ecs run-task`), waits for exit code 0, then updates the service.
+7. **Load balancer:** an ALB with an ACM certificate. The HTTPS listener forwards to the service's port 80, and the HTTP listener redirects to HTTPS. The target group's health check is `/api/health`, and the service's health-check grace period is at least 60 s.
+8. **Security groups:** the ALB accepts 80 and 443 from the internet. The tasks accept port 80 from the ALB only, never 5000 (gunicorn listens on every interface inside the task); the worker's tasks accept nothing, and reach out to the mail server. RDS and ElastiCache accept connections from the tasks only.
 
 **Optional: the frontend on S3 and CloudFront.** Upload `frontend/dist` to a private S3 bucket behind CloudFront, and add a CloudFront behavior that sends `/api/*` to the ALB, so the browser still calls a same-origin `/api`. Set that behavior to:
 
@@ -327,20 +355,20 @@ Then:
 Every container logs to stdout, which Docker keeps, rotated at three files of 10 MB each (`x-logging` in `docker-compose.yml`):
 
 ```bash
-docker compose --env-file .env.prod logs -f nginx backend
+docker compose --env-file .env.prod logs -f nginx backend worker
 ```
 
-The backend's lines (the app's, gunicorn's, the start-up wait's and the one-shot `migrate` service's) and nginx's access log are one JSON object per line. nginx's error log (an unreachable backend, an oversized body) is plain text, and so is the second copy of the exception gunicorn prints when a worker fails to boot.
+The backend's lines (the app's, gunicorn's, the start-up wait's, the worker's and the one-shot `migrate` service's) and nginx's access log are one JSON object per line. nginx's error log (an unreachable backend, an oversized body) is plain text, and so is the second copy of the exception gunicorn prints when a worker fails to boot.
 
 nginx logs one request in 100 that it refuses for a client's rate (a 429), and every other request. A client flooding the API writes a few sampled lines a second instead of thousands, which would push every earlier line out of Docker's 30 MB in seconds; multiply the sampled lines by 100 for the flood's size. A single 429 a real user got is likely not in the log.
 
 nginx's access log is the one record of each request: the client's address, the request's path, its status and how long it took. The path is logged without its query string, where a link's token would sit, and cut at 512 characters; the User-Agent and Referer are cut at 256. Each line has a `request_id`, which nginx also hands the backend: every backend line written during that request carries the same one, which joins the two.
 
-The backend logs errors, and security events on the `app.security` logger: `login_succeeded`, `login_failed`, `registered`, `refresh_refused` (an old refresh token used again, as a stolen cookie would be), `token_invalid` (a token the app never issued, a refresh token sent as an access token, a refresh cookie without its CSRF value, or a token of a deleted or replaced account), `logout`, `logout_all`, `wrong_password` (a wrong password when deleting the account), `account_deleted` and `rate_limited`. Each names the client by address, and the user by id where there is one (`rate_limited` gives the path and the limit instead). A failed login names the account by `account`, a keyed hash of its email, so one guessed-at address can be followed across IPs without the log holding it. No line holds a password, token or email.
+The backend logs errors, and security events on the `app.security` logger: `login_succeeded`, `login_failed`, `registered`, `refresh_refused` (an old refresh token used again, as a stolen cookie would be), `token_invalid` (a token the app never issued, a refresh token sent as an access token, a refresh cookie without its CSRF value, or a token of a deleted or replaced account), `logout`, `logout_all`, `wrong_password` (a wrong password when deleting the account), `account_deleted` and `rate_limited`. Each names the client by address, and the user by id where there is one (`rate_limited` gives the path and the limit instead). The worker logs `email_sent` (on `app.mail`) with each email's Message-ID, and Dramatiq's lines about each job (`dramatiq.*`), which name a job's message by id: neither holds an address. A failed login names the account by `account`, a keyed hash of its email, so one guessed-at address can be followed across IPs without the log holding it. No line holds a password, token or email.
 
 Two of these events have innocent causes too. `refresh_refused` is a lead, not proof: a refresh whose answer never reached the client (a 504 on `/api/auth/refresh` from the same address just before) has already rotated its token, so the client's next refresh is refused the same way. And after a `SECRET_KEY` rotation, every token signed with the old key logs `token_invalid` once.
 
-Shipping logs off the server, and how long to keep them, is up to the deployment ([Not Included](#not-included)). Until they are shipped, Docker's three files per container are all there is, and they go with their container: every deploy (and rollback) replaces the backend and nginx containers, so their lines reach back to the last deploy at most. Save them before a deploy if you need them (`logs --no-log-prefix nginx backend > <file>`). Their lines pair IP addresses with user ids, which is personal data: choose how long to keep them, say so in the privacy notice, and enforce it by age where the logs are shipped ([Personal Data and Legal Pages](personal-data.md)). nginx caps each line and how fast one address can add them, pages and API alike, which makes pushing older lines out slow for one client but not impossible for many.
+Shipping logs off the server, and how long to keep them, is up to the deployment ([Not Included](#not-included)). Until they are shipped, Docker's three files per container are all there is, and they go with their container: every deploy (and rollback) replaces the backend, worker and nginx containers, so their lines reach back to the last deploy at most. Save them before a deploy if you need them (`logs --no-log-prefix nginx backend worker > <file>`). Their lines pair IP addresses with user ids, which is personal data: choose how long to keep them, say so in the privacy notice, and enforce it by age where the logs are shipped ([Personal Data and Legal Pages](personal-data.md)). nginx caps each line and how fast one address can add them, pages and API alike, which makes pushing older lines out slow for one client but not impossible for many.
 
 ---
 

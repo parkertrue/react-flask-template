@@ -1,10 +1,11 @@
 """Fail when a line read from stdin is not a JSON object, printing each one.
 
-CI's E2E job pipes the migrate and backend containers' logs through this: a
-log shipper parses each line as JSON, so a plain-text line (gunicorn's own
-format, a print) is one it would drop. The backend, gunicorn and the
-migrations log through JsonFormatter (backend/app/utils/log.py,
-backend/gunicorn_logging.json, backend/migrations/alembic.ini).
+CI's E2E job pipes the migrate, backend and worker containers' logs through
+this: a log shipper parses each line as JSON, so a plain-text line
+(gunicorn's own format, a print) is one it would drop. The backend, gunicorn,
+the worker and the migrations log through JsonFormatter
+(backend/app/utils/log.py, backend/gunicorn_logging.json,
+backend/migrations/alembic.ini).
 """
 import json
 import sys

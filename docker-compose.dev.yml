@@ -49,8 +49,27 @@ services:
       - ">${REDIS_PASSWORD}"
       - "~refresh_tokens:*"
       - "~LIMITS:*"
+      - "~dramatiq"
+      - "~dramatiq:*"
       - "+@all"
       - "-@dangerous"
+      - "-@search"
+      - "-@json"
+      - "-@timeseries"
+      - "-@bloom"
+      - "-@cuckoo"
+      - "-@cms"
+      - "-@topk"
+      - "-@tdigest"
+      - --user
+      - worker
+      - "on"
+      - ">${REDIS_WORKER_PASSWORD}"
+      - "~dramatiq"
+      - "~dramatiq:*"
+      - "+@all"
+      - "-@dangerous"
+      - "+keys"
       - "-@search"
       - "-@json"
       - "-@timeseries"
@@ -74,6 +93,17 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
+    mem_limit: 128m
+    cpus: 0.25
+
+  # Catches every email the worker sends, whatever the address: read them at
+  # http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
     mem_limit: 128m
     cpus: 0.25
 

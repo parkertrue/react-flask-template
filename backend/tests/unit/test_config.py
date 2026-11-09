@@ -6,6 +6,7 @@ from sqlalchemy.engine import make_url
 
 from app.config import (
     Config,
+    MailServer,
     database_url,
     DevelopmentConfig,
     UnitTestConfig,
@@ -25,7 +26,8 @@ SERVICE_ENV = {
 # Read by app/config.py, but not set by SERVICE_ENV
 OPTIONAL_VARS = (
     'MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD', 'MIGRATION_DATABASE_PASSWORD',
-    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT', 'DB_QUERY_TIMEOUT')
+    'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT', 'DB_QUERY_TIMEOUT',
+    'EMAIL_URL', 'EMAIL_PASSWORD', 'EMAIL_FROM')
 
 
 @pytest.fixture(autouse=True)
@@ -426,6 +428,133 @@ class TestRedisUrl:
         assert str(exc_info.value) == 'REDIS_URL is not a valid URL'
 
 
+class TestEmailUrl:
+    """What EMAIL_URL accepts, and how EMAIL_PASSWORD joins it"""
+
+    @pytest.mark.parametrize('value, server', [
+        ('smtps://mailer:pw@smtp.example.com', MailServer('tls', 'smtp.example.com', 465, 'mailer', 'pw')),
+        ('smtp+starttls://mailer:pw@smtp.example.com',
+         MailServer('starttls', 'smtp.example.com', 587, 'mailer', 'pw')),
+        ('smtp://mailpit:1025', MailServer('none', 'mailpit', 1025, None, None)),
+        ('smtps://mailer:pw@smtp.example.com:2465/', MailServer('tls', 'smtp.example.com', 2465, 'mailer', 'pw')),
+    ])
+    def test_the_scheme_sets_the_security_and_default_port(self, monkeypatch, value, server):
+        monkeypatch.setenv('EMAIL_URL', value)
+
+        assert DevelopmentConfig().EMAIL_SERVER == server
+
+    def test_unset_everywhere_but_the_worker(self):
+        config = DevelopmentConfig()
+
+        assert (config.EMAIL_SERVER, config.EMAIL_FROM) == (None, None)
+
+    def test_a_percent_encoded_user_and_password_are_decoded(self, monkeypatch):
+        """A provider's user is often an API key or an address"""
+        monkeypatch.setenv('EMAIL_URL', 'smtps://me%40example.com:p%40ss%2Fword@smtp.example.com')
+
+        server = DevelopmentConfig().EMAIL_SERVER
+
+        assert (server.username, server.password) == ('me@example.com', 'p@ss/word')
+
+    def test_email_password_replaces_the_urls(self, monkeypatch):
+        monkeypatch.setenv('EMAIL_URL', 'smtps://mailer@smtp.example.com')
+        monkeypatch.setenv('EMAIL_PASSWORD', 'from-a-secrets-store')
+
+        assert DevelopmentConfig().EMAIL_SERVER.password == 'from-a-secrets-store'
+
+    def test_the_password_stays_out_of_its_repr(self, monkeypatch):
+        monkeypatch.setenv('EMAIL_URL', 'smtps://mailer:secret-pw@smtp.example.com')
+
+        assert 'secret-pw' not in repr(DevelopmentConfig().EMAIL_SERVER)
+
+    @pytest.mark.parametrize('value, message', [
+        ('smtp+ssl://mailer:pw@smtp.example.com',
+         'EMAIL_URL must start with one of smtps://, smtp+starttls://, smtp://'),
+        ('https://smtp.example.com',
+         'EMAIL_URL must start with one of smtps://, smtp+starttls://, smtp://'),
+        ('smtps://mailer:pw@', 'EMAIL_URL must name the mail server'),
+        ('smtps://smtp.example.com/inbox',
+         'EMAIL_URL takes a user, password, host and port, nothing else'),
+        ('smtps://smtp.example.com?verify=false',
+         'EMAIL_URL takes a user, password, host and port, nothing else'),
+        ('smtps://:pw@smtp.example.com', 'EMAIL_URL must name the user its password belongs to'),
+        ('smtps://mailer:secret-pw@smtp.example.com:port', 'EMAIL_URL is not a valid URL'),
+    ])
+    def test_refuses_without_echoing_it(self, monkeypatch, value, message):
+        monkeypatch.setenv('EMAIL_URL', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == message
+
+    @pytest.mark.parametrize('value', ['no-reply@app.test', 'App <no-reply@app.test>'])
+    def test_email_from_is_an_address_with_a_name_if_wanted(self, monkeypatch, value):
+        monkeypatch.setenv('EMAIL_FROM', value)
+
+        assert DevelopmentConfig().EMAIL_FROM == value
+
+    @pytest.mark.parametrize('value', ['App', 'no-reply', 'App <no-reply'])
+    def test_email_from_refuses_anything_else(self, monkeypatch, value):
+        monkeypatch.setenv('EMAIL_FROM', value)
+
+        with pytest.raises(ValueError, match='EMAIL_FROM must be an address'):
+            DevelopmentConfig()
+
+
+class TestProductionEmail:
+    """The mail server is always outside the host: production reaches it
+    over TLS only, and never with the example file's values"""
+
+    @pytest.fixture(autouse=True)
+    def strong_secret(self, monkeypatch):
+        monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+
+    @pytest.mark.parametrize('value', ['smtps://mailer:pw@smtp.example.com',
+                                       'smtp+starttls://mailer:pw@smtp.example.com'])
+    def test_accepts_tls(self, monkeypatch, value):
+        monkeypatch.setenv('EMAIL_URL', value)
+
+        assert ProductionConfig().EMAIL_SERVER.host == 'smtp.example.com'
+
+    def test_refuses_plain_smtp(self, monkeypatch):
+        monkeypatch.setenv('EMAIL_URL', 'smtp://mailer:pw@smtp.example.com')
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            'EMAIL_URL needs TLS in production: start it with smtps:// or smtp+starttls://')
+
+    @pytest.mark.parametrize('var, value', [
+        ('EMAIL_URL', 'smtps://mailer:your_smtp_password_here@smtp.example.com'),
+        ('EMAIL_PASSWORD', 'your_smtp_password_here'),
+    ])
+    def test_refuses_the_placeholder_password(self, monkeypatch, var, value):
+        monkeypatch.setenv('EMAIL_URL', 'smtps://mailer:pw@smtp.example.com')
+        monkeypatch.setenv(var, value)
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == (
+            'The mail server password is still the .env.prod.example placeholder')
+
+    @pytest.mark.parametrize('value', ['App <no-reply@example.com>', 'no-reply@EXAMPLE.com'])
+    def test_refuses_the_placeholder_sender(self, monkeypatch, value):
+        monkeypatch.setenv('EMAIL_FROM', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            ProductionConfig()
+
+        assert str(exc_info.value) == 'EMAIL_FROM is still the .env.prod.example placeholder'
+
+    def test_accepts_a_real_sender(self, monkeypatch):
+        monkeypatch.setenv('EMAIL_FROM', 'App <no-reply@mail.example.org>')
+
+        assert ProductionConfig().EMAIL_FROM == 'App <no-reply@mail.example.org>'
+
+
 class TestConfigValues:
     """Test specific configuration values"""
 
@@ -582,6 +711,8 @@ class TestProductionSecretKey:
          'mysql+pymysql://u:your_migration_password_here@db/d', 'database'),
         ('REDIS_URL', 'redis://app:your_redis_password_here@redis:6379/0', 'Redis'),
         ('REDIS_PASSWORD', 'your_redis_password_here', 'Redis'),
+        # The worker's own Redis user (docker-compose.yml)
+        ('REDIS_URL', 'redis://worker:your_redis_worker_password_here@redis:6379/0', 'Redis'),
     ])
     def test_rejects_placeholder_passwords(self, monkeypatch, var, value, service):
         monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)

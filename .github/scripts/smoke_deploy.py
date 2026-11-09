@@ -2,10 +2,11 @@
 
 CI's Deploy smoke job runs this. It copies the working tree into a fresh
 clone of a throwaway origin and commits a few versions to its main (a good
-one, a second good one, one whose nginx stops at start, one whose migration
-fails, one that does not build, one whose db does not start, one that
-changes db, one built on a base image no registry has, one that changes
-redis). Then it runs deploy.sh through each case, after deploys cut off
+one, a second good one, one whose nginx stops at start, one whose worker
+stops at start, one whose migration fails, one that does not build, one
+whose db does not start, one that changes db, one built on a base image no
+registry has, one that changes redis). Then it runs deploy.sh through each
+case, after a stopped worker and deploys cut off
 before and after the backend was replaced, against the locks of a live and
 a dead deploy, then --latest as a timer would, through commits pushed
 meanwhile, and checks what it left running, the images it kept, the
@@ -111,6 +112,9 @@ def env_file():
         'DB_MIGRATION_USER': 'app_migrate',
         # Quoted, as Compose allows: the health check must read it as Compose does
         'SERVER_NAME': '"localhost www.localhost"',
+        # The worker only checks them at start: nothing sends email here
+        'EMAIL_URL': 'smtps://smoke:smokepass@smtp.invalid',
+        'EMAIL_FROM': '"Smoke <no-reply@smoke.invalid>"',
     }
     lines = []
     for line in (ROOT / '.env.prod.example').read_text(encoding='utf-8').splitlines():
@@ -151,14 +155,22 @@ def bash_pid(*, live):
     return process, pid
 
 
+def worker_up():
+    """Whether the worker's container is running"""
+    return run('docker', 'inspect', '-f', '{{.State.Running}}', f'{PROJECT}-worker-1',
+               check=False).stdout.strip() == 'true'
+
+
 def serving(clone, sha):
-    """Whether sha's images run and answer through nginx"""
-    images = (running('backend')[0], running('nginx')[0])
-    want = (f'{PROJECT}-backend:{sha}', f'{PROJECT}-nginx:{sha}')
+    """Whether sha's images run, the worker included, and answer through nginx"""
+    images = (running('backend')[0], running('worker')[0], running('nginx')[0])
+    want = (f'{PROJECT}-backend:{sha}', f'{PROJECT}-backend:{sha}', f'{PROJECT}-nginx:{sha}')
     health = run('curl', '-fsS', '-k', '--max-time', '5', '--resolve', 'localhost:443:127.0.0.1',
                  'https://localhost/api/health', check=False)
-    ok = images == want and health.returncode == 0 and clone.git('rev-parse', 'HEAD') == sha
-    return ok, f'{images}, health {health.returncode}, HEAD {clone.git("rev-parse", "HEAD")}'
+    ok = (images == want and worker_up() and health.returncode == 0
+          and clone.git('rev-parse', 'HEAD') == sha)
+    return ok, (f'{images}, worker up {worker_up()}, health {health.returncode}, '
+                f'HEAD {clone.git("rev-parse", "HEAD")}')
 
 
 def kept():
@@ -175,6 +187,10 @@ def scenario(clone):
     clone.edit('nginx/Dockerfile', 'ENV NGINX_MODE=tls', 'ENV NGINX_MODE=broken')
     broken_nginx = clone.commit('C: nginx stops at start')
     clone.edit('nginx/Dockerfile', 'ENV NGINX_MODE=broken', 'ENV NGINX_MODE=tls')
+    worker_command = 'command: ["python", "worker.py"]'
+    clone.edit('docker-compose.yml', worker_command, 'command: ["python", "-c", "raise SystemExit(1)"]')
+    broken_worker = clone.commit('J: the worker stops at start')
+    clone.edit('docker-compose.yml', 'command: ["python", "-c", "raise SystemExit(1)"]', worker_command)
     migrations = clone.read('backend/migrations/env.py')
     clone.write('backend/migrations/env.py', "raise SystemExit('broken on purpose')\n" + migrations)
     broken_migration = clone.commit('D: the migration fails')
@@ -208,6 +224,12 @@ def scenario(clone):
     check('deploying the deployed commit changes nothing',
           result.returncode == 0 and 'already deployed' in result.stdout, result.stdout)
 
+    run('docker', 'stop', f'{PROJECT}-worker-1')
+    result = clone.deploy(good)
+    check('deploying the deployed commit brings back a stopped worker',
+          'already deployed' not in result.stdout and serving(clone, good)[0],
+          f'{result.stdout} {serving(clone, good)[1]}')
+
     result = clone.deploy(second)
     check('the second deploy serves B', *serving(clone, second))
     # The deploy creates migrate's container afresh; each start of it logs this
@@ -224,6 +246,12 @@ def scenario(clone):
     check('it is rolled back to B', *serving(clone, second))
     check('.env.deploy records C as failed', (clone.state().get('IMAGE_TAG'),
           clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_nginx), clone.state())
+
+    result = clone.deploy(broken_worker)
+    check('a deploy whose worker does not start fails', result.returncode == 1, result.stderr)
+    check('it is rolled back to B, the worker included', *serving(clone, second))
+    check('.env.deploy records J as failed', (clone.state().get('IMAGE_TAG'),
+          clone.state().get('FAILED_IMAGE_TAG')) == (second, broken_worker), clone.state())
 
     backend = running('backend')
     # Each failure below starts from another checkout than the deployed

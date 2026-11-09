@@ -18,7 +18,11 @@ alembic
 Flask-SQLAlchemy
 SQLAlchemy
 redis
+# Background jobs (app/utils/jobs.py), run by the worker service on Redis
+dramatiq
 pydantic
 email-validator
+# Signs the tokens in emailed links (app/utils/links.py)
+itsdangerous
 # The driver DATABASE_URL names (mysql+pymysql://), loaded by SQLAlchemy
 PyMySQL

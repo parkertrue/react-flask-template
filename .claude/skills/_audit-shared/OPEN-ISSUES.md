@@ -77,6 +77,11 @@ real users' data. `docs/deployment.md` has the detail of each.
   that copies the certificate into `nginx/certs/` and reloads nginx. Use
   Let's Encrypt's staging server while trying it. `DECISIONS.md` records
   that this waits for a server.
+- **Email.** Sign up with a mail provider, set up the sending domain
+  (SPF, DKIM, DMARC) and set `EMAIL_URL` and `EMAIL_FROM` ("Sending
+  Email"). Send one email end to end, ask for the provider's production
+  access, and read its bounce and complaint reports, which the app does
+  not act on (`DECISIONS.md`, "Email").
 - **The password hash's cost (low).** Hashes use scrypt N=2^15,
   Werkzeug's default, below OWASP's 2^17, which costs about 4× the CPU and
   memory (~128 MB per hash). Time a login on the production hardware and

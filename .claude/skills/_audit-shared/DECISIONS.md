@@ -387,15 +387,53 @@ visit gives.
 **The data export is one synchronous JSON response, with no password asked
 for** (user, 2026-11-08). `GET /api/account/export` reads every registered
 feature's rows in one request. Large services build an export in the
-background and email a link; that needs a job queue and email, and every
-feature here caps a user's rows (the notes example: 1000 of 256 characters,
-about 300 KB), which bounds the response. Account deletion asks for the
+background and email a link. Every feature here caps a user's rows (the
+notes example: 1000 of 256 characters, about 300 KB), which bounds the
+response, and the background route would add storage for the finished
+file, its cleanup and an emailed download link for no gain. Account deletion asks for the
 password because it cannot be undone; the export does not, since a stolen
 session can already read every row through the other routes. The logs are
 not in it: the privacy notice takes requests for them by email.
 *Revisit when:* a feature's per-user data can outgrow one response (file
 uploads, a long history), or the export holds anything the other routes
-never show, which should then ask for the password.
+never show, which should then ask for the password. The worker, email and
+signed links then cover the queue and the emailed link; what's new is
+storing the file and deleting it.
+
+**Background jobs: Dramatiq, with the worker on a Redis user of its own
+that may run KEYS** (user, 2026-11-09). The `worker` service runs the jobs
+requests queue (`backend/app/utils/jobs.py`). RQ was passed over because a
+message names any importable function (its callbacks too), so a write to
+Redis would run code in the worker, which holds `SECRET_KEY` and the
+database password; Celery for its weight. Dramatiq runs only declared
+actors, with JSON arguments. Its Redis broker's upkeep (requeuing a dead
+worker's messages, dropping expired failed ones) calls `KEYS`, which
+`-@dangerous` refuses, so the worker connects as `worker`, which may touch
+only `dramatiq` and `dramatiq:*` and holds `+keys`, and the app's broker
+never runs the upkeep (`maintenance_chance=0`): the `app` user keeps no
+dangerous command, and a stolen worker password reaches the queue alone.
+`KEYS` reveals no more than `SCAN`, which both users have and whose output
+Redis does not filter by key pattern; it blocks Redis while it walks every
+key, a few milliseconds per hundred thousand, on about one worker call in
+a thousand. Dramatiq is LGPL-3.0: installed unmodified by pip and run on
+the operator's own servers, it asks nothing of the app (as with the
+images' GPL code); a patched copy of its Lua script would.
+*Revisit when:* Dramatiq's upkeep stops calling `KEYS` (drop `+keys`), the
+keyspace reaches millions of keys, or the app is distributed to others.
+
+**Email: SMTP to a managed provider, plain text, sent by the worker alone**
+(user, 2026-11-09). `backend/app/utils/mail.py` speaks SMTP, which every
+provider accepts, so no provider's API, library or webhooks are wired in:
+the app does not act on bounces or complaints. Production requires TLS.
+Emails are plain text: every client shows it, and it carries no tracking,
+remote images or markup to sanitize. Only the worker holds the mail
+server's password (`check_compose.py`). Nothing caps the app's outgoing
+mail as a whole: the limits on whatever queues an email bound one
+requester, and the provider's sending limits the rest.
+*Revisit when:* a provider warns about or suspends the account over
+bounces or complaints (handle its bounce webhook and stop mailing those
+addresses), an email needs HTML, or a flood of requests gets past the
+per-requester limits.
 
 **Caching: nothing beyond the defaults until a feature needs it** (user,
 2026-11-08). Weighed for a standard app, not just the example feature:

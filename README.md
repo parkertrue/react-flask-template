@@ -3,7 +3,7 @@
 A ready-to-use starting point for a React + Flask + MySQL web app, with auth, tests, CI and a hardened production setup already wired.
 
 * **Frontend**: React (Vite), in TypeScript
-* **Backend**: Flask + SQLAlchemy + Alembic, MySQL, Redis (sessions and rate limits)
+* **Backend**: Flask + SQLAlchemy + Alembic, MySQL, Redis (sessions, rate limits and a job queue), and a worker for slow jobs such as sending email
 * **Production**: Docker Compose behind an HTTPS Nginx reverse proxy, with MySQL and Redis bundled or external (RDS, ElastiCache), or on a container platform such as Amazon ECS
 * **Auth**: JWT access tokens plus rotating, revocable refresh tokens in HttpOnly cookies
 * **Tests**: unit, integration and end-to-end, run in GitHub Actions
@@ -38,7 +38,7 @@ Dev and test work as cloned. Only production needs a file of its own (see [Produ
 
 ## Development
 
-MySQL and Redis run in Docker; Flask and React run on your machine, with hot reloading.
+MySQL, Redis and Mailpit (which catches the email the app sends) run in Docker; Flask, the worker and React run on your machine, with hot reloading.
 
 ### One-Time Setup
 
@@ -59,8 +59,8 @@ npm install
 Run each in its own terminal:
 
 ```bash
-docker compose --env-file .env.dev -f docker-compose.dev.yml up   # MySQL :3306, Redis :6379
-cd backend && ./run_dev.sh                                        # Migrates, then starts Flask
+docker compose --env-file .env.dev -f docker-compose.dev.yml up   # MySQL :3306, Redis :6379, Mailpit :8025
+cd backend && ./run_dev.sh                                        # Migrates, then starts Flask and the worker
 cd frontend && npm run dev                                        # Vite dev server
 ```
 
@@ -68,6 +68,7 @@ cd frontend && npm run dev                                        # Vite dev ser
 |----------|-----|
 | Frontend | [http://localhost:5173](http://localhost:5173) |
 | Backend  | [http://localhost:5000/api/health](http://localhost:5000/api/health) |
+| Email    | [http://localhost:8025](http://localhost:8025) (Mailpit: every email the worker sent) |
 
 Stop with `CTRL+C` in each terminal, then `docker compose --env-file .env.dev -f docker-compose.dev.yml down`.
 
@@ -134,7 +135,7 @@ Everything runs in Docker; only Nginx is published (ports 80 and 443). [docs/dep
 
 ### Environment File
 
-Create `.env.prod` and fill in every value. Production refuses placeholder passwords and a `SECRET_KEY` under 32 characters.
+Create `.env.prod` and fill in every value. Production refuses placeholder passwords and a `SECRET_KEY` under 32 characters. Email goes out through a mail provider you sign up with: see [Sending Email](docs/deployment.md#sending-email).
 
 ```bash
 cp .env.prod.example .env.prod

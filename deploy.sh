@@ -10,8 +10,9 @@
 #
 # Run it as a user who can run Docker, in a clone that user owns, beside
 # .env.prod. The images are built here, from the commit, and tagged with it
-# (<project>-backend:<commit>, <project>-nginx:<commit>); the deployed and
-# previous commits' images are kept, so a rollback builds nothing.
+# (<project>-backend:<commit>, <project>-nginx:<commit>; the worker runs the
+# backend's); the deployed and previous commits' images are kept, so a
+# rollback builds nothing.
 #
 # The checkout moves to the commit, so the compose file and db/init match its
 # images. The bundled db and redis that are enabled come up first, on the
@@ -84,11 +85,24 @@ prune() {
     done
 }
 
-# Whether the backend and nginx running are the checked-out commit's
+# The app's long-running services that the checked-out commit defines, in
+# the order start replaces them. An earlier commit may lack one (one from
+# before the worker), which a rollback to it must not ask for.
+app_services() {
+    local defined service
+    defined=$(compose config --services)
+    for service in backend worker nginx; do
+        if grep -qx "$service" <<< "$defined"; then echo "$service"; fi
+    done
+}
+
+# Whether every app service is running the checked-out commit's images
 running() {
-    local containers images repository
-    containers=$(compose ps -q backend nginx)
-    [ -n "$containers" ] || return 1
+    local services containers images repository
+    services=$(app_services)
+    # shellcheck disable=SC2086 # one word per service
+    containers=$(compose ps -q $services)
+    [ "$(wc -w <<< "$containers")" -eq "$(wc -w <<< "$services")" ] || return 1
     # shellcheck disable=SC2086 # one word per container
     images=$(docker inspect --format '{{.Config.Image}}' $containers)
     for repository in $(repositories); do
@@ -113,10 +127,17 @@ healthy() {
 
 # Replaces the running containers with the checked-out commit's, the backend
 # first, while the old nginx keeps serving the page (and the API's JSON 502
-# or 504 until the new backend listens), then nginx. --no-deps: migrate has
-# already run, and would otherwise run again with the app stopped.
+# or 504 until the new backend listens), then the worker, then nginx.
+# --no-deps: migrate has already run, and would otherwise run again with the
+# app stopped.
 replace() { compose up -d --no-build --no-deps --wait --wait-timeout "$WAIT_SECONDS" "$1"; }
-start() { replace backend && replace nginx && healthy; }
+start() {
+    local service
+    for service in $(app_services); do
+        replace "$service" || return 1
+    done
+    healthy
+}
 
 # Brings the bundled db and redis up to the checked-out commit's settings,
 # naming only those whose profile is on: a service named on the command line
