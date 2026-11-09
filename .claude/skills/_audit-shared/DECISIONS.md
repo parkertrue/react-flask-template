@@ -41,8 +41,12 @@ the service learns nothing it could tie to the user. If the service is down
 or slow (2 s), the password is accepted and `breach_check_failed` logged,
 since a third party's outage must not stop sign-up; a breached password can
 slip through meanwhile. Login and account deletion never check: they only
-compare. *Revisit when:* the service's outages show up often in the log, or
-the app holds data that justifies refusing sign-up while it is down.
+compare. CodeQL's `py/weak-sensitive-data-hashing` flags the SHA-1 of the
+password (in `breached.py` and its test); both alerts were dismissed as false
+positives (user, 2026-11-09): SHA-1 is how the API names a password, the full
+hash never leaves memory or reaches storage, and stored passwords stay
+scrypt hashes. *Revisit when:* the service's outages show up often in the
+log, or the app holds data that justifies refusing sign-up while it is down.
 
 **No refresh-token reuse detection.** A replayed, already rotated refresh token
 gets 401 `AUTH_TOKEN_REVOKED`, but does not revoke the rest of that user's
