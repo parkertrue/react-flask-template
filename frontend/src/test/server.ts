@@ -9,7 +9,8 @@ import { account, tokens } from './fixtures'
 export const handlers = [
   http.get('/api/account', () => HttpResponse.json(account())),
   http.post('/api/auth/register', () =>
-    HttpResponse.json({ message: 'User created' }, { status: 201 })),
+    HttpResponse.json({ message: 'Check your inbox' }, { status: 202 })),
+  http.post('/api/auth/register/complete', () => HttpResponse.json(tokens())),
   http.post('/api/auth/login', () => HttpResponse.json(tokens())),
   http.post('/api/auth/refresh', () => HttpResponse.json(tokens())),
   http.post('/api/auth/logout', () => HttpResponse.json({ message: 'Logged out' })),

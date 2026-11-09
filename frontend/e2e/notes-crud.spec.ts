@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import {
   expectNoCspViolations, expectNoViolations, expectReflow, expectTargetSize,
-  expectVisibleFocus, downloadData, holdRequests, login, logout, openAccount, registerAndLogin,
-  registration, serviceUnavailable, uniqueEmail,
+  expectVisibleFocus, createAccount, downloadData, holdRequests, login, logout, openAccount,
+  registerAndLogin, serviceUnavailable, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -103,10 +103,7 @@ test.describe('Notes CRUD Operations', () => {
   // them from showing
   test('notes are private to user, even on a shared device', async ({ page }) => {
     const secondUser = uniqueEmail('second-user')
-    const register = await page.request.post('/api/auth/register', {
-      data: registration(secondUser),
-    })
-    expect(register.status()).toBe(201)
+    await createAccount(secondUser)
     const firstUserNote = `Private note ${Date.now()}`
     await addNote(page, firstUserNote)
     await page.evaluate(() => { window.samePageLoad = true })

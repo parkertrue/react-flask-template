@@ -1,7 +1,7 @@
 import { api } from '@/api/api'
 import type {
-  AccountDeleteRequest, AccountResponse, DataExportResponse, LoginRequest, RegisterRequest,
-  TokensResponse,
+  AccountDeleteRequest, AccountResponse, DataExportResponse, LoginRequest,
+  RegisterCompleteRequest, RegisterRequest, TokensResponse,
 } from '@/api/schemas'
 
 // The body of a successful login or refresh. No refresh_csrf when the
@@ -15,9 +15,20 @@ export type Account = AccountResponse
 // under its name
 export type DataExport = DataExportResponse
 
-// termsVersion: the version of the terms the user was shown and accepted
-export async function registerUser(email: string, password: string, termsVersion: number) {
-  await api.post('/auth/register', { email, password, terms_version: termsVersion } satisfies RegisterRequest)
+// Sign-up's first step: emails the address a link to finish. Answered
+// alike whether the address has an account or not.
+export async function requestRegistration(email: string) {
+  await api.post('/auth/register', { email } satisfies RegisterRequest)
+}
+
+// Sign-up's second step, with the emailed link's token: makes the account
+// and logs in. termsVersion: the version of the terms the user was shown and
+// accepted
+export async function completeRegistration(token: string, password: string, termsVersion: number) {
+  const response = await api.post<Tokens>(
+    '/auth/register/complete',
+    { token, password, terms_version: termsVersion } satisfies RegisterCompleteRequest)
+  return response.data
 }
 
 export async function loginUser(email: string, password: string) {

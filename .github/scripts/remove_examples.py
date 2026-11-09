@@ -43,6 +43,7 @@ EDITS = {
         ("    ['/notes', 'Notes page'],\n", ''),
         ("    ['/login', 'Notes page'],\n", "    ['/login', 'Account page'],\n"),
         ("    ['/register', 'Notes page'],\n", "    ['/register', 'Account page'],\n"),
+        ("    ['/register/complete', 'Notes page'],\n", "    ['/register/complete', 'Account page'],\n"),
     ],
     'frontend/src/auth/GuestRoute.tsx': [
         ("export const AFTER_LOGIN_PATH = '/notes'", "export const AFTER_LOGIN_PATH = '/account'"),

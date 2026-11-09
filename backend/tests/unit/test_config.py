@@ -27,7 +27,7 @@ SERVICE_ENV = {
 OPTIONAL_VARS = (
     'MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD', 'MIGRATION_DATABASE_PASSWORD',
     'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT', 'DB_QUERY_TIMEOUT',
-    'EMAIL_URL', 'EMAIL_PASSWORD', 'EMAIL_FROM')
+    'EMAIL_URL', 'EMAIL_PASSWORD', 'EMAIL_FROM', 'APP_URL', 'SERVER_NAME')
 
 
 @pytest.fixture(autouse=True)
@@ -500,6 +500,65 @@ class TestEmailUrl:
 
         with pytest.raises(ValueError, match='EMAIL_FROM must be an address'):
             DevelopmentConfig()
+
+
+class TestAppUrl:
+    """Where emailed links point: the frontend, never the request's Host"""
+
+    @pytest.mark.parametrize('value, url', [
+        ('http://localhost:5173', 'http://localhost:5173'),
+        ('https://app.example.com/', 'https://app.example.com'),
+        ('https://app.example.com:8443', 'https://app.example.com:8443'),
+    ])
+    def test_reads_the_origin(self, monkeypatch, value, url):
+        monkeypatch.setenv('APP_URL', value)
+
+        assert DevelopmentConfig().APP_URL == url
+
+    def test_unset_outside_production(self):
+        assert DevelopmentConfig().APP_URL is None
+
+    @pytest.mark.parametrize('value', [
+        'ftp://app.example.com', 'app.example.com', 'https://', 'https://app.example.com/app',
+        'https://app.example.com?x=1', 'https://app.example.com#x'])
+    def test_refuses_anything_but_an_origin(self, monkeypatch, value):
+        monkeypatch.setenv('APP_URL', value)
+
+        with pytest.raises(ValueError) as exc_info:
+            DevelopmentConfig()
+
+        assert str(exc_info.value) == 'APP_URL must be http(s)://<host>[:<port>], nothing else'
+
+    def test_refuses_a_malformed_port(self, monkeypatch):
+        monkeypatch.setenv('APP_URL', 'https://app.example.com:port')
+
+        with pytest.raises(ValueError, match='APP_URL is not a valid URL'):
+            DevelopmentConfig()
+
+    class TestInProduction:
+        @pytest.fixture(autouse=True)
+        def strong_secret(self, monkeypatch):
+            monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+
+        def test_defaults_to_the_first_name_nginx_serves(self, monkeypatch):
+            monkeypatch.setenv('SERVER_NAME', 'app.example.com www.app.example.com')
+
+            assert ProductionConfig().APP_URL == 'https://app.example.com'
+
+        def test_app_url_wins(self, monkeypatch):
+            monkeypatch.setenv('SERVER_NAME', 'app.example.com')
+            monkeypatch.setenv('APP_URL', 'https://www.app.example.com')
+
+            assert ProductionConfig().APP_URL == 'https://www.app.example.com'
+
+        def test_unset_without_either(self):
+            assert ProductionConfig().APP_URL is None
+
+        def test_refuses_plain_http(self, monkeypatch):
+            monkeypatch.setenv('APP_URL', 'http://app.example.com')
+
+            with pytest.raises(ValueError, match='APP_URL must start with https:// in production'):
+                ProductionConfig()
 
 
 class TestProductionEmail:

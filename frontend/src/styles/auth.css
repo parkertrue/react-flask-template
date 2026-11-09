@@ -24,3 +24,17 @@
   text-align: center;
   margin-top: 1.5rem;
 }
+
+/* A note under a field, such as where to read about the address asked for */
+.form-note {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+/* A step's buttons side by side, wrapping onto lines of their own when narrow */
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}

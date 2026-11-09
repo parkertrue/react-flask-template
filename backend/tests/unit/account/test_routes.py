@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.auth.models import User
 from app.utils.exports import registered_exports
+from tests.conftest import register
 
 
 def test_returns_the_signed_in_users_account(client, sample_user, auth_headers):
@@ -166,10 +167,9 @@ class TestDeleteAccount:
         email, terms_version = sample_user.email, sample_user.terms_version
         delete_account(client, auth_headers)
 
-        response = client.post('/api/auth/register', json={
-            'email': email, 'password': PASSWORD, 'terms_version': terms_version})
+        response = register(client, email, PASSWORD, terms_version)
 
-        assert response.status_code == 201
+        assert response.status_code == 200
 
     def test_a_wrong_password_deletes_nothing(self, client, db, sample_user, auth_headers):
         """403, not 401: the client takes a 401 for a session that has ended"""

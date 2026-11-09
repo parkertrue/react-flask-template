@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import type { UserEvent } from '@testing-library/user-event'
 import { routes } from '@/routes'
 import { TERMS_VERSION } from '@/legal'
 import { storage } from '@/auth/storage'
 import type { FromState } from '@/auth/GuestRoute'
-import { account, errorBody } from '../fixtures'
+import { account, errorBody, tokens } from '../fixtures'
 import { renderRoutes, signIn } from '../router'
 import { handlers, setupMswServer } from '../server'
 
@@ -14,12 +14,11 @@ import { handlers, setupMswServer } from '../server'
 // HTTP layer. Every endpoint answers its happy path unless a test says not.
 const server = setupMswServer(...handlers)
 
-async function fillRegistration(user: UserEvent, email: string) {
-  await user.type(screen.getByLabelText('Email'), email)
+async function finishRegistration(user: UserEvent) {
   await user.type(screen.getByLabelText('Password'), 'Password123')
   await user.type(screen.getByLabelText('Confirm password'), 'Password123')
   await user.click(screen.getByRole('checkbox', { name: /I accept the Terms/ }))
-  await user.click(screen.getByRole('button', { name: 'Register' }))
+  await user.click(screen.getByRole('button', { name: 'Create account' }))
 }
 
 async function fillLogin(user: UserEvent, password = 'Password123') {
@@ -30,38 +29,52 @@ async function fillLogin(user: UserEvent, password = 'Password123') {
 
 describe('Authentication Flow Integration Tests', () => {
   describe('Registration Flow', () => {
-    it('registers, with the terms accepted, and moves on to the login page, which confirms it', async () => {
+    it('asks for a link, then says to check the inbox', async () => {
       let body
       server.use(http.post('/api/auth/register', async ({ request }) => {
         body = await request.json()
-        return HttpResponse.json({ message: 'User created' }, { status: 201 })
+        return HttpResponse.json({ message: 'Check your inbox' }, { status: 202 })
       }))
       const { user } = renderRoutes(routes, '/register')
 
-      await fillRegistration(user, 'test@example.com')
+      await user.type(screen.getByLabelText(/^Email/), 'test@example.com')
+      await user.click(screen.getByRole('button', { name: 'Continue' }))
 
-      expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument()
-      // Filled once the page is in place, so screen readers read it
-      await waitFor(() =>
-        expect(screen.getByRole('status')).toHaveTextContent('Registration successful'))
-      expect(body).toEqual(
-        { email: 'test@example.com', password: 'Password123', terms_version: TERMS_VERSION })
+      expect(await screen.findByRole('heading', { name: 'Check your inbox' })).toHaveFocus()
+      expect(body).toEqual({ email: 'test@example.com' })
     })
 
-    it('ties a taken email to the Email field', async () => {
+    it("finishes from the link's page, with the terms accepted, signed in", async () => {
+      let body
+      server.use(http.post('/api/auth/register/complete', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json(tokens('new-access', 'new-csrf'))
+      }))
+      // With the account page to return to (GuestRoute reads the state), so
+      // this shared test needs no example feature page after signing in
+      const from: FromState = { from: { pathname: '/account', search: '', hash: '', state: null, key: 'k' } }
+      const { user } = renderRoutes(routes, {
+        pathname: '/register/complete', hash: '#email=test%40example.com&token=a-token', state: from })
+
+      await finishRegistration(user)
+
+      expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument()
+      expect(body).toEqual({ token: 'a-token', password: 'Password123', terms_version: TERMS_VERSION })
+      expect(storage.getAccessToken()).toBe('new-access')
+      expect(storage.getEmail()).toBe('test@example.com')
+    })
+
+    it('says when the link has expired, and offers to start again', async () => {
       server.use(
-        http.post('/api/auth/register', () => HttpResponse.json(
-          errorBody('EMAIL_ALREADY_REGISTERED', 'Email already registered'),
-          { status: 409 }))
+        http.post('/api/auth/register/complete', () => HttpResponse.json(
+          errorBody('LINK_EXPIRED', 'This link has expired'), { status: 400 }))
       )
-      const { user } = renderRoutes(routes, '/register')
+      const { user } = renderRoutes(routes, '/register/complete#email=test%40example.com&token=a-token')
 
-      await fillRegistration(user, 'existing@example.com')
+      await finishRegistration(user)
 
-      const email = screen.getByLabelText('Email')
-      await waitFor(() => expect(email).toHaveFocus())
-      expect(email).toHaveAttribute('aria-invalid', 'true')
-      expect(email).toHaveAccessibleDescription('Email already registered')
+      expect(await screen.findByRole('alert')).toHaveTextContent('This link has expired')
+      expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
     })
   })
 

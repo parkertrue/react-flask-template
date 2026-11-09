@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, type Route, type test } from '@playwright/test'
+import { expect, request, type Locator, type Page, type Route, type test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { createHmac, randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
@@ -6,6 +6,7 @@ import path from 'path'
 import { APP_NAME } from '../src/appName'
 import type { DataExportResponse } from '../src/api/schemas'
 import { TERMS_VERSION } from '../src/legal'
+import config from '../playwright.config'
 
 // What the helpers below leave on the page's window
 declare global {
@@ -24,20 +25,64 @@ function capture(text: string, pattern: RegExp) {
 
 export const TEST_PASSWORD = 'SecurePass123'
 
-/** The body of a registration through the API, with the terms accepted */
-export const registration = (email: string, password = TEST_PASSWORD) =>
-  ({ email, password, terms_version: TERMS_VERSION })
-
 // Every run registers fresh accounts, so emails must never repeat
 export const uniqueEmail = (prefix: string) => `${prefix}-${randomUUID()}@example.com`
 
-/** Fill in and submit the registration form on the page, without waiting */
-export async function fillRegistration(page: Page, email: string, password = TEST_PASSWORD) {
-  await page.getByLabel(/email/i).fill(email)
+// The test stack's Mailpit, which catches every email the worker sends
+// (docker-compose.test.yml)
+const MAILPIT_API = 'http://127.0.0.1:8026/api/v1'
+
+interface MailpitSearch {
+  messages: { ID: string }[]
+}
+
+/** The one email to an address with this subject, once the worker has sent it */
+export async function emailTo(address: string, subject: string) {
+  const query = encodeURIComponent(`to:"${address}" subject:"${subject}"`)
+  let found: MailpitSearch['messages'] = []
+  await expect.poll(async () => {
+    const response = await fetch(`${MAILPIT_API}/search?query=${query}`)
+    found = (await response.json() as MailpitSearch).messages
+    return found.length
+  }, { message: `an email to ${address}: ${subject}`, timeout: 15000 }).toBe(1)
+  const response = await fetch(`${MAILPIT_API}/message/${found[0]?.ID ?? ''}`)
+  return await response.json() as { Subject: string; Text: string }
+}
+
+/** The link in the one email to an address with this subject */
+export async function emailedLink(address: string, subject = 'Finish signing up') {
+  return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
+}
+
+/** Ask for a sign-up link on the register page, without waiting */
+export async function requestLink(page: Page, email: string) {
+  await page.getByLabel(/^email/i).fill(email)
+  await page.getByRole('button', { name: /^continue$|sending link/i }).click()
+}
+
+/** Fill in and submit the emailed link's page, without waiting */
+export async function fillRegistration(page: Page, password = TEST_PASSWORD) {
   await page.getByLabel(/^password$/i).fill(password)
   await page.getByLabel(/confirm password/i).fill(password)
   await page.getByRole('checkbox', { name: /^I accept the Terms/ }).check()
-  await page.getByRole('button', { name: /register|creating account/i }).click()
+  await page.getByRole('button', { name: /create account|creating account/i }).click()
+}
+
+/**
+ * A new account, made through the API as the pages make it (the link read
+ * from Mailpit), from a client of its own, so its cookie stays out of the
+ * page's
+ */
+export async function createAccount(email: string, password = TEST_PASSWORD) {
+  const client = await request.newContext({ baseURL: config.use?.baseURL, ignoreHTTPSErrors: true })
+  const asked = await client.post('/api/auth/register', { data: { email } })
+  expect(asked.status()).toBe(202)
+  const token = new URLSearchParams(new URL(await emailedLink(email)).hash.slice(1)).get('token')
+  const made = await client.post('/api/auth/register/complete', {
+    data: { token, password, terms_version: TERMS_VERSION },
+  })
+  expect(made.status()).toBe(200)
+  await client.dispose()
 }
 
 /** Where a visible element sits on the page */
@@ -47,16 +92,17 @@ export async function boxOf(locator: Locator) {
   return box
 }
 
-/** Open the registration page, then fill it in and submit it */
-export async function submitRegistration(page: Page, email: string, password = TEST_PASSWORD) {
-  await page.goto('/register')
-  await fillRegistration(page, email, password)
-}
-
-/** Register through the UI; the redirect to /login only follows a 201 */
+/**
+ * Sign up through the UI as a user does: ask for the link, open it from the
+ * email, choose a password. Signed in, on the page signing up leads to.
+ */
 export async function register(page: Page, email: string, password = TEST_PASSWORD) {
-  await submitRegistration(page, email, password)
-  await expect(page).toHaveURL(/\/login/, { timeout: 10000 })
+  await page.goto('/register')
+  await requestLink(page, email)
+  await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeVisible()
+  await page.goto(await emailedLink(email))
+  await fillRegistration(page, password)
+  await page.waitForURL(url => url.pathname !== '/register/complete', { timeout: 15000 })
 }
 
 /** Log in from the login page and wait to be sent on from it */
@@ -71,11 +117,10 @@ export async function login(page: Page, email: string, password = TEST_PASSWORD)
   ])
 }
 
-/** A new account, logged in on the page login leads to; returns its email */
+/** A new account, signed in on the page signing up leads to; returns its email */
 export async function registerAndLogin(page: Page, prefix: string) {
   const email = uniqueEmail(prefix)
   await register(page, email)
-  await login(page, email)
   return email
 }
 

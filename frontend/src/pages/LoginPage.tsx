@@ -13,27 +13,24 @@ import {
   EMAIL_MAX_LENGTH
 } from '@/utils/validation'
 
-// What the register and account pages leave in the location's state
+// What the account page leaves in the location's state
 export interface LoginState {
-  registered?: boolean
   accountDeleted?: boolean
 }
 
 export default function LoginPage() {
   const { login, sessionEnded } = useAuth()
   const location = useLocation() as Location<LoginState | null>
-  // Where the user came from: registering, or deleting their account
-  const { registered, accountDeleted } = location.state ?? {}
+  // Where the user came from: deleting their account
+  const { accountDeleted } = location.state ?? {}
   const { values, errors, handleChange, validate } = useFormFields({ email: '', password: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   // Why the user is here, for screen readers. Filled after the first render:
   // a live region added along with its text is not read.
   const [status, setStatus] = useState('')
-  const notice = registered
-    ? 'Registration successful. Please log in.'
-    : accountDeleted ? 'Your account has been deleted.'
-      : sessionEnded ? 'Your session has ended. Please log in again.' : ''
+  const notice = accountDeleted ? 'Your account has been deleted.'
+    : sessionEnded ? 'Your session has ended. Please log in again.' : ''
 
   useEffect(() => {
     // Announcing the notice once the region exists is what this effect is for
@@ -72,7 +69,7 @@ export default function LoginPage() {
           <h1 id="login-heading">Log in</h1>
 
           {notice && (
-            <p className={registered || accountDeleted ? 'success-message' : 'info-message'}>{notice}</p>
+            <p className={accountDeleted ? 'success-message' : 'info-message'}>{notice}</p>
           )}
           <p className="visually-hidden" role="status">{status}</p>
 

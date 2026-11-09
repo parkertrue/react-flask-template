@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
-  register, registerAndLogin, serviceUnavailable, uniqueEmail,
+  registerAndLogin, requestLink, serviceUnavailable, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -11,7 +11,9 @@ import { APP_NAME } from '../src/appName'
 const VISITOR_PAGES: [string, string, string, number][] = [
   ['/', APP_NAME, `Welcome to ${APP_NAME}`, 8],
   ['/login', `Log in | ${APP_NAME}`, 'Log in', 10],
-  ['/register', `Register | ${APP_NAME}`, 'Register', 14],
+  ['/register', `Register | ${APP_NAME}`, 'Register', 10],
+  // Without the emailed link: what to do instead
+  ['/register/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
   ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice', 9],
   ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service', 8],
   ['/contact', `Contact | ${APP_NAME}`, 'Contact', 10],
@@ -52,7 +54,7 @@ test.describe('Accessibility', () => {
 
     test('form errors are announced and pass', async ({ page }) => {
       await page.goto('/register')
-      await page.getByRole('button', { name: 'Register' }).click()
+      await page.getByRole('button', { name: 'Continue' }).click()
 
       await expect(page.getByLabel('Email')).toBeFocused()
       await expectNoViolations(page)
@@ -107,23 +109,65 @@ test.describe('Accessibility', () => {
       await expectTargetSize(page)
     })
 
-    test('registering, busy, has no violations', async ({ page }) => {
+    test('asking for a link, busy and then failed, has no violations', async ({ page }) => {
       const release = await holdRequests(page, 'POST', '**/api/auth/register', serviceUnavailable)
       await page.goto('/register')
-      await fillRegistration(page, uniqueEmail('e2e-a11y-busy'))
+      await requestLink(page, uniqueEmail('e2e-a11y-busy'))
 
-      await expect(page.getByRole('button', { name: /creating account/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Sending link...' })).toBeFocused()
       await expectNoViolations(page)
 
       release()
-      await expect(page.getByRole('alert')).toBeVisible()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
     })
 
-    test('the login page after registering has no violations', async ({ page }) => {
-      await register(page, uniqueEmail('e2e-a11y-registered'))
+    test('the check-your-inbox step has no violations, reflows, shows focus and has large enough targets', async ({ page }) => {
+      await page.goto('/register')
+      await requestLink(page, uniqueEmail('e2e-a11y-inbox'))
 
-      await expect(page.getByRole('status')).toHaveText('Registration successful. Please log in.')
+      await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
+      await expect(page).toHaveTitle(`Check your inbox | ${APP_NAME}`)
       await expectNoViolations(page)
+      await expectReflow(page)
+      // The navbar's and footer's, and the two buttons
+      await expectVisibleFocus(page, 8)
+      await expectTargetSize(page)
+    })
+
+    test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
+      await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+
+      await expect(page.getByLabel('Email')).toHaveValue('someone@example.com')
+      await expectNoViolations(page)
+      await expectReflow(page)
+      // The navbar's and footer's, the four fields (the read-only email
+      // too), the two links in the checkbox's label, and the button
+      await expectVisibleFocus(page, 13)
+      await expectTargetSize(page)
+    })
+
+    test("finishing, busy and then failed, has no violations", async ({ page }) => {
+      const release = await holdRequests(page, 'POST', '**/api/auth/register/complete', serviceUnavailable)
+      await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+      await fillRegistration(page)
+
+      await expect(page.getByRole('button', { name: 'Creating account...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
+    })
+
+    test('a refused link has no violations, and focuses why', async ({ page }) => {
+      await page.goto('/register/complete#email=someone%40example.com&token=forged.token.here')
+      await fillRegistration(page)
+
+      await expect(page.getByRole('alert')).toBeFocused()
+      await expectNoViolations(page)
+      await expectReflow(page)
+      await expectTargetSize(page)
     })
   })
 

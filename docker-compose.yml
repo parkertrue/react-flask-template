@@ -297,6 +297,10 @@ services:
       REDIS_URL: ${REDIS_WORKER_URL:-redis://worker:${REDIS_WORKER_PASSWORD}@redis:6379/0}
       EMAIL_URL: ${EMAIL_URL:?set EMAIL_URL in .env.prod}
       EMAIL_FROM: ${EMAIL_FROM:?set EMAIL_FROM in .env.prod}
+      # Emailed links start at the first name nginx serves, unless APP_URL
+      # in .env.prod names another (backend/app/config.py)
+      SERVER_NAME: ${SERVER_NAME:?set SERVER_NAME in .env.prod}
+      APP_URL: ${APP_URL:-}
     dns_opt: *dns-opt
     depends_on:
       migrate:

@@ -185,6 +185,28 @@ def read_email_from() -> str | None:
     return value
 
 
+def read_app_url() -> str | None:
+    """APP_URL, where the frontend is served, as scheme://host[:port] with no
+    trailing slash; None if unset.
+
+    Emailed links start with it (app/utils/links.py), never with the
+    request's Host header. Only the worker sends them, so only it needs it.
+    """
+    value = os.getenv('APP_URL')
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        # Read for its check: a port that isn't a number raises ValueError
+        _ = parts.port
+    except ValueError:
+        raise ValueError('APP_URL is not a valid URL') from None
+    if (parts.scheme not in ('http', 'https') or not parts.hostname
+            or parts.path not in ('', '/') or parts.query or parts.fragment):
+        raise ValueError('APP_URL must be http(s)://<host>[:<port>], nothing else')
+    return f'{parts.scheme}://{parts.netloc}'
+
+
 def refuse_tls_options(url_var: str, query: Mapping[str, object], refused: Iterable[str]) -> None:
     """Fail on any option in a URL's query that could weaken its TLS checks"""
     found = [option for option in refused if option in query]
@@ -262,6 +284,7 @@ class Config:
         # Email, which only the worker sends: unset elsewhere
         self.EMAIL_SERVER = read_email_url()
         self.EMAIL_FROM = read_email_from()
+        self.APP_URL = read_app_url()
 
         # Rate Limiter configuration
         self.RATELIMIT_ENABLED = True
@@ -396,6 +419,13 @@ class ProductionConfig(Config):
             if self.EMAIL_SERVER.security == 'none':
                 raise ValueError(
                     'EMAIL_URL needs TLS in production: start it with smtps:// or smtp+starttls://')
+        # The worker's links: the first name nginx serves, unless APP_URL
+        # says otherwise (a platform's container has no SERVER_NAME)
+        server_names = os.getenv('SERVER_NAME', '').split()
+        if self.APP_URL is None and server_names:
+            self.APP_URL = f'https://{server_names[0]}'
+        if self.APP_URL is not None and not self.APP_URL.startswith('https://'):
+            raise ValueError('APP_URL must start with https:// in production')
         if self.EMAIL_FROM is not None:
             _, sender = parseaddr(self.EMAIL_FROM, strict=True)
             if sender.rpartition('@')[2].lower() == PLACEHOLDER_EMAIL_DOMAIN:

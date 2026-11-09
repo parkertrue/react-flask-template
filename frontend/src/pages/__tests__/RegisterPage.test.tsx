@@ -1,200 +1,156 @@
 import { describe, it, expect, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
-import type { UserEvent } from '@testing-library/user-event'
 import RegisterPage from '../RegisterPage'
-import LoginPage from '../LoginPage'
-import { registerUser } from '@/auth/authService'
+import { requestRegistration } from '@/auth/authService'
 import { errorBody, httpError } from '@/test/fixtures'
 import { renderRoutes } from '@/test/router'
 import { APP_NAME } from '@/appName'
-import { TERMS_VERSION } from '@/legal'
 
 vi.mock('@/auth/authService')
 
 function renderPage() {
-  return renderRoutes([
-    { path: '/register', element: <RegisterPage /> },
-    { path: '/login', element: <LoginPage /> },
-  ], '/register')
+  return renderRoutes([{ path: '/register', element: <RegisterPage /> }], '/register')
 }
 
-const field = {
-  email: () => screen.getByLabelText('Email'),
-  password: () => screen.getByLabelText('Password'),
-  confirmPassword: () => screen.getByLabelText('Confirm password'),
-}
-const termsCheckbox = () => screen.getByRole('checkbox', { name: 'I accept the Terms and the Privacy notice' })
-const submitButton = () => screen.getByRole('button', { name: /register|creating account/i })
+const email = () => screen.getByLabelText(/^Email/)
+const continueButton = () => screen.getByRole('button', { name: /continue|sending link/i })
+const sendAgain = () => screen.getByRole('button', { name: /send again|sending/i })
+const useAnother = () => screen.getByRole('button', { name: 'Use a different email' })
 
-interface Values {
-  email?: string
-  password?: string
-  confirmPassword?: string
-  acceptTerms?: boolean
-}
-
-async function fill(user: UserEvent, values: Values = {}) {
-  const { email = 'user@example.com', password = 'Password123', acceptTerms = true } = values
-  const { confirmPassword = password } = values
-  const typed = { email, password, confirmPassword }
-  for (const name of ['email', 'password', 'confirmPassword'] as const) {
-    if (typed[name]) await user.type(field[name](), typed[name])
-  }
-  if (acceptTerms) await user.click(termsCheckbox())
+async function sendLink(address = 'user@example.com') {
+  const rendered = renderPage()
+  await rendered.user.type(email(), address)
+  await rendered.user.click(continueButton())
+  return rendered
 }
 
 describe('RegisterPage', () => {
-  it('shows the form, without the password rules yet, and a way to log in', () => {
+  it('asks for the email alone, says what it is for, and offers to log in', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Register' })).toBeInTheDocument()
-    expect(field.email()).toHaveAttribute('autocomplete', 'email')
-    expect(field.password()).toHaveAttribute('autocomplete', 'new-password')
-    expect(field.confirmPassword()).toHaveAttribute('autocomplete', 'new-password')
-    expect(field.password()).toHaveAccessibleDescription('')
+    expect(email()).toHaveAttribute('autocomplete', 'email')
+    expect(email()).toHaveAccessibleDescription("We'll email you a link to choose a password.")
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Privacy notice' })).toHaveAttribute('href', '/privacy')
     expect(screen.getByRole('link', { name: 'Log in' })).toHaveAttribute('href', '/login')
     expect(document.title).toBe(`Register | ${APP_NAME}`)
   })
 
-  it('asks the user to accept the terms and privacy notice, linked in new tabs', () => {
-    renderPage()
+  // One example per message: the rules themselves are covered in validation.test.ts
+  it.each([
+    ['an empty email', 'x{Backspace}', 'Email is required'],
+    ['a malformed email', 'not-an-email', 'Please enter a valid email address'],
+  ])('stops %s, explains, and focuses the field', async (_, typed, message) => {
+    const { user } = renderPage()
+    await user.type(email(), typed)
 
-    expect(termsCheckbox()).not.toBeChecked()
-    expect(termsCheckbox()).toHaveAccessibleDescription('')
-    expect(screen.getByText('Opens in a new tab.')).not.toBeVisible()
-    for (const [name, href] of [['Terms', '/terms'], ['Privacy notice', '/privacy']]) {
-      const link = screen.getByRole('link', { name })
-      expect(link).toHaveAttribute('href', href)
-      expect(link).toHaveAttribute('target', '_blank')
-      expect(link).toHaveAccessibleDescription('Opens in a new tab.')
-    }
+    await user.click(continueButton())
+
+    expect(email()).toHaveAttribute('aria-invalid', 'true')
+    expect(email()).toHaveAccessibleDescription(expect.stringContaining(message))
+    expect(email()).toHaveFocus()
+    expect(requestRegistration).not.toHaveBeenCalled()
   })
 
-  describe('the password rules', () => {
-    const RULES = 'At least 8 characters, with an uppercase letter, a lowercase letter and a number.'
+  describe('once the link is sent', () => {
+    it('says to check the inbox, names the address and focuses the heading', async () => {
+      vi.mocked(requestRegistration).mockResolvedValue()
 
-    it('show with the first password message, and stay once it is fixed', async () => {
-      const { user } = renderPage()
-      await fill(user, { password: 'password' })
-      await user.click(submitButton())
+      await sendLink()
 
-      expect(field.password())
-        .toHaveAccessibleDescription(`Password must contain at least one uppercase letter ${RULES}`)
-
-      await user.type(field.password(), 'A')
-
-      expect(field.password()).toHaveAccessibleDescription(RULES)
+      expect(await screen.findByRole('heading', { level: 1, name: 'Check your inbox' })).toHaveFocus()
+      expect(screen.getByText('user@example.com')).toBeInTheDocument()
+      expect(document.title).toBe(`Check your inbox | ${APP_NAME}`)
+      expect(requestRegistration).toHaveBeenCalledExactlyOnceWith('user@example.com')
     })
 
-    it('stay hidden when only another field is wrong', async () => {
-      const { user } = renderPage()
-      await fill(user, { email: 'not-an-email' })
-      await user.click(submitButton())
+    it('sends it again, and says so on the status line', async () => {
+      vi.mocked(requestRegistration).mockResolvedValue()
+      const { user } = await sendLink()
+      await screen.findByRole('heading', { name: 'Check your inbox' })
 
-      expect(field.email()).toHaveAttribute('aria-invalid', 'true')
-      expect(field.password()).toHaveAccessibleDescription('')
-    })
-  })
+      await user.click(sendAgain())
 
-  describe('validation', () => {
-    // One example per field: the rules themselves are covered in validation.test.ts
-    it.each<[string, Values, keyof typeof field | 'acceptTerms', string]>([
-      ['an empty form', { email: '', password: '' }, 'email', 'Email is required'],
-      ['a malformed email', { email: 'not-an-email' }, 'email', 'Please enter a valid email address'],
-      ['a weak password', { password: 'password' }, 'password', 'uppercase'],
-      ['passwords that differ', { confirmPassword: 'Different123' }, 'confirmPassword', 'Passwords do not match'],
-      ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to register'],
-    ])('stops %s, explains, and focuses the first bad field', async (_, values, name, message) => {
-      const { user } = renderPage()
-      await fill(user, values)
-
-      await user.click(submitButton())
-
-      const input = name === 'acceptTerms' ? termsCheckbox() : field[name]()
-      expect(input).toHaveAttribute('aria-invalid', 'true')
-      expect(input).toHaveAccessibleDescription(expect.stringContaining(message))
-      expect(input).toHaveFocus()
-      expect(registerUser).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent('Sent again to user@example.com.'))
+      expect(requestRegistration).toHaveBeenCalledTimes(2)
+      expect(requestRegistration).toHaveBeenLastCalledWith('user@example.com')
     })
 
-    it('clears a field\'s message once it is edited', async () => {
-      const { user } = renderPage()
-      await fill(user, { confirmPassword: 'Different123' })
-      await user.click(submitButton())
+    it('says why sending again failed, in place of the last "sent", and keeps the step', async () => {
+      vi.mocked(requestRegistration)
+        .mockResolvedValueOnce()
+        .mockResolvedValueOnce()
+        .mockRejectedValueOnce(httpError(429, errorBody('RATE_LIMITED', 'Too many requests, please try again later')))
+      const { user } = await sendLink()
+      await screen.findByRole('heading', { name: 'Check your inbox' })
+      await user.click(sendAgain())
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Sent again'))
 
-      await user.type(field.confirmPassword(), 'x')
+      await user.click(sendAgain())
 
-      expect(field.confirmPassword()).toHaveAttribute('aria-invalid', 'false')
-    })
-  })
-
-  describe('submitting', () => {
-    it('registers and goes straight to the login page, which confirms it', async () => {
-      vi.mocked(registerUser).mockResolvedValue()
-      const { user } = renderPage()
-      await fill(user)
-
-      await user.click(submitButton())
-
-      expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument()
-      // The login page fills its status line after its first render
-      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Registration successful'))
-      expect(registerUser).toHaveBeenCalledWith('user@example.com', 'Password123', TERMS_VERSION)
+      expect(await screen.findByRole('alert')).toHaveTextContent('Too many requests')
+      expect(screen.getByRole('status')).toHaveTextContent(/^$/)
+      expect(sendAgain()).toHaveAttribute('aria-disabled', 'false')
     })
 
-    // The field's own message, focused, like a failed submit's
-    it('ties a taken email to the Email field, and lets the user try again', async () => {
-      vi.mocked(registerUser).mockRejectedValue(
-        httpError(409, errorBody('EMAIL_ALREADY_REGISTERED', 'Email already registered')))
-      const { user } = renderPage()
-      await fill(user)
+    it('goes back to the form, the address kept, for a different email', async () => {
+      vi.mocked(requestRegistration).mockResolvedValue()
+      const { user } = await sendLink()
+      await screen.findByRole('heading', { name: 'Check your inbox' })
 
-      await user.click(submitButton())
+      await user.click(useAnother())
 
-      await waitFor(() => expect(field.email()).toHaveFocus())
-      expect(field.email()).toHaveAttribute('aria-invalid', 'true')
-      expect(field.email()).toHaveAccessibleDescription('Email already registered')
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
-      expect(field.email()).not.toHaveAttribute('readonly')
+      expect(screen.getByRole('heading', { level: 1, name: 'Register' })).toHaveFocus()
+      expect(email()).toHaveValue('user@example.com')
     })
 
-    it.each([
-      ['the terms have changed', httpError(409, errorBody('TERMS_OUTDATED', 'The terms have changed')),
-        'The terms have changed'],
-      ['the network fails', new Error('Network Error'), 'Network error'],
-    ])('announces why when %s, and lets the user try again', async (_, error, message) => {
-      vi.mocked(registerUser).mockRejectedValue(error)
-      const { user } = renderPage()
-      await fill(user)
-
-      await user.click(submitButton())
-
-      expect(await screen.findByRole('alert')).toHaveTextContent(message)
-      expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
-      expect(field.email()).not.toHaveAttribute('readonly')
-    })
-
-    it('keeps focus and ignores repeat submits while the request is in flight', async () => {
+    it('ignores the buttons while sending again', async () => {
       const { promise, resolve: finish } = Promise.withResolvers<undefined>()
-      vi.mocked(registerUser).mockReturnValue(promise)
-      const { user } = renderPage()
-      await fill(user)
+      vi.mocked(requestRegistration).mockResolvedValueOnce().mockReturnValueOnce(promise)
+      const { user } = await sendLink()
+      await screen.findByRole('heading', { name: 'Check your inbox' })
 
-      await user.click(submitButton())
-      await user.click(submitButton())
+      await user.click(sendAgain())
+      await user.click(sendAgain())
+      await user.click(useAnother())
 
-      expect(submitButton()).toHaveTextContent('Creating account...')
-      expect(submitButton()).toHaveAttribute('aria-disabled', 'true')
-      expect(submitButton()).toHaveFocus()
-      for (const input of Object.values(field)) {
-        expect(input()).toHaveAttribute('readonly')
-      }
-      expect(termsCheckbox()).toHaveAttribute('aria-readonly', 'true')
-      await user.click(termsCheckbox())
-      expect(termsCheckbox()).toBeChecked()
-      expect(registerUser).toHaveBeenCalledTimes(1)
+      expect(sendAgain()).toHaveTextContent('Sending...')
+      expect(sendAgain()).toHaveAttribute('aria-disabled', 'true')
+      expect(useAnother()).toHaveAttribute('aria-disabled', 'true')
+      expect(screen.getByRole('heading', { name: 'Check your inbox' })).toBeInTheDocument()
+      expect(requestRegistration).toHaveBeenCalledTimes(2)
       await act(async () => finish(undefined))
     })
+  })
+
+  it.each([
+    ['too many requests', httpError(429, errorBody('RATE_LIMITED', 'Too many requests, please try again later')),
+      'Too many requests'],
+    ['the network fails', new Error('Network Error'), 'Network error'],
+  ])('announces why when %s, and lets the user try again', async (_, error, message) => {
+    vi.mocked(requestRegistration).mockRejectedValue(error)
+
+    await sendLink()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message)
+    expect(continueButton()).toHaveAttribute('aria-disabled', 'false')
+    expect(email()).not.toHaveAttribute('readonly')
+  })
+
+  it('keeps focus and ignores repeat submits while the request is in flight', async () => {
+    const { promise, resolve: finish } = Promise.withResolvers<undefined>()
+    vi.mocked(requestRegistration).mockReturnValue(promise)
+    const { user } = await sendLink()
+
+    await user.click(continueButton())
+
+    expect(continueButton()).toHaveTextContent('Sending link...')
+    expect(continueButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(continueButton()).toHaveFocus()
+    expect(email()).toHaveAttribute('readonly')
+    expect(requestRegistration).toHaveBeenCalledTimes(1)
+    await act(async () => finish(undefined))
   })
 })

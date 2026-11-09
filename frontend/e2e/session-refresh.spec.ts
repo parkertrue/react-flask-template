@@ -1,15 +1,12 @@
 import { test, expect } from '@playwright/test'
 import {
-  expireAccessToken, login, logout, logoutAllDevices, memberSince,
-  openAccount, registerAndLogin, registration, uniqueEmail,
+  createAccount, expireAccessToken, login, logout, logoutAllDevices, memberSince,
+  openAccount, registerAndLogin, uniqueEmail,
 } from './helpers'
 
 test('an expired session refreshes repeatedly, and logout revokes it', async ({ page }) => {
   const email = uniqueEmail('e2e-refresh')
-  const register = await page.request.post('/api/auth/register', {
-    data: registration(email),
-  })
-  expect(register.status()).toBe(201)
+  await createAccount(email)
 
   await page.goto('/login')
   await login(page, email)

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
-  askToDeleteAccount, downloadData, fillRegistration, login, logout, memberSince, openAccount, register,
-  registerAndLogin, submitRegistration, TEST_PASSWORD, uniqueEmail,
+  askToDeleteAccount, downloadData, emailedLink, emailTo, fillRegistration, login, logout, memberSince,
+  openAccount, register, registerAndLogin, requestLink, TEST_PASSWORD, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -12,21 +12,23 @@ test.describe('Critical User Journey', () => {
     testEmail = uniqueEmail('e2e-test')
   })
 
-  test('complete user journey: register → login → account → logout', async ({ page }) => {
+  test('complete user journey: register → email → account → logout → login', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { level: 1, name: `Welcome to ${APP_NAME}` })).toBeVisible()
 
     // The home page's call to action leads to registration
     await page.getByRole('link', { name: /get started/i }).click()
     await expect(page).toHaveURL(/\/register/)
-    await fillRegistration(page, testEmail)
+    await requestLink(page, testEmail)
+    await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
 
-    // Success goes straight to login, which confirms it. If registration
-    // fails, this fails and the failure screenshot shows the error.
-    await expect(page).toHaveURL(/\/login/, { timeout: 15000 })
-    await expect(page.getByRole('status')).toHaveText(/registration successful/i)
-
-    await login(page, testEmail)
+    // The emailed link opens the page that finishes, its token kept out of
+    // the address bar; finishing signs in
+    await page.goto(await emailedLink(testEmail))
+    await expect(page).toHaveURL(/\/register\/complete$/)
+    await expect(page.getByLabel('Email')).toHaveValue(testEmail)
+    await fillRegistration(page)
+    await page.waitForURL(url => url.pathname !== '/register/complete', { timeout: 15000 })
     await openAccount(page)
     await expect(page.getByRole('main').getByText(testEmail, { exact: true })).toBeVisible()
 
@@ -39,6 +41,8 @@ test.describe('Critical User Journey', () => {
     await logout(page)
     await page.goto('/account')
     await expect(page).toHaveURL(/\/login/)
+    await login(page, testEmail)
+    await expect(page).toHaveURL(/\/account$/)
   })
 
   test('cannot access protected routes without authentication', async ({ page }) => {
@@ -107,17 +111,45 @@ test.describe('Critical User Journey', () => {
     await expect(memberSince(page)).toBeVisible()
   })
 
-  test('registration with existing email shows error', async ({ page }) => {
+  // The page answers alike, so it never tells a stranger the address is
+  // taken; the inbox's owner is told instead
+  test('signing up with a registered email says so by email alone', async ({ page }) => {
     const existingEmail = uniqueEmail('existing')
     await register(page, existingEmail)
+    await logout(page)
 
-    await submitRegistration(page, existingEmail)
+    await page.goto('/register')
+    await requestLink(page, existingEmail)
 
-    // The field's own message, focused, like a failed submit's
-    const email = page.getByLabel('Email')
-    await expect(email).toBeFocused()
-    await expect(email).toHaveAttribute('aria-invalid', 'true')
-    await expect(email).toHaveAccessibleDescription(/already registered/i)
-    await expect(page).toHaveURL(/\/register/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeVisible()
+    const message = await emailTo(existingEmail, 'You already have an account')
+    expect(message.Text).toContain('/login')
+    expect(message.Text).not.toContain('token=')
+  })
+
+  test('a link used twice says the account is set up, and offers to log in', async ({ page }) => {
+    const email = uniqueEmail('e2e-twice')
+    await page.goto('/register')
+    await requestLink(page, email)
+    const link = await emailedLink(email)
+    await page.goto(link)
+    await fillRegistration(page)
+    await page.waitForURL(url => url.pathname !== '/register/complete')
+    await logout(page)
+
+    await page.goto(link)
+    await fillRegistration(page)
+
+    await expect(page.getByRole('alert')).toHaveText('This account is already set up.')
+    await expect(page.getByRole('alert')).toBeFocused()
+    await expect(page.getByRole('main').getByRole('link', { name: 'Log in' })).toHaveAttribute('href', '/login')
+  })
+
+  test('a link this app never sent is refused', async ({ page }) => {
+    await page.goto('/register/complete#email=someone%40example.com&token=forged.token.here')
+    await fillRegistration(page)
+
+    await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)
+    await expect(page.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
   })
 })

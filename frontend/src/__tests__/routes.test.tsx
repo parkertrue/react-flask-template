@@ -11,6 +11,7 @@ vi.mock('@/components/layout/Navbar', () => ({ default: vi.fn(() => <nav aria-la
 vi.mock('@/pages/HomePage', () => ({ default: vi.fn(() => <p>Home page</p>) }))
 vi.mock('@/pages/LoginPage', () => ({ default: () => <p>Login page</p> }))
 vi.mock('@/pages/RegisterPage', () => ({ default: () => <p>Register page</p> }))
+vi.mock('@/pages/CompleteRegistrationPage', () => ({ default: () => <p>Complete registration page</p> }))
 vi.mock('@/pages/AccountPage', () => ({ default: () => <p>Account page</p> }))
 vi.mock('@/pages/PrivacyPage', () => ({ default: () => <p>Privacy page</p> }))
 vi.mock('@/pages/TermsPage', () => ({ default: () => <p>Terms page</p> }))
@@ -32,6 +33,7 @@ describe('routes', () => {
     ['/', 'Home page'],
     ['/login', 'Login page'],
     ['/register', 'Register page'],
+    ['/register/complete', 'Complete registration page'],
     ['/privacy', 'Privacy page'],
     ['/terms', 'Terms page'],
     ['/contact', 'Contact page'],
@@ -54,6 +56,7 @@ describe('routes', () => {
     // A signed-in user has no use for these
     ['/login', 'Notes page'],
     ['/register', 'Notes page'],
+    ['/register/complete', 'Notes page'],
   ])('show a signed-in user at %s the %s', (path, expected) => {
     signIn()
     renderRoutes(routes, path)

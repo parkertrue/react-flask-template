@@ -33,17 +33,11 @@ expiry, the CSP, and React's escaping. Keeps the client simple: no cookie for
 API calls, so no CSRF on them. See the comment in `frontend/src/auth/storage.ts`.
 *Revisit when:* the app renders third-party or user-supplied HTML.
 
-**Register answers 409 for a taken email.** This tells an attacker an
-account exists. Accepted for the clearer sign-up message; register is rate
-limited per IP, and login timing no longer leaks it (dummy hash).
-*Revisit when:* email verification exists. Then register can answer the same
-way for both and send a "you already have an account" email instead.
-
-**The register page hides the password rules until a password breaks one.**
+**The sign-up page hides the password rules until a password breaks one.**
 The user chose a shorter first view of the form (2026-10-15). WCAG 3.3.2 is
 still met: the field is labelled, the first failed submit names the broken
 rule, and from then on the full rule list shows beside it as the field's
-hint (`RegisterPage.tsx`). The cost is one failed submit for a user who
+hint (`CompleteRegistrationPage.tsx`, the emailed link's page). The cost is one failed submit for a user who
 guesses wrong. Spaces and emoji are left out of the list; their own messages
 explain them when they come up. *Revisit when:* email verification is added,
 which reworks registration anyway.
@@ -435,6 +429,21 @@ bounces or complaints (handle its bounce webhook and stop mailing those
 addresses), an email needs HTML, or a flood of requests gets past the
 per-requester limits.
 
+**A token in a link travels in the URL fragment, and the page posts it
+after a click** (user, 2026-11-08). Every emailed link that carries a
+secret (sign-up, password reset, email change, invitations) is
+`https://<host>/<page>#token=...` (`app_link`, `backend/app/utils/links.py`). Browsers send a fragment to no
+server and in no Referer, so no log, proxy or CDN sees it. nginx's access
+log drops query strings, but its error log writes the whole request line
+for a 413, 502 or 504, so a token in a query string would land there
+whenever the backend restarts. Lowering `error_log` to `crit` was weighed
+and dropped: it loses the upstream errors an outage is diagnosed from.
+The page asks for one click before posting the token, since mail
+scanners open links and some run their scripts, which would spend a
+single-use token or confirm a change the user never saw; sign-up's page
+asks for the password, which is that click. *Revisit when:*
+never for secrets; a link that carries no secret may use a query string.
+
 **Caching: nothing beyond the defaults until a feature needs it** (user,
 2026-11-08). Weighed for a standard app, not just the example feature:
 - *Frontend.* Every query keeps TanStack Query's `staleTime` of 0, so a
@@ -694,11 +703,12 @@ A check mentions these only when its findings bear on one (for example, a
 docs check that finds the certificate steps wrong). They are not new
 findings.
 
-- **Email verification** and **email change** (GDPR Art. 16), which the
-  privacy notice handles by email meanwhile.
+- **Email change** (GDPR Art. 16), which the privacy notice handles by
+  email meanwhile.
 - **Account security beyond the basics:** no password change, password
   reset, multi-factor login, or common/breached-password check (ASVS 5.0
-  chapter 6, Authentication). Reset and change wait on email verification.
+  chapter 6, Authentication). Reset and change can build on what sign-up
+  uses: the worker, email and signed links (`backend/app/utils/links.py`).
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.

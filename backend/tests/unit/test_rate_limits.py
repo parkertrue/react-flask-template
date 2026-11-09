@@ -11,10 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 
 from app import db, limiter
-from app.auth.models import TERMS_VERSION, User
-from app.auth.routes import _login_email_key
+from app.auth.models import User
+from app.auth.routes import _request_email_key
 from app.utils.passwords import PasswordHashingBusy
-from tests.conftest import FakeRedisService
+from tests.conftest import FakeRedisService, register
 from tests.unit.test_app_factory import build_app
 
 LOGIN = {'email': 'nobody@example.com', 'password': 'WrongPassword123'}
@@ -181,7 +181,7 @@ def test_account_limit_keys_reveal_no_address(monkeypatch):
     for secret in ('a' * 32, 'b' * 32):
         app = build_app(monkeypatch, JWT_SECRET_KEY=secret)
         with app.test_request_context(json={'email': email}):
-            keys.append(_login_email_key())
+            keys.append(_request_email_key())
 
     assert keys[0] != keys[1]
     plain_hash = hashlib.sha256(email.encode()).hexdigest()
@@ -213,28 +213,56 @@ def test_one_address_can_log_in_to_many_accounts_without_limiting_others(
     assert login(client, '198.51.100.9', 'other@example.com').status_code == 401
 
 
-def register(client, ip):
-    # One email throughout: after the first, each is a fast 409 that still counts
-    return client.post(
-        '/api/auth/register',
-        json={'email': 'new@example.com', 'password': 'TestPassword123', 'terms_version': TERMS_VERSION},
-        headers={'X-Forwarded-For': ip})
+def request_link(client, ip, email):
+    return client.post('/api/auth/register', json={'email': email},
+                       headers={'X-Forwarded-For': ip})
 
 
-def test_eleventh_registration_from_one_address_in_an_hour_is_rate_limited(limited_app):
-    client = limited_app.test_client()
+class TestRegistrationLimits:
+    """Sign-up emails a link: limited per IP, and per address, so no one can
+    use the app to flood an inbox"""
 
-    statuses = [register(client, '203.0.113.7').status_code for _ in range(11)]
+    def test_eleventh_from_one_ip_in_an_hour_is_rate_limited(self, limited_app):
+        client = limited_app.test_client()
 
-    assert statuses == [201] + [409] * 9 + [429]
+        statuses = [request_link(client, '203.0.113.7', f'new{i}@example.com').status_code
+                    for i in range(11)]
 
+        assert statuses == [202] * 10 + [429]
 
-def test_registration_limit_is_per_address(limited_app):
-    client = limited_app.test_client()
-    for _ in range(11):
-        register(client, '203.0.113.7')
+    def test_the_ip_limit_is_per_ip(self, limited_app):
+        client = limited_app.test_client()
+        for i in range(11):
+            request_link(client, '203.0.113.7', f'new{i}@example.com')
 
-    assert register(client, '198.51.100.9').status_code == 409
+        assert request_link(client, '198.51.100.9', 'other@example.com').status_code == 202
+
+    def test_a_fourth_link_to_one_address_in_an_hour_is_rate_limited(self, limited_app):
+        """From any IP, and however the address is spelled"""
+        client = limited_app.test_client()
+        spellings = ['inbox@example.com', 'inbox@EXAMPLE.com', 'INBOX@example.com', 'inbox@example.com']
+
+        statuses = [request_link(client, f'203.0.113.{i}', email).status_code
+                    for i, email in enumerate(spellings)]
+
+        assert statuses == [202, 202, 202, 429]
+
+    def test_the_address_limit_is_per_address(self, limited_app):
+        client = limited_app.test_client()
+        for i in range(3):
+            request_link(client, f'203.0.113.{i}', 'inbox@example.com')
+
+        assert request_link(client, '198.51.100.9', 'other@example.com').status_code == 202
+
+    def test_eleventh_completion_from_one_ip_in_an_hour_is_rate_limited(self, limited_app):
+        """Each a fast 409 after the first, which still counts"""
+        limited_app.extensions['redis_service'] = FakeRedisService()
+        client = limited_app.test_client()
+
+        statuses = [register(client, 'new@example.com', headers={'X-Forwarded-For': '203.0.113.7'})
+                    .status_code for _ in range(11)]
+
+        assert statuses == [200] + [409] * 9 + [429]
 
 
 class TestRefreshLimit:

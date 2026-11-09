@@ -5,7 +5,7 @@ Every app built from the template collects personal data from its first sign-up,
 **What ships:**
 - `/privacy`, `/terms` and `/contact` (`frontend/src/pages/`), linked from the footer of every page. Each opens with a placeholder notice and gives one heading per topic, with what to write in brackets.
 - `frontend/src/legal.ts`: the operator's name, address and contact email, which the pages show, and `TERMS_VERSION`.
-- A required checkbox on the register form, "I accept the Terms and the Privacy notice". The form sends the version it showed, the backend refuses any but the current `TERMS_VERSION` (`backend/app/auth/models.py`) with a 409 `TERMS_OUTDATED`, and `users` records `terms_version` and `terms_accepted_at`.
+- A required checkbox on the page the sign-up email links to, "I accept the Terms and the Privacy notice". The form sends the version it showed, the backend refuses any but the current `TERMS_VERSION` (`backend/app/auth/models.py`) with a 409 `TERMS_OUTDATED`, and `users` records `terms_version` and `terms_accepted_at`.
 - `frontend/public/.well-known/security.txt` (RFC 9116), where to report a security problem.
 
 **What the template keeps about people:**
@@ -22,6 +22,8 @@ Every app built from the template collects personal data from its first sign-up,
 | Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
 | Refresh token | Cookie `__Secure-refresh_token` (HttpOnly) | Up to 30 days |
+
+Signing up starts with an email to the address given, a link to finish, and no account exists until the link is used: an address typed by mistake, or someone else's, leaves nothing stored but the queued email and the mail provider's copy. An address that already has an account gets an email saying so, never a page that tells the person typing it.
 
 Downloading the data (the Account page's "Download your data") gives the user one JSON file: the `users` row without its password hash, and every feature's rows (GDPR Art. 15 and 20). Each feature registers its own tables for it (`register_export`, `backend/app/utils/exports.py`), and a test fails on a table that references `users.id` and is in no export. The logs are not in it: a request for them goes by email.
 
