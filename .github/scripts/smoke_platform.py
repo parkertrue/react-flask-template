@@ -90,7 +90,7 @@ check('a body over 16 KB gets a JSON 413',
 marker = f'smoke-{uuid.uuid4().hex}'
 status, _, _ = request(
     'POST', '/api/auth/login', headers={'Content-Type': 'application/json', 'User-Agent': marker},
-    body=json.dumps({'email': f'{marker}@example.com', 'password': 'Wrong-pass1'}).encode())
+    body=json.dumps({'email': f'{marker}@example.com', 'password': 'the wrong passphrase'}).encode())
 check('a failed login is refused', status == 401, status)
 access = [line for line in log_lines('platform-nginx') if line.get('user_agent') == marker]
 check('nginx logs the login once', len(access) == 1, access)
