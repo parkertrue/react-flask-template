@@ -12,7 +12,7 @@ from dramatiq import Worker
 from app import create_app
 from app.auth.models import TERMS_VERSION
 from app.utils.jobs import QUEUE_NAME
-from tests.conftest import link_token
+from tests.conftest import close_app, link_token
 
 ADDRESS = 'integration-signup@example.com'
 
@@ -41,7 +41,7 @@ def worker(integration_app, integration_db, integration_redis, monkeypatch):
         running.join()
         running.stop()
     yield run
-    worker_app.extensions['jobs_broker'].close()
+    close_app(worker_app)
     mailpit('/messages', method='DELETE')
 
 

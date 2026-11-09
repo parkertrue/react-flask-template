@@ -27,8 +27,11 @@ ENV = {
 def env(monkeypatch):
     """Development's settings: the tests of production set APP_ENV themselves"""
     monkeypatch.setenv('APP_ENV', 'development')
+    # And the worker's, which production checks too, whatever the shell has
+    # loaded (run_tests.sh combined loads .env.test)
     for name in ('MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD',
-                 'MIGRATION_DATABASE_PASSWORD', 'REDIS_PASSWORD'):
+                 'MIGRATION_DATABASE_PASSWORD', 'REDIS_PASSWORD',
+                 'EMAIL_URL', 'EMAIL_PASSWORD', 'EMAIL_FROM', 'APP_URL', 'SERVER_NAME'):
         monkeypatch.delenv(name, raising=False)
     for name, value in ENV.items():
         monkeypatch.setenv(name, value)

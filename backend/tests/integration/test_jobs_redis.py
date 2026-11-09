@@ -9,6 +9,7 @@ from redis.exceptions import ResponseError
 
 from app import create_app
 from app.utils.jobs import QUEUE_NAME, WORKER_MAINTENANCE_CHANCE, job
+from tests.conftest import close_app
 
 ran = []
 
@@ -35,7 +36,7 @@ def apps(integration_redis, monkeypatch):
     ran.clear()
     yield app, worker_app
     for each in (app, worker_app):
-        each.extensions['jobs_broker'].close()
+        close_app(each)
 
 
 def test_the_worker_runs_what_the_app_queued(apps):
