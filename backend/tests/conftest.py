@@ -161,6 +161,21 @@ def integration_app():
 
         yield app
 
+    close_app(app)
+
+
+def close_app(app):
+    """Close what an app a test built for itself opened: its Redis clients
+    (the token store's and the job queue's) and its database pool. Left to
+    the garbage collector, an open socket is a ResourceWarning, which
+    pytest.ini makes an error whenever the collector happens to run."""
+    service = app.extensions['redis_service']
+    if service is not None:
+        service.get_client().close()
+    app.extensions['jobs_broker'].close()
+    with app.app_context():
+        _db.engine.dispose()
+
 
 @pytest.fixture(scope='function')
 def integration_db(integration_app):

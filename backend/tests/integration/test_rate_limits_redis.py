@@ -10,6 +10,7 @@ import pytest
 import app as app_module
 from app import create_app, limiter
 from app.config import IntegrationConfig
+from tests.conftest import close_app
 
 LOGIN = {'email': 'nobody@example.com', 'password': 'WrongPassword123'}
 
@@ -26,8 +27,12 @@ def limited_client(integration_db, integration_redis, monkeypatch):
     config.RATELIMIT_ENABLED = True
     monkeypatch.setattr(app_module, 'get_config', lambda: config)
 
-    yield create_app().test_client()
+    app = create_app()
+    yield app.test_client()
 
+    close_app(app)
+    # And the limiter's own Redis client, which init_app opened
+    limiter.storage.storage.close()
     vars(limiter).clear()
     vars(limiter).update(saved)
 
