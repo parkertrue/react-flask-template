@@ -55,6 +55,29 @@ def test_the_worker_runs_what_the_app_queued(apps):
     assert ran == ['from the app']
 
 
+def open_sockets(client):
+    """The connections of a Redis client's pool still holding a socket"""
+    pool = client.connection_pool
+    return [connection for connection in
+            [*pool._get_free_connections(), *pool._get_in_use_connections()]
+            if connection.is_connected]
+
+
+def test_closing_an_app_closes_its_queue_connections(integration_redis):
+    """Dramatiq's RedisBroker.close closes nothing: a socket left open is a
+    ResourceWarning whenever the garbage collector finds it (close_jobs)"""
+    app = create_app()
+    app.register_blueprint(blueprint)
+    with app.app_context():
+        record.send('opens a connection')
+    client = app.extensions['jobs_broker'].client
+    assert len(open_sockets(client)) == 1
+
+    close_app(app)
+
+    assert open_sockets(client) == []
+
+
 def force_upkeep(broker):
     """Make the broker's next call tidy up after every worker it knows of,
     which calls KEYS"""
