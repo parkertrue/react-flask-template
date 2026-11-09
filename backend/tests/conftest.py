@@ -177,7 +177,7 @@ def integration_redis(integration_app):
         redis_service = integration_app.extensions['redis_service']
         yield redis_service
         client = redis_service.get_client()
-        for pattern in ('refresh_tokens:*', 'LIMITS:*'):
+        for pattern in ('refresh_tokens:*', 'LIMITS:*', 'dramatiq:*'):
             keys = list(client.scan_iter(pattern))
             if keys:
                 client.delete(*keys)

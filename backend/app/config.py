@@ -1,7 +1,10 @@
 import os
 import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import timedelta
+from email.utils import parseaddr
+from urllib.parse import unquote, urlsplit
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
 
@@ -12,7 +15,10 @@ PLACEHOLDER_SECRET_KEYS = {'your_secret_key_here'}
 # .env.prod.example's values, which must never reach a deployment. The root
 # password's never reaches the app: db/init/01-app-user.sh refuses it.
 PLACEHOLDER_PASSWORDS = {
-    'your_db_password_here', 'your_migration_password_here', 'your_redis_password_here'}
+    'your_db_password_here', 'your_migration_password_here', 'your_redis_password_here',
+    'your_redis_worker_password_here', 'your_smtp_password_here'}
+# .env.prod.example's sender, a domain no deployment can send from
+PLACEHOLDER_EMAIL_DOMAIN = 'example.com'
 
 # The connect args below are PyMySQL's, so no other driver will do
 DATABASE_DRIVER = 'mysql+pymysql'
@@ -116,6 +122,69 @@ def redis_url() -> str | None:
     return url.render_as_string(hide_password=False)
 
 
+# EMAIL_URL's schemes: how the connection to the mail server is secured, and
+# the port each uses unless the URL names one. Plain smtp:// is for a local
+# mail catcher (Mailpit); production refuses it.
+EMAIL_SCHEMES = {'smtps': ('tls', 465), 'smtp+starttls': ('starttls', 587), 'smtp': ('none', 25)}
+
+
+@dataclass(frozen=True)
+class MailServer:
+    """Where the worker sends email (app/utils/mail.py)"""
+    # 'tls' from the first byte, 'starttls' (required, never optional), or
+    # 'none'
+    security: str
+    host: str
+    port: int
+    username: str | None
+    # Kept out of repr, so a logged config never shows it
+    password: str | None = field(default=None, repr=False)
+
+
+def read_email_url() -> MailServer | None:
+    """EMAIL_URL, with EMAIL_PASSWORD as its password if set; None if unset.
+
+    Only the worker sends email, so only its container sets it: the
+    backend never holds the mail server's password.
+    """
+    value = os.getenv('EMAIL_URL')
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except ValueError:
+        # Not the value itself: it holds the password
+        raise ValueError('EMAIL_URL is not a valid URL') from None
+    if parts.scheme not in EMAIL_SCHEMES:
+        schemes = ', '.join(f'{scheme}://' for scheme in EMAIL_SCHEMES)
+        raise ValueError(f'EMAIL_URL must start with one of {schemes}')
+    if not parts.hostname:
+        raise ValueError('EMAIL_URL must name the mail server')
+    if parts.path not in ('', '/') or parts.query or parts.fragment:
+        raise ValueError('EMAIL_URL takes a user, password, host and port, nothing else')
+    username = unquote(parts.username) if parts.username else None
+    password = os.getenv('EMAIL_PASSWORD') or (unquote(parts.password) if parts.password else None)
+    if password and not username:
+        raise ValueError('EMAIL_URL must name the user its password belongs to')
+    security, default_port = EMAIL_SCHEMES[parts.scheme]
+    return MailServer(security, parts.hostname, port or default_port, username, password)
+
+
+def read_email_from() -> str | None:
+    """EMAIL_FROM, the sender of every email: an address, with a name
+    before it if wanted (App <no-reply@example.com>); None if unset"""
+    value = os.getenv('EMAIL_FROM')
+    if not value:
+        return None
+    _, address = parseaddr(value, strict=True)
+    if '@' not in address:
+        raise ValueError(
+            'EMAIL_FROM must be an address, with a name before it if wanted: '
+            'App <no-reply@example.com>')
+    return value
+
+
 def refuse_tls_options(url_var: str, query: Mapping[str, object], refused: Iterable[str]) -> None:
     """Fail on any option in a URL's query that could weaken its TLS checks"""
     found = [option for option in refused if option in query]
@@ -189,6 +258,10 @@ class Config:
             raise ValueError('Missing required environment variable: REDIS_URL')
         # Per worker: well above its 4 threads, so no request waits on the pool
         self.REDIS_MAX_CONNECTIONS = 50
+
+        # Email, which only the worker sends: unset elsewhere
+        self.EMAIL_SERVER = read_email_url()
+        self.EMAIL_FROM = read_email_from()
 
         # Rate Limiter configuration
         self.RATELIMIT_ENABLED = True
@@ -312,6 +385,21 @@ class ProductionConfig(Config):
                     f'A Redis host other than {BUNDLED_REDIS_HOST} needs TLS: '
                     f'start REDIS_URL with rediss://')
             refuse_tls_options('REDIS_URL', redis.query, REDIS_TLS_OPTIONS_REFUSED)
+
+        # Set in the worker's container alone. The mail server is always
+        # outside the host, and its password and every email's links cross
+        # the internet, so the connection must be TLS, which smtplib checks
+        # against the system's CAs (mail.py).
+        if self.EMAIL_SERVER is not None:
+            if self.EMAIL_SERVER.password in PLACEHOLDER_PASSWORDS:
+                raise ValueError('The mail server password is still the .env.prod.example placeholder')
+            if self.EMAIL_SERVER.security == 'none':
+                raise ValueError(
+                    'EMAIL_URL needs TLS in production: start it with smtps:// or smtp+starttls://')
+        if self.EMAIL_FROM is not None:
+            _, sender = parseaddr(self.EMAIL_FROM, strict=True)
+            if sender.rpartition('@')[2].lower() == PLACEHOLDER_EMAIL_DOMAIN:
+                raise ValueError('EMAIL_FROM is still the .env.prod.example placeholder')
 
 
 def trusted_proxy_count() -> int:

@@ -2,8 +2,9 @@
 # task, a Kubernetes pod), on the test stack's db and redis. The backend and an
 # nginx in behind-proxy mode share one network namespace, as a task's
 # containers do, so nginx reaches the backend at 127.0.0.1, with no fixed
-# address and no dns_opt, which only the compose files set. The host stands in
-# for the load balancer.
+# address and no dns_opt, which only the compose files set. The worker runs
+# in a task of its own, from the backend's image. The host stands in for the
+# load balancer.
 #
 # docker compose --env-file .env.test -f docker-compose.test.yml \
 #   -f .github/smoke/platform.yml --profile platform up -d --build --wait
@@ -53,6 +54,43 @@ services:
       retries: 3
       start_period: 60s
     pids_limit: 128
+    profiles:
+      - platform
+
+  # The worker's task: production's config, as its own Redis user. It never
+  # sends: the smoke queues no job, so the mail server need not exist.
+  platform-worker:
+    build: ./backend
+    command: ["python", "worker.py"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      APP_ENV: production
+      DATABASE_URL: mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}
+      REDIS_URL: redis://worker:${REDIS_WORKER_PASSWORD}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      EMAIL_URL: smtps://smoke:smokepass@smtp.invalid
+      EMAIL_FROM: Smoke <no-reply@smoke.invalid>
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/worker-ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    pids_limit: 64
     profiles:
       - platform
 

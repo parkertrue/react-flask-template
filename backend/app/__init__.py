@@ -16,6 +16,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from app.auth.errors import token_invalid, token_revoked
 from app.config import get_config
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
+from app.utils.jobs import JobQueueUnavailable, init_jobs
 from app.utils.log import configure_logging, security_event
 from app.utils.passwords import PasswordHashingBusy, init_password_hashing
 from app.utils.redis_service import (
@@ -88,6 +89,9 @@ def create_app() -> Flask:
         limiter.init_app(app)
 
     init_password_hashing(app)
+
+    # Before the features, which declare their jobs on the app's broker
+    init_jobs(app)
 
     # Imported here for the same reason as the routes below
     from app.auth.models import User
@@ -204,6 +208,10 @@ def create_app() -> Flask:
 
     @app.errorhandler(TokenStoreUnavailable)
     def token_store_unavailable(e: TokenStoreUnavailable) -> ErrorResponse:
+        return service_unavailable()
+
+    @app.errorhandler(JobQueueUnavailable)
+    def job_queue_unavailable(e: JobQueueUnavailable) -> ErrorResponse:
         return service_unavailable()
 
     @app.errorhandler(PasswordHashingBusy)

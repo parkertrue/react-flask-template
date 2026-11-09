@@ -16,7 +16,8 @@ x-security: &security
     - no-new-privileges:true
 
 # The backend image needs no capabilities and writes nowhere but gunicorn's
-# worker heartbeat files in /tmp. Shared by backend and migrate.
+# worker heartbeat files and the worker's ready file in /tmp. Shared by
+# backend, migrate and worker.
 x-backend-hardening: &backend-hardening
   cap_drop:
     - ALL
@@ -43,6 +44,13 @@ x-backend-env: &backend-env
   DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}}
   REDIS_URL: ${REDIS_URL:-redis://app:${REDIS_PASSWORD}@redis:6379/0}
   SECRET_KEY: ${SECRET_KEY}
+
+# The backend's and worker's: looking up a stopped container's name (Redis or
+# MySQL during an outage) waits on DNS servers this network cannot reach, 4s
+# per try by default. One 1s try lets the app's own timeouts fail fast.
+x-dns-opt: &dns-opt
+  - timeout:1
+  - attempts:1
 
 services:
   # The bundled MySQL and Redis run under profiles that .env.prod.example's
@@ -118,7 +126,9 @@ services:
     # ACL: the built-in "default" user is off; the app's user may touch only
     # its own keys and no @dangerous command (FLUSHALL, CONFIG, KEYS, ...),
     # nor any command of the modules the image loads (search, JSON, time
-    # series, probabilistic), which @dangerous does not cover.
+    # series, probabilistic), which @dangerous does not cover. The worker's
+    # user may touch the job queue (dramatiq and dramatiq:*) alone, and run one dangerous
+    # command, KEYS, which the queue's upkeep calls (DECISIONS.md).
     # A list, not one string: compose would read the ">" before the password
     # as a shell redirect and silently drop every argument after it.
     command:
@@ -132,8 +142,27 @@ services:
       - ">${REDIS_PASSWORD}"
       - "~refresh_tokens:*"
       - "~LIMITS:*"
+      - "~dramatiq"
+      - "~dramatiq:*"
       - "+@all"
       - "-@dangerous"
+      - "-@search"
+      - "-@json"
+      - "-@timeseries"
+      - "-@bloom"
+      - "-@cuckoo"
+      - "-@cms"
+      - "-@topk"
+      - "-@tdigest"
+      - --user
+      - worker
+      - "on"
+      - ">${REDIS_WORKER_PASSWORD}"
+      - "~dramatiq"
+      - "~dramatiq:*"
+      - "+@all"
+      - "-@dangerous"
+      - "+keys"
       - "-@search"
       - "-@json"
       - "-@timeseries"
@@ -211,12 +240,7 @@ services:
     image: *backend-image
     build: ./backend
     environment: *backend-env
-    # Looking up a stopped container's name (Redis or MySQL during an outage)
-    # waits on DNS servers this network cannot reach: 4s per try by default.
-    # One 1s try lets the app's own timeouts fail requests fast.
-    dns_opt:
-      - timeout:1
-      - attempts:1
+    dns_opt: *dns-opt
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -258,6 +282,57 @@ services:
         reservations:
           cpus: "0.5"
           memory: 256m
+
+  # Runs the jobs the backend queues (backend/app/utils/jobs.py), such as
+  # sending email, from the backend's image. Only it holds the mail server's
+  # password, and it reaches Redis as its own user, which may touch the job
+  # queue alone.
+  worker:
+    logging: *logging
+    <<: [*security, *backend-hardening]
+    image: *backend-image
+    command: ["python", "worker.py"]
+    environment:
+      <<: *backend-env
+      REDIS_URL: ${REDIS_WORKER_URL:-redis://worker:${REDIS_WORKER_PASSWORD}@redis:6379/0}
+      EMAIL_URL: ${EMAIL_URL:?set EMAIL_URL in .env.prod}
+      EMAIL_FROM: ${EMAIL_FROM:?set EMAIL_FROM in .env.prod}
+    dns_opt: *dns-opt
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
+    # edge for its route out of the host, to the mail server
+    networks:
+      - edge
+      - internal
+    restart: unless-stopped
+    # Longer than the worker's own wait for running jobs (SHUTDOWN_TIMEOUT
+    # in backend/app/utils/jobs.py); a job cut off runs again
+    stop_grace_period: 30s
+    healthcheck:
+      # The worker writes it once it runs jobs. start_period covers the
+      # entrypoint's wait-for-services, as the backend's does.
+      test: ["CMD", "test", "-f", "/tmp/worker-ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+          pids: 64
+        reservations:
+          cpus: "0.1"
+          memory: 128m
 
   nginx:
     logging: *logging

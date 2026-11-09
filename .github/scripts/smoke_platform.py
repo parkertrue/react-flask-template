@@ -1,9 +1,10 @@
 """Check the platform layout (.github/smoke/platform.yml) from its load balancer's side.
 
 CI's Platform smoke job runs this against the backend and a behind-proxy
-nginx sharing one network namespace, as on ECS or Kubernetes. It plays the
-load balancer: plain HTTP to nginx's published port, with the X-Forwarded-*
-headers a balancer adds. Every failed check is printed, then it exits 1.
+nginx sharing one network namespace, as on ECS or Kubernetes, and the
+worker in a task of its own. It plays the load balancer: plain HTTP to
+nginx's published port, with the X-Forwarded-* headers a balancer adds.
+Every failed check is printed, then it exits 1.
 """
 import http.client
 import json
@@ -102,6 +103,11 @@ if access:
     if events:
         check("the backend's rate limits key on the client's address",
               events[0]['ip'] == CLIENT, events[0]['ip'])
+
+# Its own task, on production's config and its own Redis user
+started = [line for line in log_lines('platform-worker')
+           if line['message'].startswith('Worker started')]
+check('the worker starts', len(started) == 1, started)
 
 if failures:
     sys.exit(f'{len(failures)} check(s) failed')

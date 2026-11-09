@@ -16,6 +16,8 @@ Every app built from the template collects personal data from its first sign-up,
 | Users' content (the notes example) | The feature's tables | Until the user deletes it or the account |
 | Refresh-token ids, at most 10 per user | Redis | Until the session expires (7 days idle, 30 at most), logs out or deletes the account |
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
+| Queued jobs' arguments, such as an email's recipient | Redis | Until the job runs; a day after its last try, for one that keeps failing |
+| Emails sent | Your mail provider | By the provider's retention |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
 | Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
@@ -25,7 +27,7 @@ Downloading the data (the Account page's "Download your data") gives the user on
 
 Deleting an account (the Account page asks for the password) deletes its `users` row, every feature's rows that reference it, and its sessions in Redis, at once. What the logs hold about it goes as they age out, and so would its copies in backups, by their own retention: state that in the privacy notice.
 
-No analytics, no third-party requests and no email: the template itself sends nothing to a third party, though your host and any managed service you add are processors. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.
+No analytics and no third-party requests: the browser talks to your server alone. The server sends email through the mail provider you choose ([Sending Email](deployment.md#sending-email)), a processor like your host and any managed service you add. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.
 
 **Before launch:**
 1. Fill in `legal.ts`, then write the three pages for your app from the table above and your own features.

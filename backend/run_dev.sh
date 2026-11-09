@@ -43,5 +43,13 @@ flask db upgrade
 # schema: without the migration URL, it connects with DATABASE_URL
 unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_PASSWORD
 
+# The worker, beside the app, as in production: its own Redis user, which
+# may touch only the job queue (REDIS_PASSWORD, the app's, would replace
+# its password). Stopped when the app stops.
+echo "Starting worker..."
+REDIS_URL="$REDIS_WORKER_URL" REDIS_PASSWORD="" python worker.py &
+WORKER_PID=$!
+trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+
 echo "Starting Flask app..."
-exec python wsgi.py
+python wsgi.py

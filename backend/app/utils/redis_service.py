@@ -116,7 +116,8 @@ class RedisService:
     """Refresh-token allowlist in Redis.
 
     Redis runs with noeviction because losing these keys logs users out, so
-    anything else stored here must carry a TTL, or use a separate instance.
+    anything else stored here must carry a TTL, or go once used, as the job
+    queue's messages do (jobs.py), or use a separate instance.
 
     Every failure is logged: callers turn them into a 503 or a 401, and
     without the log a full Redis (OOM), a wrong password and a key outside

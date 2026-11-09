@@ -60,10 +60,11 @@ jobs:
         run: docker compose --env-file .env.test -f docker-compose.test.yml down -v
 
   # The layout of a container platform's task: the backend and a behind-proxy
-  # nginx sharing one network namespace, with no fixed address or dns_opt
-  # (.github/smoke/platform.yml). Only Compose gets the full E2E suite; this
-  # checks what the platform layout changes: health checks, headers, the body
-  # cap and the client's address.
+  # nginx sharing one network namespace, with no fixed address or dns_opt,
+  # and the worker in a task of its own (.github/smoke/platform.yml). Only
+  # Compose gets the full E2E suite; this checks what the platform layout
+  # changes: health checks, headers, the body cap, the client's address and
+  # the worker's start.
   platform:
     name: Platform smoke
     runs-on: ubuntu-latest
@@ -159,7 +160,7 @@ jobs:
       - name: Build the E2E stack
         run: |
           docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e build --pull
-          docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e pull db redis
+          docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e pull db redis mailpit
 
       # playwright.config.js brings the e2e compose profile up itself via its
       # webServer block, and does not reuse an existing server when CI is set.
@@ -167,11 +168,12 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
-      # Every line the backend image wrote, gunicorn's and the migrations'
-      # included, must be JSON: a log shipper drops a line it cannot parse
+      # Every line the backend image wrote, gunicorn's, the migrations' and
+      # the worker's included, must be JSON: a log shipper drops a line it
+      # cannot parse
       - name: Backend log is JSON
         run: |
-          for service in migrate backend; do
+          for service in migrate backend worker; do
             docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e \
               logs --no-log-prefix --no-color "$service" \
               | python3 .github/scripts/check_json_logs.py
