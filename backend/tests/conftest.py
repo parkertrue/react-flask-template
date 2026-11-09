@@ -7,11 +7,27 @@ from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
 from app import create_app, db as _db
-from app.auth.models import User
+from app.auth.emails import REGISTRATION_LINK
+from app.auth.models import TERMS_VERSION, User
+from app.auth.schemas import normalize_email
+from app.utils.links import make_link_token
 
 # Every config requires SECRET_KEY, including the ones tests build directly.
 # Integration runs get theirs from .env.test, which this does not override.
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-0123456789abcdef')
+
+
+def link_token(app, email):
+    """The token of the sign-up link the worker would email to this address"""
+    with app.app_context():
+        return make_link_token(REGISTRATION_LINK, normalize_email(email))
+
+
+def register(client, email, password='TestPassword123', terms_version=TERMS_VERSION, **kwargs):
+    """Sign up as the emailed link's page does: its token, then the password"""
+    return client.post('/api/auth/register/complete', json={
+        'token': link_token(client.application, email), 'password': password,
+        'terms_version': terms_version}, **kwargs)
 
 
 # ============================================================================

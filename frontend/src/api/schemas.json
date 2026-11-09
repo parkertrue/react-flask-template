@@ -239,12 +239,10 @@
       "title": "NotesPageResponse",
       "type": "object"
     },
-    "RegisterRequest": {
+    "RegisterCompleteRequest": {
       "additionalProperties": false,
+      "description": "Sign-up's second step, from the emailed link's page",
       "properties": {
-        "email": {
-          "type": "string"
-        },
         "password": {
           "maxLength": 128,
           "minLength": 8,
@@ -252,12 +250,30 @@
         },
         "terms_version": {
           "type": "integer"
+        },
+        "token": {
+          "maxLength": 1024,
+          "type": "string"
         }
       },
       "required": [
-        "email",
+        "token",
         "password",
         "terms_version"
+      ],
+      "title": "RegisterCompleteRequest",
+      "type": "object"
+    },
+    "RegisterRequest": {
+      "additionalProperties": false,
+      "description": "Sign-up's first step: the address to send the link to",
+      "properties": {
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email"
       ],
       "title": "RegisterRequest",
       "type": "object"

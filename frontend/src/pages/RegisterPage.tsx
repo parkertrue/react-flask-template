@@ -1,69 +1,108 @@
-import { useState, type ChangeEvent, type SubmitEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { registerUser } from '@/auth/authService'
-import { errorCode, getErrorMessage } from '@/api/errors'
+import { useEffect, useRef, useState, type SubmitEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { requestRegistration } from '@/auth/authService'
+import { getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
-import { TERMS_VERSION } from '@/legal'
-import {
-  validateEmail,
-  validatePassword,
-  validatePasswordMatch,
-  EMAIL_MAX_LENGTH,
-  PASSWORD_MIN_LENGTH,
-  PASSWORD_MAX_LENGTH
-} from '@/utils/validation'
-import type { LoginState } from './LoginPage'
+import { validateEmail, EMAIL_MAX_LENGTH } from '@/utils/validation'
 
+// Sign-up's first step: the address to email a link to. The link's page,
+// CompleteRegistrationPage, takes the password and makes the account. The
+// backend answers alike whether the address has an account or not, so this
+// page never says which.
 export default function RegisterPage() {
-  const navigate = useNavigate()
-  const { values, errors, handleChange, validate } = useFormFields({
-    email: '', password: '', confirmPassword: '', acceptTerms: false
-  })
+  const { values, errors, handleChange, validate } = useFormFields({ email: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  // The password rules stay hidden, to keep the form short, until a password
-  // breaks one; from then on they show beside its message
-  const [showPasswordRules, setShowPasswordRules] = useState(false)
+  // The address the link went to, once it has
+  const [sentTo, setSentTo] = useState<string | null>(null)
+  // "Sent again", announced on the persistent status line
+  const [status, setStatus] = useState('')
+  const heading = useRef<HTMLHeadingElement>(null)
+  const shownStep = useRef(sentTo)
 
-  // readOnly doesn't stop a checkbox being ticked, so ignore it while busy
-  const handleTermsChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (!submitting) handleChange(e)
+  // The step changes without a navigation, so focus moves by hand to the
+  // heading that names it, as Layout's does on a new page
+  useEffect(() => {
+    if (shownStep.current === sentTo) return
+    shownStep.current = sentTo
+    heading.current?.focus()
+  }, [sentTo])
+
+  const send = async (email: string) => {
+    setFormError(null)
+    setStatus('')
+    setSubmitting(true)
+    try {
+      await requestRegistration(email)
+      return true
+    } catch (err) {
+      setFormError(getErrorMessage(err))
+      return false
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submitting) return
-    // The event's currentTarget is gone by the time the server answers
-    const form = e.currentTarget
+    if (!validate(e.currentTarget, { email: validateEmail(values.email) })) return
 
-    const passwordError = validatePassword(values.password)
-    // Rendered by validate's flush, before it focuses the field
-    if (passwordError) setShowPasswordRules(true)
-    const valid = validate(form, {
-      email: validateEmail(values.email),
-      password: passwordError,
-      confirmPassword: validatePasswordMatch(values.password, values.confirmPassword),
-      acceptTerms: values.acceptTerms ? undefined : 'Accept the Terms and the Privacy notice to register',
-    })
-    if (!valid) return
+    if (await send(values.email)) setSentTo(values.email)
+  }
 
+  const handleSendAgain = async () => {
+    if (submitting || sentTo === null) return
+    if (await send(sentTo)) setStatus(`Sent again to ${sentTo}.`)
+  }
+
+  const handleUseAnother = () => {
+    if (submitting) return
     setFormError(null)
-    setSubmitting(true)
-    try {
-      await registerUser(values.email, values.password, TERMS_VERSION)
-      const state: LoginState = { registered: true }
-      void navigate('/login', { state })
-    } catch (err) {
-      setSubmitting(false)
-      if (errorCode(err) === 'EMAIL_ALREADY_REGISTERED') {
-        // The field's own message, focused, like a failed submit's
-        validate(form, { email: getErrorMessage(err) })
-      } else {
-        setFormError(getErrorMessage(err))
-      }
-    }
+    setStatus('')
+    setSentTo(null)
+  }
+
+  const error = formError && <div className="error-message" role="alert">{formError}</div>
+
+  if (sentTo !== null) {
+    return (
+      <div className="centered-page">
+        <PageTitle>Check your inbox</PageTitle>
+        <div className="auth-container">
+          <div className="auth-card">
+            <h1 ref={heading} tabIndex={-1}>Check your inbox</h1>
+            <p className="sent-to">
+              We sent a link to <strong>{sentTo}</strong>. Open it within 24 hours to
+              choose a password and finish signing up.
+            </p>
+            <p>Not there? Check your spam folder, or send it again.</p>
+            {error}
+            <p className="visually-hidden" role="status">{status}</p>
+            <div className="auth-actions">
+              <button
+                type="button"
+                onClick={() => void handleSendAgain()}
+                aria-disabled={submitting}
+                className="btn btn-primary"
+              >
+                {submitting ? 'Sending...' : 'Send again'}
+              </button>
+              <button
+                type="button"
+                onClick={handleUseAnother}
+                aria-disabled={submitting}
+                className="btn btn-secondary"
+              >
+                Use a different email
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -71,7 +110,7 @@ export default function RegisterPage() {
       <PageTitle>Register</PageTitle>
       <div className="auth-container">
         <div className="auth-card">
-          <h1 id="register-heading">Register</h1>
+          <h1 id="register-heading" ref={heading} tabIndex={-1}>Register</h1>
 
           <form
             onSubmit={e => void handleSubmit(e)}
@@ -87,56 +126,20 @@ export default function RegisterPage() {
               value={values.email}
               onChange={handleChange}
               error={errors.email}
+              hint="We'll email you a link to choose a password."
               readOnly={submitting}
               required
               maxLength={EMAIL_MAX_LENGTH}
             />
-            <FormField
-              id="password"
-              label="Password"
-              type="password"
-              autoComplete="new-password"
-              value={values.password}
-              onChange={handleChange}
-              error={errors.password}
-              hint={showPasswordRules
-                ? `At least ${PASSWORD_MIN_LENGTH} characters, with an uppercase letter, a lowercase letter and a number.`
-                : undefined}
-              readOnly={submitting}
-              required
-              maxLength={PASSWORD_MAX_LENGTH}
-            />
-            <FormField
-              id="confirmPassword"
-              label="Confirm password"
-              type="password"
-              autoComplete="new-password"
-              value={values.confirmPassword}
-              onChange={handleChange}
-              error={errors.confirmPassword}
-              readOnly={submitting}
-              required
-              maxLength={PASSWORD_MAX_LENGTH}
-            />
-            <FormField
-              id="acceptTerms"
-              type="checkbox"
-              label={<>
-                I accept the <Link to="/terms" target="_blank" aria-describedby="new-tab-note" className="text-link">Terms</Link> and
-                the <Link to="/privacy" target="_blank" aria-describedby="new-tab-note" className="text-link">Privacy notice</Link>
-                {/* Read with each link, never shown, and left out of the checkbox's name */}
-                <span id="new-tab-note" hidden>Opens in a new tab.</span>
-              </>}
-              checked={values.acceptTerms}
-              onChange={handleTermsChange}
-              error={errors.acceptTerms}
-              aria-readonly={submitting}
-            />
+            <p className="form-note">
+              How we use your address: see the{' '}
+              <Link to="/privacy" className="text-link">Privacy notice</Link>.
+            </p>
 
-            {formError && <div className="error-message" role="alert">{formError}</div>}
+            {error}
 
             <button type="submit" aria-disabled={submitting} className="btn btn-primary btn-block">
-              {submitting ? 'Creating account...' : 'Register'}
+              {submitting ? 'Sending link...' : 'Continue'}
             </button>
           </form>
 

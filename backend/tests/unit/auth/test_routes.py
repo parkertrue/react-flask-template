@@ -1,151 +1,248 @@
 import json
+import os
 import time
 from datetime import timedelta
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 import jwt
 import pytest
+from dramatiq import Worker
 from flask_jwt_extended import create_refresh_token, decode_token
+from itsdangerous import TimestampSigner, URLSafeTimedSerializer
+from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import select, func
 
 from app.auth import routes as auth_routes
+from app.auth.emails import REGISTRATION_LINK, REGISTRATION_LINK_LIFETIME, send_registration_email
 from app.auth.models import TERMS_VERSION, User
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
+from app.utils.jobs import QUEUE_NAME
+from app.utils.links import read_link_token
 from app.utils.passwords import verify_password
+from tests.conftest import link_token, register
 
 
-class TestRegisterEndpoint:
-    """Test suite for POST /api/auth/register endpoint."""
+class TestRequestRegistration:
+    """POST /api/auth/register: sign-up's first step, which only queues the
+    email; the same answer whether the address has an account or not"""
 
-    def test_register_success(self, client, db):
-        """Valid registration should create user and return 201."""
-        payload = {
-            'email': 'newuser@example.com',
-            'password': 'ValidPass123',
-            'terms_version': TERMS_VERSION
-        }
+    @pytest.mark.parametrize('email', ['new@example.com', 'test@example.com'],
+                             ids=['a new address', 'a registered address'])
+    def test_queues_the_email_and_answers_alike(self, client, db, sample_user, jobs, email):
+        response = client.post('/api/auth/register', json={'email': email})
 
+        assert response.status_code == 202
+        assert response.get_json() == {'message': 'Check your inbox'}
+        assert jobs() == [('auth.send_registration_email', (email,))]
+
+    def test_queues_the_address_as_it_is_stored(self, client, db, jobs):
+        client.post('/api/auth/register', json={'email': 'A@bücher.DE'})
+
+        assert jobs() == [('auth.send_registration_email', ('A@xn--bcher-kva.de',))]
+
+    def test_stores_nothing(self, client, db, jobs):
+        client.post('/api/auth/register', json={'email': 'new@example.com'})
+
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    @pytest.mark.parametrize('payload', [
+        {'email': 'not-an-email'},
+        {},
+        {'email': 'new@example.com', 'password': 'ValidPass123'},
+        {'email': 'new@example.com', 'terms_version': TERMS_VERSION},
+    ], ids=['a bad address', 'no address', 'a password', 'terms'])
+    def test_an_invalid_body_queues_nothing(self, client, db, jobs, payload):
+        response = client.post('/api/auth/register', json=payload)
+
+        assert response.status_code == 422
+        assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
+        assert jobs() == []
+
+    def test_a_body_that_is_not_json(self, client, db, jobs):
+        """Malformed: 400, not 422"""
         response = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
+            '/api/auth/register', data='not valid json{', content_type='application/json')
 
-        assert response.status_code == 201
-        data = json.loads(response.data)
-        assert data['message'] == 'User created'
+        assert response.status_code == 400
+        assert response.get_json()['error']['code'] == 'BAD_REQUEST'
+        assert jobs() == []
 
-    def test_register_creates_user_in_database(self, client, db):
-        """Registration should persist user to database."""
-        initial_count = db.session.scalar(
-            select(func.count()).select_from(User)
-        )
+    def test_a_queue_that_is_down_is_a_503(self, app, client, db, monkeypatch):
+        def refuse(message, *, delay=None):
+            raise RedisConnectionError('Connection refused')
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
 
-        payload = {
-            'email': 'dbuser@example.com',
-            'password': 'ValidPass123',
-            'terms_version': TERMS_VERSION
-        }
+        response = client.post('/api/auth/register', json={'email': 'new@example.com'})
 
-        response = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
+        assert response.status_code == 503
+        assert response.get_json()['error'] == {
+            'code': 'SERVICE_UNAVAILABLE', 'message': SERVICE_UNAVAILABLE_MESSAGE}
 
-        assert response.status_code == 201
 
-        new_count = db.session.scalar(
-            select(func.count()).select_from(User)
-        )
-        assert new_count == initial_count + 1
+class TestRegistrationEmail:
+    """The job the worker runs: a link to finish signing up, or, for an
+    address with an account, a note saying so"""
 
-        # Verify user exists with correct email
-        user = db.session.execute(
-            select(User).where(User.email == 'dbuser@example.com')
-        ).scalar_one_or_none()
-        assert user is not None
-        assert user.email == 'dbuser@example.com'
+    @pytest.fixture(autouse=True)
+    def app_url(self, app, monkeypatch):
+        monkeypatch.setitem(app.config, 'APP_URL', 'https://app.test')
 
-    def test_register_hashes_password(self, client, db):
-        """Registration should hash the password."""
-        payload = {
-            'email': 'hashtest@example.com',
-            'password': 'PlainTextPass123',
-            'terms_version': TERMS_VERSION
-        }
+    def link(self, message):
+        """The one link in an email's body"""
+        link, = [word for word in message.get_content().split() if word.startswith('https://')]
+        return urlsplit(link)
 
-        response = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
+    def test_a_new_address_gets_a_link_to_finish(self, app, db, outbox):
+        send_registration_email('new@example.com')
 
-        assert response.status_code == 201
+        message, = outbox
+        link = self.link(message)
+        fragment = parse_qs(link.fragment)
+        assert (message['To'], message['Subject']) == ('new@example.com', 'Finish signing up')
+        assert (link.scheme, link.netloc, link.path, link.query) == (
+            'https', 'app.test', '/register/complete', '')
+        assert fragment['email'] == ['new@example.com']
+        assert read_link_token(
+            REGISTRATION_LINK, fragment['token'][0], REGISTRATION_LINK_LIFETIME) == 'new@example.com'
 
-        user = db.session.execute(
-            select(User).where(User.email == 'hashtest@example.com')
-        ).scalar_one()
+    def test_a_registered_address_is_told_so_and_gets_no_token(self, app, db, sample_user, outbox):
+        send_registration_email('test@example.com')
 
+        message, = outbox
+        assert (message['To'], message['Subject']) == ('test@example.com', 'You already have an account')
+        assert self.link(message).geturl() == 'https://app.test/login'
+
+    def test_the_worker_runs_it_from_the_queue(self, app, client, db, jobs, outbox):
+        """The job the route queued is the one that sends: its name and
+        arguments line up"""
+        client.post('/api/auth/register', json={'email': 'new@example.com'})
+        broker = app.extensions['jobs_broker']
+        worker = Worker(broker, worker_timeout=10)
+        worker.start()
+        broker.join(QUEUE_NAME, fail_fast=True)
+        worker.stop()
+
+        assert [message['To'] for message in outbox] == ['new@example.com']
+
+
+class TestCompleteRegistration:
+    """POST /api/auth/register/complete: the link's token and a password make
+    the account, and log in"""
+
+    def complete(self, client, token, password='ValidPass123', terms_version=TERMS_VERSION):
+        return client.post('/api/auth/register/complete', json={
+            'token': token, 'password': password, 'terms_version': terms_version})
+
+    def test_creates_the_account_and_logs_in(self, app, client, db, fake_redis):
+        response = register(client, 'new@example.com', 'PlainTextPass123')
+
+        user = db.session.execute(select(User).where(User.email == 'new@example.com')).scalar_one()
+        assert response.status_code == 200
+        assert set(response.get_json()) == {'access_token', 'refresh_csrf'}
+        assert client.get_cookie('__Secure-refresh_token', path='/api/auth') is not None
         assert user.password_hash != 'PlainTextPass123'
         assert user.check_password('PlainTextPass123')
+        account = client.get('/api/account', headers={
+            'Authorization': f"Bearer {response.get_json()['access_token']}"})
+        assert account.get_json()['email'] == 'new@example.com'
 
-    def test_register_records_the_terms_accepted_and_when(self, client, db):
-        response = client.post('/api/auth/register', json={
-            'email': 'terms@example.com', 'password': 'ValidPass123',
-            'terms_version': TERMS_VERSION})
+    def test_the_account_is_the_tokens_address(self, app, client, db, fake_redis):
+        """Not one the client sends: the token is the proof"""
+        register(client, 'a@bücher.de')
 
-        assert response.status_code == 201
+        assert db.session.scalars(select(User.email)).all() == ['a@xn--bcher-kva.de']
+
+    def test_records_the_terms_accepted_and_when(self, client, db, fake_redis):
+        register(client, 'terms@example.com')
+
         user = db.session.execute(
             select(User).where(User.email == 'terms@example.com')).scalar_one()
         assert user.terms_version == TERMS_VERSION
         assert user.terms_accepted_at == user.created_at
 
     @pytest.mark.parametrize('version', [TERMS_VERSION - 1, TERMS_VERSION + 1])
-    def test_register_refuses_terms_other_than_the_current_ones(self, client, db, version):
+    def test_refuses_terms_other_than_the_current_ones(self, client, db, version):
         """A page loaded before the terms changed offered the old ones"""
-        response = client.post('/api/auth/register', json={
-            'email': 'terms@example.com', 'password': 'ValidPass123',
-            'terms_version': version})
+        response = register(client, 'terms@example.com', terms_version=version)
 
         assert response.status_code == 409
         assert response.get_json()['error']['code'] == 'TERMS_OUTDATED'
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
-    def test_register_duplicate_email(self, client, sample_user):
-        """Registering with existing email should return 409."""
-        payload = {
-            'email': 'test@example.com',  # sample_user email
-            'password': 'DifferentPass123',
-            'terms_version': TERMS_VERSION
-        }
+    def test_a_link_used_again_is_already_registered(self, client, db, fake_redis):
+        token = link_token(client.application, 'twice@example.com')
+        first = self.complete(client, token)
 
-        response = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
+        second = self.complete(client, token, password='DifferentPass123')
 
-        assert response.status_code == 409
-        data = json.loads(response.data)
-        assert data['error']['code'] == 'EMAIL_ALREADY_REGISTERED'
-        assert 'already registered' in data['error']['message'].lower()
+        assert first.status_code == 200
+        assert second.status_code == 409
+        assert second.get_json()['error'] == {
+            'code': 'EMAIL_ALREADY_REGISTERED', 'message': 'Email already registered'}
+        assert db.session.scalar(select(func.count()).select_from(User)) == 1
 
-    @pytest.mark.parametrize('payload', [
-        {'email': 'not-an-email', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION},
-        {'password': 'ValidPass123', 'terms_version': TERMS_VERSION},
-        {'email': 'test@example.com', 'terms_version': TERMS_VERSION},
-        {'email': 'test@example.com', 'password': 'ValidPass123'},
-        {'email': 'test@example.com', 'password': 'ValidPass123', 'terms_version': str(TERMS_VERSION)},
-    ])
-    def test_invalid_body_is_validation_error_and_stores_nothing(self, client, db, payload):
-        response = client.post('/api/auth/register', json=payload)
+    def minted_ago(self, client, email, age):
+        """A sign-up link's token, as if emailed age ago"""
+        then = int(time.time() - age.total_seconds())
+        with patch.object(TimestampSigner, 'get_timestamp', return_value=then):
+            return link_token(client.application, email)
 
-        assert response.status_code == 422
-        assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
+    # A day, as the email says: in hours here, not the constant, which a
+    # change would move along with the test
+    def test_an_expired_link(self, client, db):
+        token = self.minted_ago(client, 'late@example.com', timedelta(hours=24, seconds=5))
+
+        response = self.complete(client, token)
+
+        assert response.status_code == 400
+        assert response.get_json()['error'] == {
+            'code': 'LINK_EXPIRED', 'message': 'This link has expired'}
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
-    def test_register_race_is_a_conflict_not_a_crash(self, client, db, monkeypatch):
+    def test_a_link_just_inside_its_day(self, client, db, fake_redis):
+        token = self.minted_ago(client, 'prompt@example.com', timedelta(hours=23, minutes=59))
+
+        response = self.complete(client, token)
+
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize('token', [
+        'not-a-token',
+        # Signed with another key
+        URLSafeTimedSerializer('another-key', salt=f'link:{REGISTRATION_LINK}').dumps('x@example.com'),
+        # Another purpose's token
+        URLSafeTimedSerializer(
+            os.environ['SECRET_KEY'], salt='link:password-reset').dumps('x@example.com'),
+    ], ids=['garbage', 'another key', 'another purpose'])
+    def test_a_link_this_app_never_sent(self, client, db, token):
+        response = self.complete(client, token)
+
+        assert response.status_code == 400
+        assert response.get_json()['error'] == {
+            'code': 'LINK_INVALID', 'message': 'This link is not valid'}
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    def test_a_link_naming_another_address(self, client, db):
+        """Its address swapped for another's, its signature kept"""
+        token = link_token(client.application, 'x@example.com')
+        other = link_token(client.application, 'attacker@example.com')
+
+        response = self.complete(client, other.split('.')[0] + token[token.index('.'):])
+
+        assert response.get_json()['error']['code'] == 'LINK_INVALID'
+
+    def test_a_token_naming_no_address(self, client, db):
+        with client.application.app_context():
+            token = URLSafeTimedSerializer(
+                client.application.config['JWT_SECRET_KEY'],
+                salt=f'link:{REGISTRATION_LINK}').dumps(['x@example.com'])
+
+        response = self.complete(client, token)
+
+        assert response.get_json()['error']['code'] == 'LINK_INVALID'
+
+    def test_race_is_a_conflict_not_a_crash(self, client, db, monkeypatch):
         """Another request registers the email after the existence check
         (a double submit): the unique index rejects this one, which must be
         a 409 rather than an unhandled IntegrityError."""
@@ -160,8 +257,7 @@ class TestRegisterEndpoint:
 
         monkeypatch.setattr(User, 'set_password', register_concurrently)
 
-        response = client.post('/api/auth/register', json={
-            'email': 'race@example.com', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION})
+        response = register(client, 'race@example.com')
 
         assert response.status_code == 409
         assert response.get_json()['error']['code'] == 'EMAIL_ALREADY_REGISTERED'
@@ -173,41 +269,26 @@ class TestRegisterEndpoint:
         'NOLOWERCASE123',
         'NoNumbersHere',
     ], ids=['too short', 'no uppercase', 'no lowercase', 'no number'])
-    def test_register_refuses_a_weak_password(self, client, db, password):
-        response = client.post('/api/auth/register', json={
-            'email': 'test@example.com', 'password': password})
+    def test_refuses_a_weak_password(self, client, db, password):
+        response = register(client, 'new@example.com', password)
 
         assert response.status_code == 422
         assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
-    def test_register_extra_fields(self, client):
-        """Extra fields should be rejected."""
-        payload = {
-            'email': 'test@example.com',
-            'password': 'ValidPass123',
-            'extra_field': 'should fail',
-            'terms_version': TERMS_VERSION
-        }
-
-        response = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
+    @pytest.mark.parametrize('payload', [
+        {'password': 'ValidPass123', 'terms_version': TERMS_VERSION},
+        {'token': 'x', 'terms_version': TERMS_VERSION},
+        {'token': 'x', 'password': 'ValidPass123'},
+        {'token': 'x', 'password': 'ValidPass123', 'terms_version': str(TERMS_VERSION)},
+        {'token': 'x', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION,
+         'email': 'other@example.com'},
+    ], ids=['no token', 'no password', 'no terms', 'terms as text', 'an address'])
+    def test_an_invalid_body_is_a_validation_error(self, client, db, payload):
+        response = client.post('/api/auth/register/complete', json=payload)
 
         assert response.status_code == 422
-
-    def test_register_invalid_json(self, client, db):
-        """A body that is not JSON at all is malformed: 400, not 422"""
-        response = client.post(
-            '/api/auth/register',
-            data='not valid json{',
-            content_type='application/json'
-        )
-
-        assert response.status_code == 400
-        assert response.get_json()['error']['code'] == 'BAD_REQUEST'
+        assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
 
@@ -758,89 +839,34 @@ class TestLogoutEndpoint:
 class TestAuthenticationFlow:
     """Test complete authentication workflows."""
 
-    def test_register_login_flow(self, client, db):
-        """Complete flow: register -> login -> access protected resource."""
-        # Register
-        register_payload = {
-            'email': 'flowtest@example.com',
-            'password': 'FlowTest123',
-            'terms_version': TERMS_VERSION
-        }
+    def test_sign_up_then_log_in(self, client, db, fake_redis):
+        """Sign up through the link, log out, and log in with the password"""
+        register(client, 'flowtest@example.com', 'FlowTest123')
+        client.post('/api/auth/logout')
 
-        register_response = client.post(
-            '/api/auth/register',
-            data=json.dumps(register_payload),
-            content_type='application/json'
-        )
-        assert register_response.status_code == 201
-
-        # Login
-        login_payload = {
-            'email': 'flowtest@example.com',
-            'password': 'FlowTest123'
-        }
-
-        login_response = client.post(
-            '/api/auth/login',
-            data=json.dumps(login_payload),
-            content_type='application/json'
-        )
-        assert login_response.status_code == 200
-
-        login_data = json.loads(login_response.data)
-        access_token = login_data['access_token']
-
-        # Access protected resource
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json'
-        }
-
-        account_response = client.get('/api/account', headers=headers)
-        assert account_response.status_code == 200
-
-    def test_password_typed_either_way_logs_in(self, client, db):
-        """é as one character at sign-up, as e plus an accent at login"""
-        register = client.post('/api/auth/register', json={
-            'email': 'cafe@example.com', 'password': 'CaféPass123', 'terms_version': TERMS_VERSION})
         login = client.post('/api/auth/login', json={
-            'email': 'cafe@example.com', 'password': 'CaféPass123'})
+            'email': 'flowtest@example.com', 'password': 'FlowTest123'})
+        account = client.get('/api/account', headers={
+            'Authorization': f"Bearer {login.get_json()['access_token']}"})
 
-        assert register.status_code == 201
+        assert login.status_code == 200
+        assert account.get_json()['email'] == 'flowtest@example.com'
+
+    def test_password_typed_either_way_logs_in(self, client, db, fake_redis):
+        """é as one character at sign-up, as e plus an accent at login"""
+        signed_up = register(client, 'cafe@example.com', 'CaféPass123')
+        login = client.post('/api/auth/login', json={
+            'email': 'cafe@example.com', 'password': 'CaféPass123'})
+
+        assert signed_up.status_code == 200
         assert login.status_code == 200
 
-    def test_international_domain_is_one_account_however_spelled(self, client, db):
-        first = client.post('/api/auth/register', json={
-            'email': 'a@bücher.de', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION})
-        second = client.post('/api/auth/register', json={
-            'email': 'a@xn--bcher-kva.de', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION})
+    def test_international_domain_is_one_account_however_spelled(self, client, db, fake_redis):
+        first = register(client, 'a@bücher.de')
+        second = register(client, 'a@xn--bcher-kva.de')
 
-        assert first.status_code == 201
+        assert first.status_code == 200
         assert second.status_code == 409
-
-    def test_cannot_register_same_email_twice(self, client):
-        """Attempting to register same email twice should fail."""
-        payload = {
-            'email': 'duplicate@example.com',
-            'password': 'ValidPass123',
-            'terms_version': TERMS_VERSION
-        }
-
-        # First registration
-        response1 = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
-        assert response1.status_code == 201
-
-        # Second registration with same email
-        response2 = client.post(
-            '/api/auth/register',
-            data=json.dumps(payload),
-            content_type='application/json'
-        )
-        assert response2.status_code == 409
 
 
 class TestSignInWithoutRedis:
@@ -946,14 +972,24 @@ class TestSecurityEvents:
         for secret in secrets:
             assert secret not in text
 
-    def test_register(self, client, db, security_events, logged):
-        client.post('/api/auth/register', json={
-            'email': 'new@example.com', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION})
+    def test_registration_requested(self, client, db, jobs, security_events, logged):
+        """Named by the per-account limit's digest, as a failed login is"""
+        client.post('/api/auth/register', json={'email': 'New@example.com'})
+
+        assert security_events() == [{
+            'message': 'registration_requested', 'ip': '127.0.0.1',
+            'account': auth_routes._email_digest('new@example.com')}]
+        self.assert_absent(logged, 'new@example.com', 'New@example.com')
+
+    def test_register(self, client, db, fake_redis, security_events, logged):
+        token = link_token(client.application, 'new@example.com')
+        client.post('/api/auth/register/complete', json={
+            'token': token, 'password': 'ValidPass123', 'terms_version': TERMS_VERSION})
         user_id = db.session.scalar(select(User.id).where(User.email == 'new@example.com'))
 
         assert security_events() == [
             {'message': 'registered', 'ip': '127.0.0.1', 'user_id': user_id}]
-        self.assert_absent(logged, 'new@example.com', 'ValidPass123')
+        self.assert_absent(logged, 'new@example.com', 'ValidPass123', token)
 
     def test_login(self, client, sample_user, fake_redis, security_events, logged):
         body = client.post('/api/auth/login', json=LOGIN_PAYLOAD).get_json()

@@ -26,10 +26,14 @@ from flask_limiter import RouteLimit
 from flask_limiter.util import get_remote_address
 
 from app import db, limiter
+from app.auth.emails import REGISTRATION_LINK, REGISTRATION_LINK_LIFETIME, send_registration_email
 from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
-from app.auth.schemas import LoginRequest, RegisterRequest, TokensResponse, normalize_email
+from app.auth.schemas import (
+    LoginRequest, RegisterCompleteRequest, RegisterRequest, TokensResponse, normalize_email)
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
+from app.utils.jobs import job
+from app.utils.links import LinkExpired, LinkInvalid, read_link_token
 from app.utils.log import security_event
 from app.utils.passwords import DUMMY_PASSWORD_HASH, verify_password
 from app.utils.redis_service import get_redis_service
@@ -37,6 +41,10 @@ from app.utils.schemas import MessageResponse
 
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+# Sends sign-up's email from the worker, so the form's answer never waits on
+# the mail server, and takes as long for a registered address as a new one
+registration_email = job(auth_bp)(send_registration_email)
 
 
 def _email_digest(email: str) -> str:
@@ -50,13 +58,14 @@ def _email_digest(email: str) -> str:
     return hmac.new(secret, email.lower().encode(), hashlib.sha256).hexdigest()
 
 
-def _login_email_key() -> str:
-    """Rate-limit key for the account being logged in to, whatever the IP.
+def _request_email_key() -> str:
+    """Rate-limit key for the account the request body's email names,
+    whatever the IP: the one being logged in to, or signed up.
 
     A per-IP limit alone either locks out everyone behind a shared address or,
-    set loosely, lets one attacker guess an account's password from many. The
-    email is normalized as the schema stores it, so every spelling of one
-    address shares a bucket.
+    set loosely, lets one attacker guess an account's password (or flood an
+    inbox) from many. The email is normalized as the schema stores it, so
+    every spelling of one address shares a bucket.
     """
     body = request.get_json(silent=True)
     email = body.get('email') if isinstance(body, dict) else None
@@ -65,7 +74,7 @@ def _login_email_key() -> str:
     try:
         email = normalize_email(email)
     except ValueError:
-        # The login itself will answer 422; any key will do
+        # The request itself will answer 422; any key will do
         email = email.strip()
     return account_key(email)
 
@@ -89,7 +98,7 @@ def account_password_limit(
 
 def _login_email_and_ip_key() -> str:
     """The account and the client's address: a lockout hits only that address"""
-    return f'{_login_email_key()}:ip:{get_remote_address()}'
+    return f'{_request_email_key()}:ip:{get_remote_address()}'
 
 
 def _login_failed(response: Response) -> bool:
@@ -197,23 +206,56 @@ def _terms_outdated() -> ErrorResponse:
     )
 
 
+def _link_error(error: LinkExpired | LinkInvalid) -> ErrorResponse:
+    if isinstance(error, LinkExpired):
+        return error_response(
+            code='LINK_EXPIRED', message='This link has expired', status=400)
+    return error_response(code='LINK_INVALID', message='This link is not valid', status=400)
+
+
 @auth_bp.route('/register', methods=['POST'])
+# Per IP, and per address, so no one can use the app to flood an inbox. The
+# 429 tells nothing: it comes as soon for an address with an account.
 @limiter.limit('10 per hour')
+@limiter.limit('3 per hour', key_func=_request_email_key)
 def register() -> ResponseReturnValue:
+    """Sign-up's first step: email the address a link to finish.
+
+    The same answer, as fast, whether the address has an account or not;
+    the worker decides which email to send (auth/emails.py). Nothing is
+    stored until the link is used, so a mistyped address leaves nothing.
+    """
     payload = RegisterRequest.model_validate(request.get_json())
+    registration_email.send(payload.email)
+    security_event('registration_requested', account=_email_digest(payload.email))
+    return jsonify(MessageResponse(message='Check your inbox').model_dump()), 202
+
+
+@auth_bp.route('/register/complete', methods=['POST'])
+@limiter.limit('10 per hour')
+def complete_registration() -> ResponseReturnValue:
+    """Sign-up's second step: the emailed link's token, which proves the
+    address, and the password. Creates the account and logs in."""
+    payload = RegisterCompleteRequest.model_validate(request.get_json())
 
     # A page loaded before the terms changed showed the old ones, which the
     # user can no longer accept
     if payload.terms_version != TERMS_VERSION:
         return _terms_outdated()
 
-    # A fast path that skips hashing a password for a taken email. The
-    # unique index on users.email is the real check, below.
-    stmt = select(User).where(User.email == payload.email)
+    try:
+        email = read_link_token(REGISTRATION_LINK, payload.token, REGISTRATION_LINK_LIFETIME)
+    except (LinkExpired, LinkInvalid) as e:
+        return _link_error(e)
+
+    # A link used twice: the first made the account. A fast path that skips
+    # hashing the password; the unique index on users.email is the real
+    # check, below.
+    stmt = select(User).where(User.email == email)
     if db.session.execute(stmt).scalar_one_or_none():
         return _already_registered()
 
-    user = User(email=payload.email, terms_version=payload.terms_version)
+    user = User(email=email, terms_version=payload.terms_version)
     user.set_password(payload.password)
 
     db.session.add(user)
@@ -226,7 +268,7 @@ def register() -> ResponseReturnValue:
         return _already_registered()
 
     security_event('registered', user_id=user.id)
-    return jsonify(MessageResponse(message='User created').model_dump()), 201
+    return _issue_tokens(user.id, auth_time=int(datetime.now(timezone.utc).timestamp()))
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -236,7 +278,7 @@ def register() -> ResponseReturnValue:
 # many addresses.
 @limiter.limit('20 per minute')
 @limiter.limit('5 per minute', key_func=_login_email_and_ip_key, deduct_when=_login_failed)
-@account_password_limit(key_func=_login_email_key, deduct_when=_login_failed)
+@account_password_limit(key_func=_request_email_key, deduct_when=_login_failed)
 def login() -> ResponseReturnValue:
     payload = LoginRequest.model_validate(request.get_json())
 

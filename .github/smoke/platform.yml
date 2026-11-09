@@ -76,6 +76,7 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       EMAIL_URL: smtps://smoke:smokepass@smtp.invalid
       EMAIL_FROM: Smoke <no-reply@smoke.invalid>
+      APP_URL: https://localhost
     depends_on:
       migrate:
         condition: service_completed_successfully

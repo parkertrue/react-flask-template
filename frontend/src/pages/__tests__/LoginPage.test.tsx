@@ -51,13 +51,11 @@ describe('LoginPage', () => {
   })
 
   it.each([
-    ['a registration that just happened', () => {}, { registered: true },
-      'Registration successful. Please log in.'],
     ['a session that ended on its own', () => storage.endSession(), undefined,
       'Your session has ended. Please log in again.'],
-    ['a registration over an ended session', () => storage.endSession(), { registered: true },
-      'Registration successful. Please log in.'],
     ['an account just deleted', () => {}, { accountDeleted: true },
+      'Your account has been deleted.'],
+    ['an account deleted over an ended session', () => storage.endSession(), { accountDeleted: true },
       'Your account has been deleted.'],
   ])('tells the user about %s', async (_, arrange, state, message) => {
     arrange()

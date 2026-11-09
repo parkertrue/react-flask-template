@@ -31,7 +31,9 @@ export default function PrivacyPage() {
       </ul>
       <p>
         You need to give your email address and a password to register;
-        without them we cannot create an account. [If the CCPA applies: the
+        without them we cannot create an account. We email the address a
+        link first, and create the account only once it is used, so we know
+        the address is yours. [If the CCPA applies: the
         categories of sources of this data.]
       </p>
 

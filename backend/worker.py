@@ -12,8 +12,9 @@ app = create_app()
 
 if __name__ == '__main__':
     # Checked at start, not on the first email: a missing setting stops the
-    # worker at once, where a deploy notices it
-    for name in ('EMAIL_SERVER', 'EMAIL_FROM'):
-        if app.config[name] is None:
-            raise SystemExit(f"{name.replace('SERVER', 'URL')} must be set for the worker to send email")
+    # worker at once, where a deploy notices it. APP_URL starts every link.
+    for setting, variable in (('EMAIL_SERVER', 'EMAIL_URL'), ('EMAIL_FROM', 'EMAIL_FROM'),
+                              ('APP_URL', 'APP_URL')):
+        if app.config[setting] is None:
+            raise SystemExit(f'{variable} must be set for the worker to send email')
     run_worker(app)

@@ -1,32 +1,66 @@
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
 from app.auth import schemas
 from app.auth.models import EMAIL_MAX_LENGTH, TERMS_VERSION, User
-from app.auth.schemas import PASSWORD_MAX_LENGTH, LoginRequest
+from app.auth.schemas import LINK_TOKEN_MAX_LENGTH, PASSWORD_MAX_LENGTH, LoginRequest
+
+TOKEN = 'a-link-token'
 
 
 # Named like the class it stands in for
 def RegisterRequest(**fields):
-    """The register schema with the current terms accepted, which every test
-    here takes as given but TestTermsVersion's"""
-    return schemas.RegisterRequest(terms_version=TERMS_VERSION, **fields)
+    """Sign-up's two steps as one: the address goes through the first
+    (RegisterRequest), the password through the second
+    (RegisterCompleteRequest, with a token and the current terms), and any
+    other field through both. Each test here checks one of the two."""
+    first = schemas.RegisterRequest(**{k: v for k, v in fields.items() if k != 'password'})
+    second = schemas.RegisterCompleteRequest(
+        token=TOKEN, terms_version=TERMS_VERSION,
+        **{k: v for k, v in fields.items() if k != 'email'})
+    return SimpleNamespace(email=first.email, password=second.password)
 
 
-class TestTermsVersion:
-    def test_is_required(self):
-        with pytest.raises(ValidationError):
-            schemas.RegisterRequest(email='test@example.com', password='ValidPass123')
+def RegisterCompleteRequest(**fields):
+    return schemas.RegisterCompleteRequest(**{
+        'token': TOKEN, 'password': 'ValidPass123', 'terms_version': TERMS_VERSION, **fields})
+
+
+class TestRegisterCompleteRequest:
+    @pytest.mark.parametrize('field', ['token', 'password', 'terms_version'])
+    def test_each_field_is_required(self, field):
+        fields = {'token': TOKEN, 'password': 'ValidPass123', 'terms_version': TERMS_VERSION}
+        del fields[field]
+
+        with pytest.raises(ValidationError) as exc_info:
+            schemas.RegisterCompleteRequest(**fields)
+
+        assert [e['loc'] for e in exc_info.value.errors()] == [(field,)]
 
     @pytest.mark.parametrize('version', [str(TERMS_VERSION), float(TERMS_VERSION), True])
-    def test_must_be_an_integer(self, version):
+    def test_terms_version_must_be_an_integer(self, version):
         with pytest.raises(ValidationError):
-            schemas.RegisterRequest(
-                email='test@example.com', password='ValidPass123', terms_version=version)
+            RegisterCompleteRequest(terms_version=version)
+
+    def test_a_token_up_to_its_limit(self):
+        token = 'a' * LINK_TOKEN_MAX_LENGTH
+
+        assert RegisterCompleteRequest(token=token).token == token
+
+    def test_refuses_a_longer_token(self):
+        with pytest.raises(ValidationError):
+            RegisterCompleteRequest(token='a' * (LINK_TOKEN_MAX_LENGTH + 1))
+
+    def test_takes_no_email(self):
+        """The token names the address: one sent beside it would be ignored"""
+        with pytest.raises(ValidationError):
+            RegisterCompleteRequest(email='test@example.com')
 
 
 class TestRegisterRequest:
-    """Test suite for RegisterRequest schema."""
+    """Sign-up's address and password, through RegisterRequest above"""
 
     def test_valid_registration(self):
         """Schema should accept valid registration data."""
@@ -209,31 +243,6 @@ class TestRegisterRequest:
 
         with pytest.raises(ValidationError):
             RegisterRequest(email='test@example.com', password=None)
-
-    def test_model_dump(self):
-        """Schema should serialize to dict correctly."""
-        request = RegisterRequest(
-            email='test@example.com',
-            password='ValidPass123'
-        )
-        data = request.model_dump()
-
-        assert data['email'] == 'test@example.com'
-        assert data['password'] == 'ValidPass123'
-
-    def test_model_dump_excludes_password(self):
-        """model_dump includes the password unless excluded."""
-        request = RegisterRequest(
-            email='test@example.com',
-            password='ValidPass123'
-        )
-
-        data = request.model_dump()
-        assert 'password' in data
-
-        data_safe = request.model_dump(exclude={'password'})
-        assert 'password' not in data_safe
-        assert 'email' in data_safe
 
 
 class TestLoginRequest:

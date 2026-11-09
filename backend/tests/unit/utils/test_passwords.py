@@ -3,9 +3,10 @@ from unittest.mock import patch
 
 import pytest
 
-from app.auth.models import TERMS_VERSION, User
+from app.auth.models import User
 from app.utils.passwords import (
     DUMMY_PASSWORD_HASH, PasswordHashingBusy, hash_password, verify_password)
+from tests.conftest import register
 
 
 @pytest.fixture
@@ -73,9 +74,7 @@ def test_login_answers_503_while_every_slot_is_taken(client, sample_user, slots)
 def test_register_answers_503_without_creating_the_user(client, db, slots):
     slots.acquire()
 
-    response = client.post(
-        '/api/auth/register',
-        json={'email': 'new@example.com', 'password': 'TestPassword123', 'terms_version': TERMS_VERSION})
+    response = register(client, 'new@example.com')
 
     assert response.status_code == 503
     assert db.session.query(User).filter_by(email='new@example.com').count() == 0

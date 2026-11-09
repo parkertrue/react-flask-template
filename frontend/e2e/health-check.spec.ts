@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { APP_NAME } from '../src/appName'
-import { registration, uniqueEmail } from './helpers'
+import { uniqueEmail } from './helpers'
 
 test.describe('System Health Check', () => {
   test('API health endpoint is accessible', async ({ page }) => {
@@ -26,10 +26,10 @@ test.describe('System Health Check', () => {
 
   test('registration API returns JSON through nginx', async ({ request }) => {
     const response = await request.post('/api/auth/register', {
-      data: registration(uniqueEmail('api-test')),
+      data: { email: uniqueEmail('api-test') },
     })
 
-    expect(response.status()).toBe(201)
-    expect(await response.json()).toEqual({ message: 'User created' })
+    expect(response.status()).toBe(202)
+    expect(await response.json()).toEqual({ message: 'Check your inbox' })
   })
 })

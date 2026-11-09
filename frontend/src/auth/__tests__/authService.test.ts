@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
-  registerUser, loginUser, logoutUser, logoutAllDevices, clearAuthCookies, deleteAccount,
-  getAccount, exportAccountData,
+  requestRegistration, completeRegistration, loginUser, logoutUser, logoutAllDevices,
+  clearAuthCookies, deleteAccount, getAccount, exportAccountData,
 } from '../authService'
 import { api } from '@/api/api'
 import { account, dataExport, tokens } from '@/test/fixtures'
@@ -13,8 +13,10 @@ vi.mock('@/api/api')
 // CSRF headers are api.test.ts's job.
 describe('authService', () => {
   it.each([
-    ['registerUser', () => registerUser('a@example.com', 'Password123', 1),
-      '/auth/register', { email: 'a@example.com', password: 'Password123', terms_version: 1 }],
+    ['requestRegistration', () => requestRegistration('a@example.com'),
+      '/auth/register', { email: 'a@example.com' }],
+    ['completeRegistration', () => completeRegistration('a-token', 'Password123', 1),
+      '/auth/register/complete', { token: 'a-token', password: 'Password123', terms_version: 1 }],
     ['loginUser', () => loginUser('a@example.com', 'Password123'),
       '/auth/login', { email: 'a@example.com', password: 'Password123' }],
     ['logoutUser', () => logoutUser(), '/auth/logout', undefined],
@@ -41,14 +43,18 @@ describe('authService', () => {
     expect(api.get).toHaveBeenCalledExactlyOnceWith(path)
   })
 
-  it('loginUser returns the tokens the backend issued', async () => {
+  it.each([
+    ['loginUser', () => loginUser('a@example.com', 'Password123')],
+    ['completeRegistration', () => completeRegistration('a-token', 'Password123', 1)],
+  ])('%s returns the tokens the backend issued', async (_, call) => {
     vi.mocked(api.post).mockResolvedValue({ data: tokens('access', 'csrf') })
 
-    expect(await loginUser('a@example.com', 'Password123')).toEqual(tokens('access', 'csrf'))
+    expect(await call()).toEqual(tokens('access', 'csrf'))
   })
 
   it.each([
-    ['registerUser', () => registerUser('a@example.com', 'Password123', 1)],
+    ['requestRegistration', () => requestRegistration('a@example.com')],
+    ['completeRegistration', () => completeRegistration('a-token', 'Password123', 1)],
     ['loginUser', () => loginUser('a@example.com', 'Password123')],
     ['logoutUser', () => logoutUser()],
     ['logoutAllDevices', () => logoutAllDevices()],

@@ -5,7 +5,7 @@ A ready-to-use starting point for a React + Flask + MySQL web app, with auth, te
 * **Frontend**: React (Vite), in TypeScript
 * **Backend**: Flask + SQLAlchemy + Alembic, MySQL, Redis (sessions, rate limits and a job queue), and a worker for slow jobs such as sending email
 * **Production**: Docker Compose behind an HTTPS Nginx reverse proxy, with MySQL and Redis bundled or external (RDS, ElastiCache), or on a container platform such as Amazon ECS
-* **Auth**: JWT access tokens plus rotating, revocable refresh tokens in HttpOnly cookies
+* **Auth**: sign-up through an emailed link, JWT access tokens plus rotating, revocable refresh tokens in HttpOnly cookies
 * **Tests**: unit, integration and end-to-end, run in GitHub Actions
 * **Legal**: placeholder privacy notice, terms, contact page and `security.txt`
 

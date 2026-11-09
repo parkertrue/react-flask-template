@@ -15,6 +15,9 @@ from app.utils.text import UNSUPPORTED_CHARACTERS_MESSAGE, is_plain_text
 # frontend/src/utils/validation.ts mirrors them.
 PASSWORD_MIN_LENGTH = 8
 PASSWORD_MAX_LENGTH = 128
+# Well above a sign-up link's token (about 100 characters), so only a body
+# that is not one is refused for its length
+LINK_TOKEN_MAX_LENGTH = 1024
 
 
 def normalize_email(value: str) -> str:
@@ -85,7 +88,16 @@ Email = Annotated[str, AfterValidator(normalize_email)]
 
 
 class RegisterRequest(BaseModel):
+    """Sign-up's first step: the address to send the link to"""
     email: Email
+
+    model_config = ConfigDict(extra='forbid')
+
+
+class RegisterCompleteRequest(BaseModel):
+    """Sign-up's second step, from the emailed link's page"""
+    # The link's token, which names the address
+    token: str = Field(max_length=LINK_TOKEN_MAX_LENGTH)
     password: Password
     # The version of the terms the user saw and accepted
     terms_version: int = Field(strict=True)

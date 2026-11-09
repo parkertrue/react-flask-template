@@ -17,6 +17,7 @@ export interface ApiSchemas {
   NoteUpdateRequest: NoteUpdateRequest;
   NotesListQuery: NotesListQuery;
   NotesPageResponse: NotesPageResponse;
+  RegisterCompleteRequest: RegisterCompleteRequest;
   RegisterRequest: RegisterRequest;
   TokensResponse: TokensResponse;
 }
@@ -100,10 +101,19 @@ export interface NotesPageResponse {
   next_cursor: number | null;
   notes: NoteResponse[];
 }
-export interface RegisterRequest {
-  email: string;
+/**
+ * Sign-up's second step, from the emailed link's page
+ */
+export interface RegisterCompleteRequest {
   password: string;
   terms_version: number;
+  token: string;
+}
+/**
+ * Sign-up's first step: the address to send the link to
+ */
+export interface RegisterRequest {
+  email: string;
 }
 /**
  * A login's or refresh's new access token, and the CSRF value of the

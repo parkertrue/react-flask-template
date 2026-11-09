@@ -4,6 +4,7 @@ import ProtectedRoute from '@/auth/ProtectedRoute'
 import HomePage from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
+import CompleteRegistrationPage from '@/pages/CompleteRegistrationPage'
 import AccountPage from '@/pages/AccountPage'
 import PrivacyPage from '@/pages/PrivacyPage'
 import TermsPage from '@/pages/TermsPage'
@@ -35,6 +36,8 @@ export const routes: RouteObject[] = [
             children: [
               { path: 'login', element: <LoginPage /> },
               { path: 'register', element: <RegisterPage /> },
+              // The emailed link's page
+              { path: 'register/complete', element: <CompleteRegistrationPage /> },
             ],
           },
           {

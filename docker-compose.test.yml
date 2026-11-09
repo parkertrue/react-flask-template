@@ -244,6 +244,7 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       EMAIL_URL: smtp://mailpit:1025
       EMAIL_FROM: ${EMAIL_FROM}
+      APP_URL: ${APP_URL}
     depends_on:
       migrate:
         condition: service_completed_successfully

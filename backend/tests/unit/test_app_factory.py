@@ -11,11 +11,12 @@ from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 
 import app as app_module
 from app import create_app
-from app.auth.models import TERMS_VERSION, User
+from app.auth.models import User
 from app.config import UnitTestConfig
 from app.utils import redis_service
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
 from app.utils.redis_service import get_redis_service
+from tests.conftest import register
 
 
 def build_app(monkeypatch, **overrides):
@@ -260,9 +261,7 @@ class TestDatabaseOutage:
         engine = app_module.db.engine
         event.listen(engine, 'before_cursor_execute', database_down)
         try:
-            response = client.post('/api/auth/register', json={
-                'email': 'stalled@example.com', 'password': 'TestPassword123',
-                'terms_version': TERMS_VERSION})
+            response = register(client, 'stalled@example.com')
         finally:
             event.remove(engine, 'before_cursor_execute', database_down)
 
@@ -320,9 +319,7 @@ class TestGlobalErrorHandlers:
     # public and validates its body with a schema
     def test_pydantic_validation_error_handler(self, client):
         """Pydantic validation errors return 422 VALIDATION_ERROR."""
-        response = client.post(
-            '/api/auth/register',
-            json={'email': 'not-an-email', 'password': 'TestPassword123', 'terms_version': TERMS_VERSION})
+        response = client.post('/api/auth/register', json={'email': 'not-an-email'})
 
         assert response.status_code == 422
         assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'

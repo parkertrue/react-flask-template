@@ -2,8 +2,10 @@ import json
 import smtplib
 
 import pytest
+from dramatiq import Message
 
 from app.config import MailServer
+from app.utils.jobs import QUEUE_NAME
 from app.utils.log import JsonFormatter
 from tests.conftest import FakeRedisService
 
@@ -99,3 +101,13 @@ def outbox(app, monkeypatch):
     monkeypatch.setitem(app.config, 'EMAIL_SERVER', MailServer('tls', 'smtp.test', 465, 'mailer', 'mailpass'))
     monkeypatch.setitem(app.config, 'EMAIL_FROM', 'App <no-reply@app.test>')
     return sent
+
+
+@pytest.fixture
+def jobs(app):
+    """The jobs queued so far, as (name, arguments); the queue starts empty"""
+    broker = app.extensions['jobs_broker']
+    broker.flush_all()
+    yield lambda: [(message.actor_name, message.args) for message in
+                   map(Message.decode, list(broker.queues[QUEUE_NAME].queue))]
+    broker.flush_all()
