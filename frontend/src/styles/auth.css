@@ -38,3 +38,9 @@
   gap: 0.75rem;
   margin-top: 1.5rem;
 }
+
+/* An address has no spaces to wrap at: a long one would push the page
+   sideways on a narrow screen */
+.sent-to {
+  overflow-wrap: anywhere;
+}

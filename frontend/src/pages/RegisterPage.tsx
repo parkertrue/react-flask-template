@@ -74,7 +74,7 @@ export default function RegisterPage() {
         <div className="auth-container">
           <div className="auth-card">
             <h1 ref={heading} tabIndex={-1}>Check your inbox</h1>
-            <p>
+            <p className="sent-to">
               We sent a link to <strong>{sentTo}</strong>. Open it within 24 hours to
               choose a password and finish signing up.
             </p>

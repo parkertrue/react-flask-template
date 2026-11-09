@@ -124,7 +124,8 @@ test.describe('Accessibility', () => {
 
     test('the check-your-inbox step has no violations, reflows, shows focus and has large enough targets', async ({ page }) => {
       await page.goto('/register')
-      await requestLink(page, uniqueEmail('e2e-a11y-inbox'))
+      // Long, with nowhere to break, as an address can be: it must wrap
+      await requestLink(page, uniqueEmail('e2e-a11y-inbox-of-a-rather-long-address'))
 
       await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
       await expect(page).toHaveTitle(`Check your inbox | ${APP_NAME}`)
