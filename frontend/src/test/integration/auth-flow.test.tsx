@@ -15,13 +15,13 @@ import { handlers, setupMswServer } from '../server'
 const server = setupMswServer(...handlers)
 
 async function finishRegistration(user: UserEvent) {
-  await user.type(screen.getByLabelText('Password'), 'Password123')
-  await user.type(screen.getByLabelText('Confirm password'), 'Password123')
+  await user.type(screen.getByLabelText('Password'), 'a valid passphrase')
+  await user.type(screen.getByLabelText('Confirm password'), 'a valid passphrase')
   await user.click(screen.getByRole('checkbox', { name: /I accept the Terms/ }))
   await user.click(screen.getByRole('button', { name: 'Create account' }))
 }
 
-async function fillLogin(user: UserEvent, password = 'Password123') {
+async function fillLogin(user: UserEvent, password = 'a valid passphrase') {
   await user.type(screen.getByLabelText('Email'), 'test@example.com')
   await user.type(screen.getByLabelText('Password'), password)
   await user.click(screen.getByRole('button', { name: 'Log in' }))
@@ -59,7 +59,7 @@ describe('Authentication Flow Integration Tests', () => {
       await finishRegistration(user)
 
       expect(await screen.findByRole('heading', { name: 'Account' })).toBeInTheDocument()
-      expect(body).toEqual({ token: 'a-token', password: 'Password123', terms_version: TERMS_VERSION })
+      expect(body).toEqual({ token: 'a-token', password: 'a valid passphrase', terms_version: TERMS_VERSION })
       expect(storage.getAccessToken()).toBe('new-access')
       expect(storage.getEmail()).toBe('test@example.com')
     })
@@ -104,7 +104,7 @@ describe('Authentication Flow Integration Tests', () => {
       )
       const { user } = renderRoutes(routes, '/login')
 
-      await fillLogin(user, 'WrongPassword123')
+      await fillLogin(user, 'the wrong passphrase')
 
       expect(await screen.findByRole('alert')).toHaveTextContent(/invalid email or password/i)
     })

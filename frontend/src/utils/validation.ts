@@ -1,5 +1,10 @@
-export const PASSWORD_MIN_LENGTH = 8
+// Counted in characters (code points), as the backend counts them
+export const PASSWORD_MIN_LENGTH = 15
 export const PASSWORD_MAX_LENGTH = 128
+// A password field's maxLength, which counts UTF-16 units: an emoji takes
+// two, so a password of PASSWORD_MAX_LENGTH emoji still fits. Past the limit
+// itself, validatePassword says so.
+export const PASSWORD_INPUT_MAX_LENGTH = PASSWORD_MAX_LENGTH * 2
 export const EMAIL_MAX_LENGTH = 128
 
 // A character no user text may contain, mirroring backend/app/utils/text.py:
@@ -16,10 +21,11 @@ export const hasUnsupportedCharacters = (text: string) => UNSUPPORTED_CHARACTER.
 export const UNSUPPORTED_CHARACTERS_MESSAGE = 'must not contain emoji or other symbols like © or °'
 
 /**
- * Validate password meets all requirements: 8-128 characters with an
- * uppercase letter, a lowercase letter and a number, and no spaces or emoji.
- * Checked as the backend checks it, after NFKC normalization, and wherever a
- * password is typed: registration, login and account deletion.
+ * Validate a password as the backend does, wherever one is typed
+ * (registration, login and account deletion): 15-128 characters after NFKC
+ * normalization, counted in code points, so an emoji is one; any script,
+ * spaces and emoji welcome; no control characters such as a tab. Nothing is
+ * asked of which kinds of character it holds (NIST SP 800-63B).
  */
 export function validatePassword(password: string): string | undefined {
   if (!password) {
@@ -27,33 +33,18 @@ export function validatePassword(password: string): string | undefined {
   }
 
   const normalized = password.normalize('NFKC')
+  const length = Array.from(normalized).length
 
-  if (normalized.length < PASSWORD_MIN_LENGTH) {
+  if (length < PASSWORD_MIN_LENGTH) {
     return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`
   }
 
-  if (normalized.length > PASSWORD_MAX_LENGTH) {
+  if (length > PASSWORD_MAX_LENGTH) {
     return `Password must be at most ${PASSWORD_MAX_LENGTH} characters`
   }
 
-  if (/\s/u.test(normalized)) {
-    return 'Password must not contain spaces'
-  }
-
-  if (hasUnsupportedCharacters(normalized)) {
-    return `Password ${UNSUPPORTED_CHARACTERS_MESSAGE}`
-  }
-
-  if (!/[A-Z]/.test(normalized)) {
-    return 'Password must contain at least one uppercase letter'
-  }
-
-  if (!/[a-z]/.test(normalized)) {
-    return 'Password must contain at least one lowercase letter'
-  }
-
-  if (!/[0-9]/.test(normalized)) {
-    return 'Password must contain at least one number'
+  if (/\p{Cc}/u.test(normalized)) {
+    return 'Password must not contain control characters, such as a tab'
   }
 
   return undefined

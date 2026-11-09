@@ -27,7 +27,7 @@ SERVICE_ENV = {
 OPTIONAL_VARS = (
     'MIGRATION_DATABASE_URL', 'DATABASE_PASSWORD', 'MIGRATION_DATABASE_PASSWORD',
     'REDIS_PASSWORD', 'FLASK_DEBUG', 'E2E_MODE', 'TRUSTED_PROXY_COUNT', 'DB_QUERY_TIMEOUT',
-    'EMAIL_URL', 'EMAIL_PASSWORD', 'EMAIL_FROM', 'APP_URL', 'SERVER_NAME')
+    'EMAIL_URL', 'EMAIL_PASSWORD', 'EMAIL_FROM', 'APP_URL', 'SERVER_NAME', 'PWNED_PASSWORDS_URL')
 
 
 @pytest.fixture(autouse=True)
@@ -558,6 +558,37 @@ class TestAppUrl:
             monkeypatch.setenv('APP_URL', 'http://app.example.com')
 
             with pytest.raises(ValueError, match='APP_URL must start with https:// in production'):
+                ProductionConfig()
+
+
+class TestPwnedPasswordsUrl:
+    """Where a new password is checked against breached ones"""
+
+    def test_off_outside_production_unless_set(self):
+        assert DevelopmentConfig().PWNED_PASSWORDS_URL is None
+
+    def test_set_outside_production(self, monkeypatch):
+        monkeypatch.setenv('PWNED_PASSWORDS_URL', 'https://pwned.test/range/')
+
+        assert DevelopmentConfig().PWNED_PASSWORDS_URL == 'https://pwned.test/range/'
+
+    class TestInProduction:
+        @pytest.fixture(autouse=True)
+        def strong_secret(self, monkeypatch):
+            monkeypatch.setenv('SECRET_KEY', STRONG_SECRET)
+
+        def test_on_by_default(self):
+            assert ProductionConfig().PWNED_PASSWORDS_URL == 'https://api.pwnedpasswords.com/range/'
+
+        def test_set_but_empty_turns_it_off(self, monkeypatch):
+            monkeypatch.setenv('PWNED_PASSWORDS_URL', '')
+
+            assert ProductionConfig().PWNED_PASSWORDS_URL is None
+
+        def test_refuses_plain_http(self, monkeypatch):
+            monkeypatch.setenv('PWNED_PASSWORDS_URL', 'http://pwned.test/range/')
+
+            with pytest.raises(ValueError, match='PWNED_PASSWORDS_URL must start with https://'):
                 ProductionConfig()
 
 

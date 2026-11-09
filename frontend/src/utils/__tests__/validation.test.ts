@@ -1,25 +1,30 @@
 import { describe, it, expect } from 'vitest'
 import { backendConstant } from '@/test/backend'
 import {
+  hasUnsupportedCharacters,
   validatePassword,
   validateEmail,
   validatePasswordMatch,
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_LENGTH,
+  PASSWORD_INPUT_MAX_LENGTH,
   EMAIL_MAX_LENGTH
 } from '../validation'
 
 describe('validatePassword', () => {
   it.each([
-    ['all requirements met', 'Password123'],
-    ['the minimum length', 'Pass123!'],
-    ['the maximum length', 'A'.repeat(63) + 'a'.repeat(63) + '12'],
-    ['special characters', 'P@ssw0rd!'],
-    ['letters, punctuation and symbols of any language', 'Password123€£éß日本×÷'],
-    // NFKC turns full-width letters and digits into plain ones
-    ['full-width letters', 'Ｐassword１２３'],
-    // 4 characters as typed, but NFKC expands ㌕ to the five of キログラム
-    ['one that is long enough once normalized', 'Aa1㌕'],
+    ['the minimum length', 'a'.repeat(PASSWORD_MIN_LENGTH)],
+    ['the maximum length', 'a'.repeat(PASSWORD_MAX_LENGTH)],
+    ['a passphrase with spaces', 'correct horse battery staple'],
+    ['one kind of character alone', '123456789012345'],
+    ['special characters', '!@#$%^&*()_+-=[]{};:\'",.<>/?\\|`~'],
+    ['letters and symbols of any language', 'Ünïcödé 日本語 €£ ©°'],
+    // Each emoji is one character, though it takes two UTF-16 units
+    ['emoji', '😀'.repeat(PASSWORD_MIN_LENGTH)],
+    ['joined emoji', '👨‍👩‍👧 family of three'],
+    ['the maximum length in emoji', '😀'.repeat(PASSWORD_MAX_LENGTH)],
+    // 3 characters as typed, but NFKC expands each ㌕ to the five of キログラム
+    ['one that is long enough once normalized', '㌕㌕㌕'],
   ])('accepts %s', (_, password) => {
     expect(validatePassword(password)).toBeUndefined()
   })
@@ -29,33 +34,30 @@ describe('validatePassword', () => {
   })
 
   it.each([
-    ['too short', 'Pass1', `Password must be at least ${PASSWORD_MIN_LENGTH} characters`],
-    ['too long', 'Aa1' + 'x'.repeat(PASSWORD_MAX_LENGTH - 2),
+    ['too short', 'a'.repeat(PASSWORD_MIN_LENGTH - 1),
+      `Password must be at least ${PASSWORD_MIN_LENGTH} characters`],
+    // Long enough in UTF-16 units, as .length counts, but not in characters
+    ['too short in emoji', '😀'.repeat(PASSWORD_MIN_LENGTH - 1),
+      `Password must be at least ${PASSWORD_MIN_LENGTH} characters`],
+    ['too long', 'a'.repeat(PASSWORD_MAX_LENGTH + 1),
       `Password must be at most ${PASSWORD_MAX_LENGTH} characters`],
-    ['without an uppercase letter', 'password123', 'Password must contain at least one uppercase letter'],
-    ['without a lowercase letter', 'PASSWORD123', 'Password must contain at least one lowercase letter'],
-    ['without a number', 'Password', 'Password must contain at least one number'],
-    ...[' ', '\t', ' ', '　'].map(space =>
-      [`with ${JSON.stringify(space)}`, `Pass${space}word123`, 'Password must not contain spaces']),
-    ...['😀', '❤', '🇺🇸', '1⃣', '️', '\u{1F3FB}', '‍', '©', '°',
-      // A CJK letter beyond the Basic Multilingual Plane
-      '𠀀'].map(symbol =>
-      [`with ${JSON.stringify(symbol)}`, `Password123${symbol}`,
-        'Password must not contain emoji or other symbols like © or °']),
     // 128 characters as typed, but NFKC expands ㌕ to the five of キログラム
-    ['that grows too long when normalized', 'Aa1' + 'x'.repeat(PASSWORD_MAX_LENGTH - 4) + '㌕',
+    ['that grows too long when normalized', 'a'.repeat(PASSWORD_MAX_LENGTH - 1) + '㌕',
       `Password must be at most ${PASSWORD_MAX_LENGTH} characters`],
+    ...['\t', '\n', '\u0000', '\u007f'].map(control =>
+      [`with ${JSON.stringify(control)}`, `a long enough password${control}`,
+        'Password must not contain control characters, such as a tab']),
   ])('rejects a password %s', (_, password, message) => {
     expect(validatePassword(password)).toBe(message)
   })
 
   // The form shows one message at a time, so the order is what the user sees
-  it.each([
-    ['pass', `Password must be at least ${PASSWORD_MIN_LENGTH} characters`],
-    ['pass word😀', 'Password must not contain spaces'],
-    ['password', 'Password must contain at least one uppercase letter'],
-  ])('reports only the first rule %o breaks', (password, message) => {
-    expect(validatePassword(password)).toBe(message)
+  it('reports the length before a control character', () => {
+    expect(validatePassword('short\t')).toBe(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
+  })
+
+  it('lets a field hold the longest password in emoji', () => {
+    expect('😀'.repeat(PASSWORD_MAX_LENGTH).length).toBe(PASSWORD_INPUT_MAX_LENGTH)
   })
 })
 
@@ -117,6 +119,26 @@ describe('validateEmail', () => {
     expect(email.length).toBe(EMAIL_MAX_LENGTH)
 
     expect(validateEmail(email)).toBe(`Email must be at most ${EMAIL_MAX_LENGTH} characters`)
+  })
+})
+
+// Every free-text field but passwords, mirroring backend/app/utils/text.py
+describe('hasUnsupportedCharacters', () => {
+  it.each([
+    'plain words and punctuation!',
+    'letters of any language: éßøñ 日本語',
+    'math, currency and modifier symbols: ×÷± €£¥ ^`',
+    'spaces of every kind:  　',
+  ])('accepts %s', (text) => {
+    expect(hasUnsupportedCharacters(text)).toBe(false)
+  })
+
+  it.each([
+    '😀', '❤', '🇺🇸', '1⃣', '\u{FE0F}', '\u{1F3FB}', '\u{200D}', '©', '°', '\u0000',
+    // A CJK letter beyond the Basic Multilingual Plane
+    '𠀀',
+  ])('refuses %j', (symbol) => {
+    expect(hasUnsupportedCharacters(`some text ${symbol}`)).toBe(true)
   })
 })
 

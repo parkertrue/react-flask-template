@@ -33,7 +33,10 @@ export default function PrivacyPage() {
         You need to give your email address and a password to register;
         without them we cannot create an account. We email the address a
         link first, and create the account only once it is used, so we know
-        the address is yours. [If the CCPA applies: the
+        the address is yours. To keep you from choosing a password that has
+        leaked elsewhere, we check it against Have I Been Pwned's list of
+        breached passwords, sending only the first 5 characters of a hash of
+        it, from which neither you nor the password can be identified. [If the CCPA applies: the
         categories of sources of this data.]
       </p>
 

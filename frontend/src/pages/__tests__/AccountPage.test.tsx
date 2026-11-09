@@ -249,7 +249,7 @@ describe('AccountPage', () => {
     // The page's own, the first in the document
     const pageDeleteButton = () => screen.getAllByRole('button', { name: 'Delete account' })[0] as HTMLElement
 
-    async function askToDelete(user: UserEvent, password = 'MyPassword123') {
+    async function askToDelete(user: UserEvent, password = 'my valid passphrase') {
       await user.click(pageDeleteButton())
       await user.type(passwordField(), password)
     }
@@ -262,6 +262,8 @@ describe('AccountPage', () => {
       expect(dialog()).toHaveAccessibleDescription(/cannot be undone/)
       expect(passwordField()).toHaveFocus()
       expect(passwordField()).toHaveAccessibleDescription('Enter your password to confirm.')
+      // Room for the longest password in emoji, two UTF-16 units each
+      expect(passwordField()).toHaveAttribute('maxlength', String(2 * 128))
       expect(deleteAccount).not.toHaveBeenCalled()
     })
 
@@ -300,7 +302,7 @@ describe('AccountPage', () => {
 
       expect(await screen.findByText('Login page: account deleted')).toBeInTheDocument()
       expect(router.state.location.pathname).toBe('/login')
-      expect(deleteAccount).toHaveBeenCalledExactlyOnceWith('MyPassword123')
+      expect(deleteAccount).toHaveBeenCalledExactlyOnceWith('my valid passphrase')
       expect(storage.getAccessToken()).toBeNull()
       expect(storage.getSessionEnded()).toBe(false)
     })
@@ -317,12 +319,9 @@ describe('AccountPage', () => {
     })
 
     it.each([
-      ['a password with a space', 'My Password123', 'Password must not contain spaces'],
       // The rules registration applies: no password it refuses is checked
-      ['a short password', 'MyPass1', 'Password must be at least 8 characters'],
-      ['a password without an uppercase letter', 'mypassword123',
-        'Password must contain at least one uppercase letter'],
-      ['a password without a number', 'MyPassword', 'Password must contain at least one number'],
+      ['a short password', 'too short', 'Password must be at least 15 characters'],
+      ['a short password in emoji', '😀'.repeat(14), 'Password must be at least 15 characters'],
     ])('refuses %s without sending it', async (_, password, message) => {
       const { user } = renderPage()
       await askToDelete(user, password)

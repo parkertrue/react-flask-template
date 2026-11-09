@@ -23,7 +23,7 @@ const VISITOR_PAGES: [string, string, string, number][] = [
 /** Fill in the login form and submit it, without waiting */
 async function submitLogin(page: Page, email = 'someone@example.com') {
   await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Password').fill('SecurePass123')
+  await page.getByLabel('Password').fill('a secure test passphrase')
   await page.getByRole('button', { name: 'Log in' }).click()
 }
 

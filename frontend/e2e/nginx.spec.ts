@@ -258,7 +258,7 @@ test.describe('nginx', () => {
     // backend's login_failed event. The user agent finds nginx's.
     const userAgent = `probe-${Date.now()}`
     await request.post('/api/auth/login', {
-      data: { email: `${userAgent}@example.com`, password: 'WrongPass123' },
+      data: { email: `${userAgent}@example.com`, password: 'the wrong passphrase' },
       headers: { 'User-Agent': userAgent },
     })
 

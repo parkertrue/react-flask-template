@@ -13,6 +13,7 @@ Every app built from the template collects personal data from its first sign-up,
 | Data | Where | How long |
 |---|---|---|
 | Email, password hash, when registered, terms version and when accepted | MySQL `users` | Until the user deletes the account (Account page) |
+| The first 5 characters of a new password's SHA-1, sent to Have I Been Pwned's Pwned Passwords to check it is not a breached one | Sent, not kept | Nothing identifies the user or the password from it |
 | Users' content (the notes example) | The feature's tables | Until the user deletes it or the account |
 | Refresh-token ids, at most 10 per user | Redis | Until the session expires (7 days idle, 30 at most), logs out or deletes the account |
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |

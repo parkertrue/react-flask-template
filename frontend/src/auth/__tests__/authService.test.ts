@@ -15,13 +15,13 @@ describe('authService', () => {
   it.each([
     ['requestRegistration', () => requestRegistration('a@example.com'),
       '/auth/register', { email: 'a@example.com' }],
-    ['completeRegistration', () => completeRegistration('a-token', 'Password123', 1),
-      '/auth/register/complete', { token: 'a-token', password: 'Password123', terms_version: 1 }],
-    ['loginUser', () => loginUser('a@example.com', 'Password123'),
-      '/auth/login', { email: 'a@example.com', password: 'Password123' }],
+    ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1),
+      '/auth/register/complete', { token: 'a-token', password: 'a valid passphrase', terms_version: 1 }],
+    ['loginUser', () => loginUser('a@example.com', 'a valid passphrase'),
+      '/auth/login', { email: 'a@example.com', password: 'a valid passphrase' }],
     ['logoutUser', () => logoutUser(), '/auth/logout', undefined],
     ['logoutAllDevices', () => logoutAllDevices(), '/auth/logout-all', undefined],
-    ['deleteAccount', () => deleteAccount('Password123'), '/account/delete', { password: 'Password123' }],
+    ['deleteAccount', () => deleteAccount('a valid passphrase'), '/account/delete', { password: 'a valid passphrase' }],
     // A JSON body, so another site cannot send it without a CORS preflight
     ['clearAuthCookies', () => clearAuthCookies(), '/auth/clear-cookies', {}],
   ])('%s posts to the right endpoint', async (_, call, path, body) => {
@@ -44,8 +44,8 @@ describe('authService', () => {
   })
 
   it.each([
-    ['loginUser', () => loginUser('a@example.com', 'Password123')],
-    ['completeRegistration', () => completeRegistration('a-token', 'Password123', 1)],
+    ['loginUser', () => loginUser('a@example.com', 'a valid passphrase')],
+    ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1)],
   ])('%s returns the tokens the backend issued', async (_, call) => {
     vi.mocked(api.post).mockResolvedValue({ data: tokens('access', 'csrf') })
 
@@ -54,11 +54,11 @@ describe('authService', () => {
 
   it.each([
     ['requestRegistration', () => requestRegistration('a@example.com')],
-    ['completeRegistration', () => completeRegistration('a-token', 'Password123', 1)],
-    ['loginUser', () => loginUser('a@example.com', 'Password123')],
+    ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1)],
+    ['loginUser', () => loginUser('a@example.com', 'a valid passphrase')],
     ['logoutUser', () => logoutUser()],
     ['logoutAllDevices', () => logoutAllDevices()],
-    ['deleteAccount', () => deleteAccount('Password123')],
+    ['deleteAccount', () => deleteAccount('a valid passphrase')],
   ])(
     '%s passes failures on to the caller untouched',
     async (_, call) => {

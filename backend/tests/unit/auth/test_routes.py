@@ -49,7 +49,7 @@ class TestRequestRegistration:
     @pytest.mark.parametrize('payload', [
         {'email': 'not-an-email'},
         {},
-        {'email': 'new@example.com', 'password': 'ValidPass123'},
+        {'email': 'new@example.com', 'password': 'a valid passphrase'},
         {'email': 'new@example.com', 'terms_version': TERMS_VERSION},
     ], ids=['a bad address', 'no address', 'a password', 'terms'])
     def test_an_invalid_body_queues_nothing(self, client, db, jobs, payload):
@@ -130,7 +130,7 @@ class TestCompleteRegistration:
     """POST /api/auth/register/complete: the link's token and a password make
     the account, and log in"""
 
-    def complete(self, client, token, password='ValidPass123', terms_version=TERMS_VERSION):
+    def complete(self, client, token, password='a valid passphrase', terms_version=TERMS_VERSION):
         return client.post('/api/auth/register/complete', json={
             'token': token, 'password': password, 'terms_version': terms_version})
 
@@ -242,6 +242,44 @@ class TestCompleteRegistration:
 
         assert response.get_json()['error']['code'] == 'LINK_INVALID'
 
+    def test_a_breached_password_is_refused(self, client, db, monkeypatch):
+        checked = []
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: checked.append(password) or True)
+
+        response = register(client, 'new@example.com', 'correct horse battery staple')
+
+        assert response.status_code == 422
+        assert response.get_json()['error'] == {
+            'code': 'PASSWORD_BREACHED',
+            'message': 'This password has appeared in a data breach. Choose another.'}
+        assert checked == ['correct horse battery staple']
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    def test_a_request_refused_anyway_is_never_checked(self, client, db, fake_redis, monkeypatch):
+        """No third-party call for a link used again"""
+        checked = []
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: checked.append(password) or False)
+        token = link_token(client.application, 'twice@example.com')
+        self.complete(client, token)
+        checked.clear()
+
+        response = self.complete(client, token)
+
+        assert response.status_code == 409
+        assert checked == []
+
+    def test_half_an_emoji_is_a_validation_error_not_a_crash(self, client, db):
+        """A lone surrogate, which JSON can carry and no hash can take"""
+        token = link_token(client.application, 'new@example.com')
+
+        response = client.post(
+            '/api/auth/register/complete', content_type='application/json',
+            data=f'{{"token": "{token}", "password": "a valid passphrase \\ud83d", '
+                 f'"terms_version": {TERMS_VERSION}}}')
+
+        assert response.status_code == 422
+        assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
+
     def test_race_is_a_conflict_not_a_crash(self, client, db, monkeypatch):
         """Another request registers the email after the existence check
         (a double submit): the unique index rejects this one, which must be
@@ -264,11 +302,9 @@ class TestCompleteRegistration:
         assert db.session.scalar(select(func.count()).select_from(User)) == 1
 
     @pytest.mark.parametrize('password', [
-        'Short1',
-        'nouppercase123',
-        'NOLOWERCASE123',
-        'NoNumbersHere',
-    ], ids=['too short', 'no uppercase', 'no lowercase', 'no number'])
+        'too short',
+        'a tab\tin a long password',
+    ], ids=['too short', 'a control character'])
     def test_refuses_a_weak_password(self, client, db, password):
         response = register(client, 'new@example.com', password)
 
@@ -277,11 +313,11 @@ class TestCompleteRegistration:
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
     @pytest.mark.parametrize('payload', [
-        {'password': 'ValidPass123', 'terms_version': TERMS_VERSION},
+        {'password': 'a valid passphrase', 'terms_version': TERMS_VERSION},
         {'token': 'x', 'terms_version': TERMS_VERSION},
-        {'token': 'x', 'password': 'ValidPass123'},
-        {'token': 'x', 'password': 'ValidPass123', 'terms_version': str(TERMS_VERSION)},
-        {'token': 'x', 'password': 'ValidPass123', 'terms_version': TERMS_VERSION,
+        {'token': 'x', 'password': 'a valid passphrase'},
+        {'token': 'x', 'password': 'a valid passphrase', 'terms_version': str(TERMS_VERSION)},
+        {'token': 'x', 'password': 'a valid passphrase', 'terms_version': TERMS_VERSION,
          'email': 'other@example.com'},
     ], ids=['no token', 'no password', 'no terms', 'terms as text', 'an address'])
     def test_an_invalid_body_is_a_validation_error(self, client, db, payload):
@@ -841,11 +877,11 @@ class TestAuthenticationFlow:
 
     def test_sign_up_then_log_in(self, client, db, fake_redis):
         """Sign up through the link, log out, and log in with the password"""
-        register(client, 'flowtest@example.com', 'FlowTest123')
+        register(client, 'flowtest@example.com', 'flow test passphrase')
         client.post('/api/auth/logout')
 
         login = client.post('/api/auth/login', json={
-            'email': 'flowtest@example.com', 'password': 'FlowTest123'})
+            'email': 'flowtest@example.com', 'password': 'flow test passphrase'})
         account = client.get('/api/account', headers={
             'Authorization': f"Bearer {login.get_json()['access_token']}"})
 
@@ -854,9 +890,9 @@ class TestAuthenticationFlow:
 
     def test_password_typed_either_way_logs_in(self, client, db, fake_redis):
         """é as one character at sign-up, as e plus an accent at login"""
-        signed_up = register(client, 'cafe@example.com', 'CaféPass123')
+        signed_up = register(client, 'cafe@example.com', 'café passphrase 123')
         login = client.post('/api/auth/login', json={
-            'email': 'cafe@example.com', 'password': 'CaféPass123'})
+            'email': 'cafe@example.com', 'password': 'café passphrase 123'})
 
         assert signed_up.status_code == 200
         assert login.status_code == 200
@@ -984,12 +1020,12 @@ class TestSecurityEvents:
     def test_register(self, client, db, fake_redis, security_events, logged):
         token = link_token(client.application, 'new@example.com')
         client.post('/api/auth/register/complete', json={
-            'token': token, 'password': 'ValidPass123', 'terms_version': TERMS_VERSION})
+            'token': token, 'password': 'a valid passphrase', 'terms_version': TERMS_VERSION})
         user_id = db.session.scalar(select(User.id).where(User.email == 'new@example.com'))
 
         assert security_events() == [
             {'message': 'registered', 'ip': '127.0.0.1', 'user_id': user_id}]
-        self.assert_absent(logged, 'new@example.com', 'ValidPass123', token)
+        self.assert_absent(logged, 'new@example.com', 'a valid passphrase', token)
 
     def test_login(self, client, sample_user, fake_redis, security_events, logged):
         body = client.post('/api/auth/login', json=LOGIN_PAYLOAD).get_json()
@@ -1003,7 +1039,7 @@ class TestSecurityEvents:
     def test_failed_logins_name_the_account_however_its_email_is_spelled(
             self, client, sample_user, security_events, logged):
         for email in ('test@example.com', 'TEST@Example.com'):
-            client.post('/api/auth/login', json={'email': email, 'password': 'WrongPass123'})
+            client.post('/api/auth/login', json={'email': email, 'password': 'the wrong passphrase'})
 
         account = auth_routes._email_digest('test@example.com')
         first, second = security_events()
@@ -1012,17 +1048,17 @@ class TestSecurityEvents:
         # Only MySQL finds the user for the second spelling; SQLite matches
         # case-sensitively. The account is the same either way.
         assert second['account'] == account
-        self.assert_absent(logged, 'test@example.com', 'TEST@Example.com', 'WrongPass123')
+        self.assert_absent(logged, 'test@example.com', 'TEST@Example.com', 'the wrong passphrase')
 
     def test_a_failed_login_to_an_unknown_email_has_no_user(
             self, client, db, security_events, logged):
         client.post('/api/auth/login', json={
-            'email': 'nobody@example.com', 'password': 'WrongPass123'})
+            'email': 'nobody@example.com', 'password': 'the wrong passphrase'})
 
         assert security_events() == [
             {'message': 'login_failed', 'ip': '127.0.0.1', 'user_id': None,
              'account': auth_routes._email_digest('nobody@example.com')}]
-        self.assert_absent(logged, 'nobody@example.com', 'WrongPass123')
+        self.assert_absent(logged, 'nobody@example.com', 'the wrong passphrase')
 
     def test_a_replayed_refresh_token(self, client, sample_user, fake_redis,
                                       security_events, logged):

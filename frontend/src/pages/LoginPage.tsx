@@ -9,7 +9,7 @@ import PageTitle from '@/components/layout/PageTitle'
 import {
   validateEmail,
   validatePassword,
-  PASSWORD_MAX_LENGTH,
+  PASSWORD_INPUT_MAX_LENGTH,
   EMAIL_MAX_LENGTH
 } from '@/utils/validation'
 
@@ -101,7 +101,7 @@ export default function LoginPage() {
               error={errors.password}
               readOnly={submitting}
               required
-              maxLength={PASSWORD_MAX_LENGTH}
+              maxLength={PASSWORD_INPUT_MAX_LENGTH}
             />
 
             {formError && <div className="error-message" role="alert">{formError}</div>}

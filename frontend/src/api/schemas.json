@@ -6,7 +6,7 @@
       "properties": {
         "password": {
           "maxLength": 128,
-          "minLength": 8,
+          "minLength": 15,
           "type": "string"
         }
       },
@@ -110,7 +110,7 @@
         },
         "password": {
           "maxLength": 128,
-          "minLength": 8,
+          "minLength": 15,
           "type": "string"
         }
       },
@@ -245,7 +245,7 @@
       "properties": {
         "password": {
           "maxLength": 128,
-          "minLength": 8,
+          "minLength": 15,
           "type": "string"
         },
         "terms_version": {

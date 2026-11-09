@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
-  askToDeleteAccount, downloadData, emailedLink, emailTo, fillRegistration, login, logout, memberSince,
-  openAccount, register, registerAndLogin, requestLink, TEST_PASSWORD, uniqueEmail,
+  askToDeleteAccount, downloadData, emailedLink, emailTo, expectNoViolations, fillRegistration, login,
+  logout, memberSince, openAccount, register, registerAndLogin, requestLink, TEST_PASSWORD, uniqueEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -143,6 +143,26 @@ test.describe('Critical User Journey', () => {
     await expect(page.getByRole('alert')).toHaveText('This account is already set up.')
     await expect(page.getByRole('alert')).toBeFocused()
     await expect(page.getByRole('main').getByRole('link', { name: 'Log in' })).toHaveAttribute('href', '/login')
+  })
+
+  // The test stack checks no password against Pwned Passwords (a third
+  // party), so the answer production would give is played here
+  test('a breached password is explained on its field, which keeps focus', async ({ page }) => {
+    await page.route('**/api/auth/register/complete', route => route.fulfill({
+      status: 422,
+      json: { error: {
+        code: 'PASSWORD_BREACHED',
+        message: 'This password has appeared in a data breach. Choose another.',
+      } },
+    }))
+    await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+    await fillRegistration(page)
+
+    const password = page.getByLabel(/^password$/i)
+    await expect(password).toBeFocused()
+    await expect(password).toHaveAccessibleDescription(
+      /This password has appeared in a data breach\. Choose another\./)
+    await expectNoViolations(page)
   })
 
   test('a link this app never sent is refused', async ({ page }) => {

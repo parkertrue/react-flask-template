@@ -11,7 +11,7 @@ import {
   validatePassword,
   validatePasswordMatch,
   PASSWORD_MIN_LENGTH,
-  PASSWORD_MAX_LENGTH
+  PASSWORD_INPUT_MAX_LENGTH
 } from '@/utils/validation'
 
 // Why the link can't make an account, in place of the form
@@ -58,9 +58,6 @@ export default function CompleteRegistrationPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [problem, setProblem] = useState<LinkProblem | null>(link.token ? null : 'missing')
   const [submitting, setSubmitting] = useState(false)
-  // The password rules stay hidden, to keep the form short, until a password
-  // breaks one; from then on they show beside its message
-  const [showPasswordRules, setShowPasswordRules] = useState(false)
   const problemMessage = useRef<HTMLParagraphElement>(null)
 
   // Off the address bar and out of history, so the token is not left where
@@ -84,12 +81,11 @@ export default function CompleteRegistrationPage() {
   const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submitting || !link.token) return
+    // The event's currentTarget is gone by the time the server answers
+    const form = e.currentTarget
 
-    const passwordError = validatePassword(values.password)
-    // Rendered by validate's flush, before it focuses the field
-    if (passwordError) setShowPasswordRules(true)
-    const valid = validate(e.currentTarget, {
-      password: passwordError,
+    const valid = validate(form, {
+      password: validatePassword(values.password),
       confirmPassword: validatePasswordMatch(values.password, values.confirmPassword),
       acceptTerms: values.acceptTerms ? undefined : 'Accept the Terms and the Privacy notice to register',
     })
@@ -107,6 +103,8 @@ export default function CompleteRegistrationPage() {
       if (code === 'LINK_EXPIRED') setProblem('expired')
       else if (code === 'LINK_INVALID') setProblem('invalid')
       else if (code === 'EMAIL_ALREADY_REGISTERED') setProblem('registered')
+      // The field's own message, focused, like a failed submit's
+      else if (code === 'PASSWORD_BREACHED') validate(form, { password: getErrorMessage(err) })
       else setFormError(getErrorMessage(err))
     }
   }
@@ -158,12 +156,10 @@ export default function CompleteRegistrationPage() {
                 value={values.password}
                 onChange={handleChange}
                 error={errors.password}
-                hint={showPasswordRules
-                  ? `At least ${PASSWORD_MIN_LENGTH} characters, with an uppercase letter, a lowercase letter and a number.`
-                  : undefined}
+                hint={`At least ${PASSWORD_MIN_LENGTH} characters. A few words make a good one.`}
                 readOnly={submitting}
                 required
-                maxLength={PASSWORD_MAX_LENGTH}
+                maxLength={PASSWORD_INPUT_MAX_LENGTH}
               />
               <FormField
                 id="confirmPassword"
@@ -175,7 +171,7 @@ export default function CompleteRegistrationPage() {
                 error={errors.confirmPassword}
                 readOnly={submitting}
                 required
-                maxLength={PASSWORD_MAX_LENGTH}
+                maxLength={PASSWORD_INPUT_MAX_LENGTH}
               />
               <FormField
                 id="acceptTerms"

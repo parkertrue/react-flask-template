@@ -23,7 +23,7 @@ function capture(text: string, pattern: RegExp) {
   return value
 }
 
-export const TEST_PASSWORD = 'SecurePass123'
+export const TEST_PASSWORD = 'a secure test passphrase'
 
 // Every run registers fresh accounts, so emails must never repeat
 export const uniqueEmail = (prefix: string) => `${prefix}-${randomUUID()}@example.com`

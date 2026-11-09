@@ -127,7 +127,7 @@ def refuse_hashing(monkeypatch):
 
 
 @pytest.mark.parametrize('password, arrange, status', [
-    ('Test Password123', lambda monkeypatch: None, 422),  # login refuses spaces
+    ('too short', lambda monkeypatch: None, 422),  # login refuses it as sign-up would
     ('TestPassword123', refuse_hashing, 503),
 ])
 def test_only_wrong_passwords_count_toward_the_account_limits(

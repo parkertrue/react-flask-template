@@ -193,12 +193,9 @@ class TestDeleteAccount:
     @pytest.mark.parametrize('body', [
         {},
         {'password': ''},
-        {'password': 'Test Password123'},
         # The rules registration applies: no password it refuses is checked
-        {'password': 'Pass123'},
-        {'password': 'testpassword123'},
-        {'password': 'TESTPASSWORD123'},
-        {'password': 'TestPassword'},
+        {'password': 'short password'},
+        {'password': 'a tab\tin a long password'},
         {'password': 123},
         {'password': PASSWORD, 'extra': 1},
     ])
