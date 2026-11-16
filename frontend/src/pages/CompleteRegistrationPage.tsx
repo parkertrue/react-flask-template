@@ -15,7 +15,7 @@ import {
 } from '@/utils/validation'
 
 // Why the link can't make an account, in place of the form
-type LinkProblem = 'missing' | 'expired' | 'invalid' | 'registered'
+type LinkProblem = 'missing' | 'expired' | 'invalid' | 'used' | 'registered'
 
 const PROBLEMS: Record<LinkProblem, { message: string; to: string; action: string }> = {
   missing: {
@@ -30,17 +30,36 @@ const PROBLEMS: Record<LinkProblem, { message: string; to: string; action: strin
     message: 'This link is not valid. Copy the whole link from the email, or ask for a new one.',
     to: '/register', action: 'Start again',
   },
+  used: {
+    message: 'This link has already been used. Sign up again for a new one.',
+    to: '/register', action: 'Start again',
+  },
   registered: {
     message: 'This account is already set up.',
     to: '/login', action: 'Log in',
   },
 }
 
-// The link's fragment: #email=…&token=…. A fragment, not a query string, so
-// the token never reaches a server's log (DECISIONS.md).
+// The link's fragment: #token=…. A fragment, not a query string, so the
+// token never reaches a server's log (DECISIONS.md). Anything else the link
+// carries is ignored: only the token decides the account.
 function readLink(hash: string) {
-  const params = new URLSearchParams(hash.slice(1))
-  return { email: params.get('email') ?? '', token: params.get('token') }
+  const token = new URLSearchParams(hash.slice(1)).get('token')
+  return { token, email: tokenEmail(token) }
+}
+
+// The address a token names, to show before the account exists. Its first
+// part is the payload, base64url JSON, signed but not encrypted. One that
+// starts with '.' is compressed, which only a long, repetitive address
+// makes: none is shown then, and the backend still uses the token's.
+function tokenEmail(token: string | null) {
+  try {
+    const payload = token?.split('.')[0] ?? ''
+    const value: unknown = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof value === 'string' ? value : ''
+  } catch {
+    return ''
+  }
 }
 
 // Sign-up's second step, the page the emailed link opens: the password and
@@ -94,14 +113,16 @@ export default function CompleteRegistrationPage() {
     setFormError(null)
     setSubmitting(true)
     try {
-      const tokens = await completeRegistration(link.token, values.password, TERMS_VERSION)
-      // GuestRoute moves the user on once they are signed in
-      login(tokens.access_token, tokens.refresh_csrf, link.email)
+      const account = await completeRegistration(link.token, values.password, TERMS_VERSION)
+      // Under the address the server made the account for. GuestRoute moves
+      // the user on once they are signed in.
+      login(account.access_token, account.refresh_csrf, account.email)
     } catch (err) {
       setSubmitting(false)
       const code = errorCode(err)
       if (code === 'LINK_EXPIRED') setProblem('expired')
       else if (code === 'LINK_INVALID') setProblem('invalid')
+      else if (code === 'LINK_USED') setProblem('used')
       else if (code === 'EMAIL_ALREADY_REGISTERED') setProblem('registered')
       // The field's own message, focused, like a failed submit's
       else if (code === 'PASSWORD_BREACHED') validate(form, { password: getErrorMessage(err) })
@@ -139,15 +160,15 @@ export default function CompleteRegistrationPage() {
               className="auth-form"
               aria-labelledby="complete-heading"
             >
-              {/* The account's name, which the link chose, for password managers to save */}
-              <FormField
+              {/* The account's name, the token's, for password managers to save */}
+              {link.email && <FormField
                 id="email"
                 label="Email"
                 type="email"
                 autoComplete="username"
                 value={link.email}
                 readOnly
-              />
+              />}
               <FormField
                 id="password"
                 label="Password"

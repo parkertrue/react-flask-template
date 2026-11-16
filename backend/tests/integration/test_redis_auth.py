@@ -219,3 +219,25 @@ class TestBlocklistFailsClosed:
 
         response = integration_client.post('/api/auth/refresh')
         assert response.status_code == 401
+
+
+class TestUsedLinks:
+    """A sign-up link works once: claimed on real Redis, as the app's ACL
+    user, which may write used_links:* (test_redis_acl.py)"""
+
+    def test_a_link_is_claimed_once_for_its_lifetime(self, integration_app, integration_redis):
+        with integration_app.app_context():
+            first = integration_redis.claim_link('integration.link.token', ttl_seconds=86400)
+            again = integration_redis.claim_link('integration.link.token', ttl_seconds=86400)
+        # SCAN, not KEYS, which the app's user may not run
+        [key] = integration_redis.get_client().scan_iter('used_links:*')
+
+        assert (first, again) == (True, False)
+        assert 86390 <= integration_redis.get_client().ttl(key) <= 86400
+
+    def test_a_released_link_can_be_claimed_again(self, integration_app, integration_redis):
+        with integration_app.app_context():
+            integration_redis.claim_link('integration.link.token', ttl_seconds=86400)
+            integration_redis.release_link('integration.link.token')
+
+            assert integration_redis.claim_link('integration.link.token', ttl_seconds=86400) is True

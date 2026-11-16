@@ -10,6 +10,8 @@ from sqlalchemy import select
 
 from app import db
 from app.auth.models import User
+from app.auth.schemas import is_normalized_email
+from app.utils.jobs import PermanentJobFailure
 from app.utils.links import app_link, make_link_token
 from app.utils.mail import send_email
 
@@ -45,11 +47,18 @@ def already_registered_email(link: str) -> tuple[str, str]:
 def send_registration_email(email: str) -> None:
     """Send email the link to finish signing up, or, if it has an account,
     a note saying so: the sign-up form answers both alike, so only the
-    inbox's owner learns which it was"""
+    inbox's owner learns which it was.
+
+    Only an address the sign-up form would have queued: whoever can write to
+    the queue must not be able to mail a list of addresses, or a display
+    name's, through the app.
+    """
+    if not is_normalized_email(email):
+        raise PermanentJobFailure('Not an address the sign-up form accepts')
     if db.session.execute(select(User.id).where(User.email == email)).first():
         subject, body = already_registered_email(app_link('/login'))
     else:
         token = make_link_token(REGISTRATION_LINK, email)
         subject, body = registration_email(
-            app_link('/register/complete', email=email, token=token))
+            app_link('/register/complete', token=token))
     send_email(email, subject, body)

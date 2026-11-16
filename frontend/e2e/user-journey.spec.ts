@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import {
   askToDeleteAccount, downloadData, emailedLink, emailTo, expectNoViolations, fillRegistration, login,
   logout, memberSince, openAccount, register, registerAndLogin, requestLink, TEST_PASSWORD, uniqueEmail,
+  UNSIGNED_LINK,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -155,7 +156,7 @@ test.describe('Critical User Journey', () => {
         message: 'This password has appeared in a data breach. Choose another.',
       } },
     }))
-    await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+    await page.goto(UNSIGNED_LINK)
     await fillRegistration(page)
 
     const password = page.getByLabel(/^password$/i)
@@ -166,7 +167,7 @@ test.describe('Critical User Journey', () => {
   })
 
   test('a link this app never sent is refused', async ({ page }) => {
-    await page.goto('/register/complete#email=someone%40example.com&token=forged.token.here')
+    await page.goto(UNSIGNED_LINK)
     await fillRegistration(page)
 
     await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)

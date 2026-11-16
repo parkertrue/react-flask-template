@@ -264,6 +264,34 @@
       "title": "RegisterCompleteRequest",
       "type": "object"
     },
+    "RegisterCompleteResponse": {
+      "description": "Sign-up's login, and the account's address: the token's, which the\npage signs in under, never anything else the link carried",
+      "properties": {
+        "access_token": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "refresh_csrf": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "access_token",
+        "email"
+      ],
+      "title": "RegisterCompleteResponse",
+      "type": "object"
+    },
     "RegisterRequest": {
       "additionalProperties": false,
       "description": "Sign-up's first step: the address to send the link to",

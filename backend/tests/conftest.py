@@ -79,11 +79,22 @@ def client(app, db):
 
 
 class FakeRedisService:
-    """In-memory stand-in for RedisService's refresh-token methods."""
+    """In-memory stand-in for RedisService's refresh-token and used-link
+    methods."""
 
     def __init__(self):
         self.tokens = set()  # {(user_id, jti)}
         self.ttls = {}  # {jti: the ttl_seconds it was recorded with}
+        self.used_links = {}  # {token: the ttl_seconds it was claimed for}
+
+    def claim_link(self, token, ttl_seconds):
+        if token in self.used_links:
+            return False
+        self.used_links[token] = ttl_seconds
+        return True
+
+    def release_link(self, token):
+        self.used_links.pop(token, None)
 
     def store_refresh_token(self, user_id, jti, ttl_seconds):
         self.tokens.add((user_id, jti))
@@ -209,7 +220,7 @@ def integration_redis(integration_app):
         redis_service = integration_app.extensions['redis_service']
         yield redis_service
         client = redis_service.get_client()
-        for pattern in ('refresh_tokens:*', 'LIMITS:*', 'dramatiq:*'):
+        for pattern in ('refresh_tokens:*', 'used_links:*', 'LIMITS:*', 'dramatiq:*'):
             keys = list(client.scan_iter(pattern))
             if keys:
                 client.delete(*keys)

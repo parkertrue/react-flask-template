@@ -38,7 +38,8 @@ def test_the_app_user_may_not_run(integration_redis, command):
         integration_redis.get_client().execute_command(*command)
 
 
-@pytest.mark.parametrize('key', ['refresh_tokens:acl-plain', 'LIMITS:acl-plain', 'dramatiq:acl-plain'])
+@pytest.mark.parametrize('key', [
+    'refresh_tokens:acl-plain', 'used_links:acl-plain', 'LIMITS:acl-plain', 'dramatiq:acl-plain'])
 def test_the_app_user_may_use_its_own_keys(integration_redis, key):
     """The control: the refusals above are the ACL's, not a failed login.
     dramatiq:* is the job queue, where the app puts jobs."""
@@ -75,7 +76,7 @@ def test_the_worker_user_may_run_keys(worker_redis):
     assert worker_redis.keys('dramatiq:acl-*') == [b'dramatiq:acl-plain']
 
 
-@pytest.mark.parametrize('key', ['refresh_tokens:acl-plain', 'LIMITS:acl-plain'])
+@pytest.mark.parametrize('key', ['refresh_tokens:acl-plain', 'used_links:acl-plain', 'LIMITS:acl-plain'])
 def test_the_worker_user_may_not_touch_the_apps_keys(worker_redis, key):
     """A stolen worker password reaches the job queue, not the sessions or
     the rate limits"""

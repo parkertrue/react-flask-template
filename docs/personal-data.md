@@ -18,6 +18,7 @@ Every app built from the template collects personal data from its first sign-up,
 | Refresh-token ids, at most 10 per user | Redis | Until the session expires (7 days idle, 30 at most), logs out or deletes the account |
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
 | Queued jobs' arguments, such as an email's recipient | Redis | Until the job runs; a day after its last try, for one that keeps failing |
+| A hash of each sign-up link used, no address | Redis | 24 hours, the link's lifetime |
 | Emails sent | Your mail provider | By the provider's retention |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
 | Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |
