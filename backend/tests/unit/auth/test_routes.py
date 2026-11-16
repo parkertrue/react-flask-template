@@ -350,6 +350,17 @@ class TestCompleteRegistration:
         assert checked == ['correct horse battery staple']
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
+    def test_no_database_transaction_waits_on_the_check(self, client, db, fake_redis, monkeypatch):
+        """The check may take its whole deadline: a pooled connection held
+        through it would be one fewer for every other request"""
+        open_during_check = []
+        monkeypatch.setattr(auth_routes, 'is_breached',
+                            lambda password: open_during_check.append(db.session().in_transaction()))
+
+        register(client, 'new@example.com', 'a valid passphrase')
+
+        assert open_during_check == [False]
+
     def test_after_a_breached_password_the_link_still_works(
             self, client, db, fake_redis, monkeypatch):
         token = link_token(client.application, 'new@example.com')

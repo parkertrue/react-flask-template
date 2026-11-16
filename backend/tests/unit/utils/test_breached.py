@@ -1,8 +1,12 @@
-"""The breached-password check, against a faked Pwned Passwords API"""
+"""The breached-password check: what it sends and how it reads the answer
+against a faked urlopen, its deadline and decoding through a real socket"""
 import hashlib
 import io
 import socket
+import threading
+import time
 import urllib.error
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -69,7 +73,6 @@ def test_only_the_first_five_characters_of_the_hash_leave(api):
     assert PASSWORD not in request.full_url
     assert DIGEST[5:] not in request.full_url
     assert request.get_header('Add-padding') == 'true'
-    assert timeout == breached.TIMEOUT_SECONDS
 
 
 @pytest.mark.parametrize('error', [
@@ -96,3 +99,77 @@ def test_off_without_a_url(app, monkeypatch):
 
     assert is_breached(PASSWORD) is False
     assert calls == []
+
+
+class LocalApi(ThreadingHTTPServer):
+    """A Pwned Passwords stand-in on a real socket: answers each request
+    with body, sent all at once or a byte at a time every `trickle` seconds
+    until the test ends"""
+    body = b''
+    trickle = 0.0
+
+    def __init__(self):
+        super().__init__(('127.0.0.1', 0), _Answer)
+        self.done = threading.Event()
+
+
+class _Answer(BaseHTTPRequestHandler):
+    server: LocalApi
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Length', str(len(self.server.body)))
+        self.end_headers()
+        if not self.server.trickle:
+            self.wfile.write(self.server.body)
+            return
+        for byte in self.server.body:
+            if self.server.done.wait(self.server.trickle):
+                return
+            self.wfile.write(bytes([byte]))
+            self.wfile.flush()
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def local_api(app, monkeypatch):
+    server = LocalApi()
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setitem(
+        app.config, 'PWNED_PASSWORDS_URL', f'http://127.0.0.1:{server.server_address[1]}/range/')
+    yield server
+    server.done.set()
+    server.shutdown()
+    server.server_close()
+
+
+def test_a_breached_password_through_a_real_socket(local_api):
+    local_api.body = answer(f'{DIGEST[5:]}:3861493').encode('ascii')
+
+    assert is_breached(PASSWORD) is True
+
+
+def test_a_slow_answer_gives_up_within_the_deadline(local_api, logged):
+    """A socket's timeout bounds each read: an answer trickling a byte at a
+    time would otherwise hold the request as long as the server likes"""
+    local_api.body = answer(f'{DIGEST[5:]}:3861493').encode('ascii')
+    local_api.trickle = 0.5
+    started = time.monotonic()
+
+    breached_found = is_breached(PASSWORD)
+
+    assert time.monotonic() - started < 3
+    assert breached_found is False
+    line, = [line for line in logged() if line['message'] == 'breach_check_failed']
+    assert line['reason'] == 'TimeoutError'
+
+
+def test_a_garbled_answer_fails_open(local_api, logged):
+    local_api.body = 'é:1'.encode('latin-1')
+
+    assert is_breached(PASSWORD) is False
+    line, = [line for line in logged() if line['message'] == 'breach_check_failed']
+    assert line['reason'] == 'UnicodeDecodeError'
