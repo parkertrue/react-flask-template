@@ -17,6 +17,8 @@ def fake_redis(request):
     UnitTestConfig runs without Redis, but the app treats a missing store as
     an outage (login and refresh answer 503), so tests sign in through the
     same path production does. Request `no_redis` to test the outage itself.
+    A Redis call that failed to connect makes the app skip Redis for a few
+    seconds (redis_unreachable); that ends with the test.
     """
     if 'app' not in request.fixturenames:
         yield None
@@ -26,6 +28,7 @@ def fake_redis(request):
     app.extensions['redis_service'] = fake
     yield fake
     app.extensions['redis_service'] = None
+    app.extensions.pop('redis_retry_at', None)
 
 
 @pytest.fixture

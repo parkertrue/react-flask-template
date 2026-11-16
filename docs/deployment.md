@@ -95,7 +95,7 @@ Sign-up emails a link before it makes an account, so the app takes no new users 
 
 The provider is a processor of your users' data: name it in the privacy notice ([Personal Data and Legal Pages](personal-data.md), "Before launch", step 3).
 
-A failed send is retried, backing off from 15 seconds to an hour, for about three hours; one the mail server refuses for good (the address does not exist) is not. The worker's log shows each outcome: `email_sent` with the email's Message-ID, which the provider's own log shows too, or Dramatiq's line about a failed job, naming its message by id. The provider's bounce and complaint reports are yours to read: the app does not act on them, and a provider suspends an account whose bounces or complaints run high.
+A failed send is retried, first after 15 to 30 seconds, then about twice as long each time up to an hour, for about three hours; one the mail server refuses for good (the address does not exist) is not. A send cut off by a deploy is put back on the queue at once; one running when the worker is killed rather than stopped (out of memory, a host crash) runs again once the queue notices the dead worker, usually within ten minutes. The worker's log shows each outcome: `email_sent` with the email's Message-ID, which the provider's own log shows too, or Dramatiq's line about a failed job, naming its message by id. The provider's bounce and complaint reports are yours to read: the app does not act on them, and a provider suspends an account whose bounces or complaints run high.
 
 ## Redeploying
 

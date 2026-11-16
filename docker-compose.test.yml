@@ -237,6 +237,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    # As in docker-compose.yml: longer than the worker's wait for running jobs
+    stop_grace_period: 30s
     environment:
       APP_ENV: integration
       DATABASE_URL: mysql+pymysql://${DB_USER}:${DB_PASSWORD}@db:3306/${DB_NAME}

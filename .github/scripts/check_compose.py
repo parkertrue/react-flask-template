@@ -9,16 +9,24 @@ backend, migrate, worker and nginx to run read-only, the services that run
 the backend image to drop every capability, the mail server's password to
 the worker alone, and its backend's wait for `migrate` to succeed, which a
 plain `docker compose up` (README, Build and Start) relies on; deploy.sh
-runs migrate itself. Each file is read as
+runs migrate itself. Production's and the test stack's worker must outlast
+its wait for running jobs when stopped, and check the file it writes once
+ready, both read from backend/app/utils/jobs.py. Each file is read as
 `docker compose config` resolves it, anchors and merges applied.
 """
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
 # db/init, where every stack's db service must find its init scripts
-INIT_SCRIPTS = Path(__file__).resolve().parents[2] / 'db' / 'init'
+INIT_SCRIPTS = ROOT / 'db' / 'init'
+# Where the worker's wait for running jobs and its ready file are set
+JOBS = ROOT / 'backend' / 'app' / 'utils' / 'jobs.py'
+# Docker's stop_grace_period for a service that sets none
+DEFAULT_STOP_GRACE = '10s'
 
 # The hardening each test service must share with its production namesake
 HARDENING = ('security_opt', 'cap_drop', 'cap_add', 'read_only', 'pids')
@@ -68,6 +76,31 @@ def init_mounts(db):
             if volume['target'] == '/docker-entrypoint-initdb.d']
 
 
+def worker_settings():
+    """The worker's wait for running jobs when stopped, in seconds, and the
+    name of the file it writes once ready, as jobs.py sets them"""
+    source = JOBS.read_text(encoding='utf-8')
+    drain = re.search(r'^SHUTDOWN_TIMEOUT = timedelta\(seconds=(\d+)\)$', source, re.MULTILINE)
+    ready = re.search(r"^READY_FILE = .* / '([^']+)'$", source, re.MULTILINE)
+    if drain is None or ready is None:
+        sys.exit(f'{JOBS}: SHUTDOWN_TIMEOUT or READY_FILE is not set as this script reads it')
+    return int(drain[1]), ready[1]
+
+
+def seconds(duration):
+    """A compose duration ('30s', '1m30s') in seconds"""
+    units = {'h': 3600, 'm': 60, 's': 1}
+    return sum(int(amount) * units[unit] for amount, unit in re.findall(r'(\d+)([hms])', duration))
+
+
+def worker_problems(stack, worker, drain, ready):
+    grace = worker.get('stop_grace_period') or DEFAULT_STOP_GRACE
+    if seconds(grace) <= drain:
+        yield f'worker: {stack} stops it after {grace}, within its {drain}s wait for running jobs'
+    if not any(arg.endswith(f'/{ready}') for arg in worker.get('healthcheck', {}).get('test', [])):
+        yield f'worker: the {stack} healthcheck does not test for {ready}, the file it writes once ready'
+
+
 def problems(prod, test, dev):
     for name, service in prod.items():
         if name not in test:
@@ -103,6 +136,9 @@ def problems(prod, test, dev):
             yield f"{name}: gets {', '.join(given)}, which only the worker may hold"
     if '--disable-log-bin' not in prod['db'].get('command', []):
         yield 'db: production does not run with --disable-log-bin'
+    drain, ready = worker_settings()
+    for stack, services in (('production', prod), ('test', test)):
+        yield from worker_problems(stack, services['worker'], drain, ready)
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
     if migrate.get('condition') != 'service_completed_successfully':
         yield 'backend: production does not wait for migrate to complete successfully'
@@ -121,6 +157,7 @@ def main():
                      'the backend, migrate, worker and nginx are read-only, '
                      'the backend image drops every capability, '
                      'only the worker holds the mail password, '
+                     'the worker outlasts its wait for running jobs and checks its ready file, '
                      'and the backend waits for migrate\n')
 
 

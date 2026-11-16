@@ -62,17 +62,21 @@ backstop.
 **Rate limits fall back to per-worker memory while Redis is down.** Limits get
 looser (per worker, reset on restart) instead of every limited route failing.
 
-**A Redis outage still costs a few seconds once per reconnect window.** While
-Redis is down, `RedisService`'s circuit breaker fails calls at once, but every
-`RECONNECT_INTERVAL_SECONDS` (5 s) each worker lets one call probe Redis. The
-probe pays the 1 s lookup of the stopped container's name twice (the client's
-one retry, kept so a connection Redis dropped is replaced unseen), and login
-adds Flask-Limiter's own 1 s probe. Measured (PR #28, backend on
-`APP_ENV=production`): login 503 in about 4 s at worst, refresh 3 s, other
-routes 1 s, everything else in the window under 100 ms. The answer is the
-same 503 either way. A no-retry probe client would save about 1 s for a
-second client and more breaker code. *Revisit when:* a readiness check or
-alert exists for Redis, or users see these delays outside an outage.
+**A Redis outage still costs a few seconds once per reconnect window.** Every
+call a request makes to Redis (the token store and the job queue, so login,
+refresh, sign-up, logout and account deletion alike) shares one breaker per
+worker process (`redis_unreachable`, `redis_service.py`): once a call fails to
+connect, each fails at once for `RECONNECT_INTERVAL_SECONDS` (5 s), then one
+call probes Redis again. The probe pays the 1 s lookup of the stopped
+container's name twice (the client's one retry, kept so a connection Redis
+dropped is replaced unseen); a rate-limited route adds Flask-Limiter's own
+probe, which backs off by itself and counts in memory meanwhile. Measured:
+login 503 in about 4 s at worst, refresh 3 s (PR #28, backend on
+`APP_ENV=production`); sign-up 2.2 s for the probe, then as fast as a
+sign-up with Redis up (E2E stack, 2026-11-16). The answer is the same 503
+either way. A no-retry probe client would save about 1 s for a second client
+and more breaker code. *Revisit when:* a readiness check or alert exists for
+Redis, or users see these delays outside an outage.
 
 **Flask rate limits are off in E2E.** E2E registers dozens of accounts from
 one address, which register's `10 per hour` would block, so the E2E backend
