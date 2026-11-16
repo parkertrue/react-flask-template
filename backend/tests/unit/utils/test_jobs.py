@@ -1,5 +1,6 @@
 """Background jobs on Dramatiq's in-memory broker, with jobs of their own:
 the app's belong to its features"""
+import io
 import json
 import logging
 import threading
@@ -168,16 +169,37 @@ def test_closing_closes_a_redis_brokers_client(app, monkeypatch):
     client.close.assert_called_once_with()
 
 
-def test_logs_name_a_message_by_its_id_alone():
-    """Dramatiq logs a failed message with its arguments: an email address"""
-    message = Message(queue_name=QUEUE_NAME, actor_name='things.tidy',
-                      args=('someone@example.com',), kwargs={}, options={})
-    record = logging.LogRecord('dramatiq.worker', logging.ERROR, __file__, 1,
-                               'Failed to process message %s.', (message,), None)
+@pytest.mark.parametrize(('error', 'line'), [
+    (ConnectionError('the mail server is down'), 'with unhandled exception'),
+    (PermanentJobFailure('the address does not exist'), 'with expected exception'),
+])
+def test_the_worker_logs_a_failed_message_by_its_id_alone(make_app, error, line):
+    """A real worker logs the message it consumed, arguments and all, through
+    the handler run_worker installs: the address must not reach the log"""
+    blueprint = Blueprint('things', __name__)
 
-    jobs._MessageIdOnly().filter(record)
+    @job(blueprint)
+    def notify(address):
+        raise error
 
-    assert record.getMessage() == f'Failed to process message {message.message_id}.'
+    app = make_app(blueprint)
+    with app.app_context():
+        notify.send('someone@example.com')
+    stream = io.StringIO()
+    handler = jobs._worker_log_handler(stream)
+    log = logging.getLogger('dramatiq')
+    level = log.level
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    try:
+        run_jobs(app)
+    finally:
+        log.removeHandler(handler)
+        log.setLevel(level)
+
+    [failed] = app.extensions['jobs_broker'].dead_letters
+    assert 'someone@example.com' not in stream.getvalue()
+    assert f'Failed to process message {failed.message_id} {line}' in stream.getvalue()
 
 
 class TestRunWorker:

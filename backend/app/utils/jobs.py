@@ -20,8 +20,10 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from types import FrameType
+from typing import TextIO
 
 from dramatiq import Actor, Broker, Message, Worker
+from dramatiq.broker import MessageProxy
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.brokers.stub import StubBroker
 from dramatiq.middleware import Retries, TimeLimit
@@ -167,13 +169,24 @@ def close_jobs(app: Flask) -> None:
 
 class _MessageIdOnly(logging.Filter):
     """Dramatiq logs a failed message with its arguments, which may hold an
-    email address: log its id instead"""
+    email address: log its id instead. Its worker logs the MessageProxy it
+    consumed, which is not a Message, so both are replaced."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
             record.args = tuple(
-                arg.message_id if isinstance(arg, Message) else arg for arg in record.args)
+                arg.message_id if isinstance(arg, (Message, MessageProxy)) else arg
+                for arg in record.args)
         return True
+
+
+def _worker_log_handler(stream: TextIO) -> logging.Handler:
+    """The handler the worker logs Dramatiq's lines through: JSON, with each
+    message named by its id alone"""
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    handler.addFilter(_MessageIdOnly())
+    return handler
 
 
 def run_worker(app: Flask) -> None:
@@ -181,11 +194,8 @@ def run_worker(app: Flask) -> None:
     finish (up to SHUTDOWN_TIMEOUT) and stop"""
     # On a handler, not the logger: a logger's filter skips its children's
     # records, and Dramatiq logs from dramatiq.worker.WorkerThread and the like
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(_MessageIdOnly())
     log = logging.getLogger('dramatiq')
-    log.addHandler(handler)
+    log.addHandler(_worker_log_handler(sys.stdout))
     log.setLevel(logging.INFO)
 
     broker = app.extensions['jobs_broker']
