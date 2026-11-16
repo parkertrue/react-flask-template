@@ -20,6 +20,7 @@ from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
 from app.utils.jobs import QUEUE_NAME
 from app.utils.links import read_link_token
 from app.utils.passwords import verify_password
+from app.utils.redis_service import mark_redis_unreachable
 from tests.conftest import link_token, register
 
 
@@ -78,6 +79,19 @@ class TestRequestRegistration:
         assert response.status_code == 503
         assert response.get_json()['error'] == {
             'code': 'SERVICE_UNAVAILABLE', 'message': SERVICE_UNAVAILABLE_MESSAGE}
+
+    def test_skips_the_queue_while_redis_is_unreachable(self, app, client, db, monkeypatch):
+        """Once a Redis call fails to connect, sign-ups answer at once rather
+        than each waiting out the outage again"""
+        enqueued = []
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue',
+                            lambda message, *, delay=None: enqueued.append(message))
+        mark_redis_unreachable(app)
+
+        response = client.post('/api/auth/register', json={'email': 'new@example.com'})
+
+        assert response.status_code == 503
+        assert enqueued == []
 
 
 class TestRegistrationEmail:

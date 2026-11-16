@@ -29,19 +29,22 @@ from dramatiq.brokers.stub import StubBroker
 from dramatiq.middleware import Retries, TimeLimit
 from flask import Blueprint, Flask, current_app
 from flask.blueprints import BlueprintSetupState
+from redis import ConnectionError as RedisConnectionError
 from redis import Redis, RedisError
+from redis import TimeoutError as RedisTimeoutError
 
 from app.utils.log import JsonFormatter
-from app.utils.redis_service import REDIS_CLIENT_OPTIONS
+from app.utils.redis_service import (
+    REDIS_CLIENT_OPTIONS, mark_redis_unreachable, redis_unreachable)
 
 # Every queue key starts with it: the Redis ACL in every compose file lets
 # the app's and the worker's users reach dramatiq:* (test_redis_acl.py)
 QUEUE_NAMESPACE = 'dramatiq'
 QUEUE_NAME = 'default'
 
-# A failed job is tried again after 15s, then twice as long each time up to
-# an hour: ten retries span about three hours, long enough to outlast a mail
-# provider's outage.
+# A failed job is tried again after 15-30s (Dramatiq adds jitter), then about
+# twice as long each time up to an hour: ten retries span about three hours,
+# long enough to outlast a mail provider's outage.
 MAX_RETRIES = 10
 MIN_BACKOFF = timedelta(seconds=15)
 MAX_BACKOFF = timedelta(hours=1)
@@ -92,9 +95,15 @@ class Job:
     def send(self, *args: str | int) -> None:
         """Queue the job with these (JSON) arguments"""
         actor: Actor[..., None] = current_app.extensions['jobs'][self.name]
+        # Redis failed to connect moments ago, here or in the token store:
+        # answer at once rather than wait out the outage again
+        if redis_unreachable(current_app):
+            raise JobQueueUnavailable()
         try:
             actor.send(*args)
         except RedisError as e:
+            if isinstance(e, (RedisConnectionError, RedisTimeoutError)):
+                mark_redis_unreachable(current_app)
             current_app.logger.exception('Could not queue job %s', self.name)
             raise JobQueueUnavailable() from e
 

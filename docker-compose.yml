@@ -317,7 +317,10 @@ services:
       - internal
     restart: unless-stopped
     # Longer than the worker's own wait for running jobs (SHUTDOWN_TIMEOUT
-    # in backend/app/utils/jobs.py); a job cut off runs again
+    # in backend/app/utils/jobs.py; check_compose.py compares them); a job
+    # cut off is put back on the queue at once. A worker killed instead
+    # (out of memory, a host crash) leaves its job until the queue's upkeep
+    # notices, usually within ten minutes.
     stop_grace_period: 30s
     healthcheck:
       # The worker writes it once it runs jobs. start_period covers the

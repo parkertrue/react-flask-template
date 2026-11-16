@@ -1,6 +1,8 @@
 """The job queue on real Redis: the app queues as its own user, the worker
 runs jobs as its own, each within its ACL (docker-compose.test.yml)"""
+import logging
 import os
+import threading
 
 import pytest
 from dramatiq import Worker
@@ -8,6 +10,7 @@ from flask import Blueprint
 from redis.exceptions import ResponseError
 
 from app import create_app
+from app.utils import jobs
 from app.utils.jobs import QUEUE_NAME, WORKER_MAINTENANCE_CHANCE, job
 from tests.conftest import close_app
 
@@ -105,3 +108,40 @@ def test_the_app_may_not(apps):
 
     with pytest.raises(ResponseError, match="User app has no permissions to run the 'keys' command"):
         force_upkeep(app.extensions['jobs_broker'])
+
+
+def test_the_apps_broker_keeps_a_failed_job_a_day_and_never_tidies(apps):
+    """A failed job's arguments may hold an address: a day, as
+    docs/personal-data.md says, not Dramatiq's week. Its user may not run
+    the upkeep's KEYS (test_the_app_may_not)."""
+    app, _ = apps
+    broker = app.extensions['jobs_broker']
+
+    assert broker.dead_message_ttl == 24 * 60 * 60 * 1000
+    assert broker.maintenance_chance == 0
+
+
+def ready_within(seconds):
+    """Wait for the worker's ready file, which it writes once it runs"""
+    for _ in range(seconds * 100):
+        if jobs.READY_FILE.exists():
+            return
+        threading.Event().wait(0.01)
+
+
+def test_run_worker_turns_the_upkeep_on(apps, monkeypatch, tmp_path):
+    """The worker tidies after workers that died (a crash or an OOM kill),
+    so their jobs run again"""
+    _, worker_app = apps
+    handlers = {}
+    monkeypatch.setattr(jobs.signal, 'signal', lambda signum, handler: handlers.setdefault(signum, handler))
+    monkeypatch.setattr(jobs, 'READY_FILE', tmp_path / 'worker-ready')
+    thread = threading.Thread(target=jobs.run_worker, args=(worker_app,))
+    thread.start()
+    ready_within(5)
+    chance = worker_app.extensions['jobs_broker'].maintenance_chance
+    handlers[jobs.signal.SIGTERM](jobs.signal.SIGTERM, None)
+    thread.join(timeout=30)
+    logging.getLogger('dramatiq').handlers.clear()
+
+    assert chance == 1000
