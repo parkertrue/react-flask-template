@@ -47,6 +47,15 @@ def normalize_email(value: str) -> str:
     return ascii_email
 
 
+def is_normalized_email(value: str) -> bool:
+    """Whether value is an address normalize_email accepts, already in its
+    canonical form: one an emailed link or a queued job may be trusted with"""
+    try:
+        return normalize_email(value) == value
+    except ValueError:
+        return False
+
+
 def _normalize_password(value: object) -> object:
     # NFKC, so the same password typed on any device hashes the same: an
     # accented letter can arrive as one character or as a letter plus a
@@ -111,3 +120,9 @@ class TokensResponse(BaseModel):
     refresh token set in the cookie (none when CSRF protection is off)"""
     access_token: str
     refresh_csrf: str | None = None
+
+
+class RegisterCompleteResponse(TokensResponse):
+    """Sign-up's login, and the account's address: the token's, which the
+    page signs in under, never anything else the link carried"""
+    email: str

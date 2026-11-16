@@ -1,4 +1,6 @@
+import hashlib
 import time
+
 import redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
@@ -95,6 +97,12 @@ def _tokens_key(user_id: int) -> str:
     return f'refresh_tokens:{user_id}'
 
 
+def _used_link_key(token: str) -> str:
+    """One key per emailed link once used: a hash of its token, never the
+    token, which a reader of Redis could otherwise use"""
+    return f'used_links:{hashlib.sha256(token.encode()).hexdigest()}'
+
+
 # Records a refresh token, in place of the one it replaces when rotating.
 # A script runs inside Redis with nothing else in between, so the check and
 # the swap are one step: of two requests rotating the same token at once,
@@ -166,13 +174,13 @@ class RedisService:
         if redis_unreachable(current_app):
             raise _Skipped('Redis was unreachable; not retrying yet')
 
-    def _failed(self, error: redis.RedisError, message: str, user_id: int) -> None:
+    def _failed(self, error: redis.RedisError, message: str, *args: object) -> None:
         """Log a failure, and stop calling Redis for a while if it is unreachable"""
         if isinstance(error, _Skipped):
             return  # logged when the connection failed
         if isinstance(error, (redis.ConnectionError, redis.TimeoutError)):
             mark_redis_unreachable(current_app)
-        current_app.logger.exception(message, user_id)
+        current_app.logger.exception(message, *args)
 
     def _record(self, user_id: int, jti: str, ttl_seconds: int, replaces: str) -> bool:
         self._check_reachable()
@@ -243,3 +251,24 @@ class RedisService:
         except redis.RedisError as error:
             self._failed(error, 'Could not revoke the sessions of user %s', user_id)
             return None
+
+    def claim_link(self, token: str, ttl_seconds: int) -> bool | None:
+        """Mark an emailed link used, for as long as it could still work.
+
+        False if it was used already, None if Redis failed: a link must work
+        once, so the caller refuses it either way.
+        """
+        try:
+            self._check_reachable()
+            return bool(self._client.set(_used_link_key(token), 1, nx=True, ex=ttl_seconds))
+        except redis.RedisError as error:
+            self._failed(error, 'Could not mark a link used')
+            return None
+
+    def release_link(self, token: str) -> None:
+        """Let a claimed link work again: what it was used for failed"""
+        try:
+            self._check_reachable()
+            self._client.delete(_used_link_key(token))
+        except redis.RedisError as error:
+            self._failed(error, 'Could not release a used link')

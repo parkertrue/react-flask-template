@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
-  registerAndLogin, requestLink, serviceUnavailable, uniqueEmail,
+  registerAndLogin, requestLink, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
 } from './helpers'
 import { APP_NAME } from '../src/appName'
 
@@ -137,7 +137,7 @@ test.describe('Accessibility', () => {
     })
 
     test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
-      await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+      await page.goto(UNSIGNED_LINK)
 
       await expect(page.getByLabel('Email')).toHaveValue('someone@example.com')
       await expectNoViolations(page)
@@ -150,7 +150,7 @@ test.describe('Accessibility', () => {
 
     test("finishing, busy and then failed, has no violations", async ({ page }) => {
       const release = await holdRequests(page, 'POST', '**/api/auth/register/complete', serviceUnavailable)
-      await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+      await page.goto(UNSIGNED_LINK)
       await fillRegistration(page)
 
       await expect(page.getByRole('button', { name: 'Creating account...' })).toBeFocused()
@@ -162,7 +162,7 @@ test.describe('Accessibility', () => {
     })
 
     test('a refused link has no violations, and focuses why', async ({ page }) => {
-      await page.goto('/register/complete#email=someone%40example.com&token=forged.token.here')
+      await page.goto(UNSIGNED_LINK)
       await fillRegistration(page)
 
       await expect(page.getByRole('alert')).toBeFocused()

@@ -66,8 +66,9 @@ def test_sign_up_through_the_emailed_link(integration_client, worker):
     assert response.status_code == 202
     assert message['Subject'] == 'Finish signing up'
     assert link.startswith(f"{os.environ['APP_URL']}/register/complete#")
-    assert fragment['email'] == [ADDRESS]
+    assert set(fragment) == {'token'}
     assert complete.status_code == 200
+    assert complete.get_json()['email'] == ADDRESS
     assert account.get_json()['email'] == ADDRESS
 
 

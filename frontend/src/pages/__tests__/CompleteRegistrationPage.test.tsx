@@ -12,7 +12,19 @@ import { TERMS_VERSION } from '@/legal'
 
 vi.mock('@/auth/authService')
 
-const LINK = '/register/complete#email=user%40example.com&token=a-token'
+// A token as the backend mints it: its payload, base64url JSON naming the
+// address, then the time and the signature
+function linkToken(email: string) {
+  const payload = btoa(JSON.stringify(email)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+  return `${payload}.aTime.aSignature`
+}
+const TOKEN = linkToken('user@example.com')
+const LINK = `/register/complete#token=${TOKEN}`
+
+// The backend's answer: the login, and the account's address
+function registered(email = 'user@example.com') {
+  return { ...tokens('new-access', 'new-csrf'), email }
+}
 
 function renderPage(entry = LINK) {
   return renderRoutes([{
@@ -47,7 +59,7 @@ async function fill(user: UserEvent, values: Values = {}) {
 }
 
 describe('CompleteRegistrationPage', () => {
-  it("shows the link's address, read-only, for password managers, and the password fields", () => {
+  it("shows the token's address, read-only, for password managers, and the password fields", () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Finish signing up' })).toBeInTheDocument()
@@ -71,6 +83,29 @@ describe('CompleteRegistrationPage', () => {
     expect(router.state.location.state).toEqual(state)
     // The page still holds what it read
     expect(emailField()).toHaveValue('user@example.com')
+  })
+
+  it("shows the address the token names, never one the link adds", () => {
+    renderPage(`/register/complete#email=victim%40example.com&token=${linkToken('attacker@example.com')}`)
+
+    expect(emailField()).toHaveValue('attacker@example.com')
+  })
+
+  // Their payloads hold base64url's own characters, '_' and '-'
+  it.each(['user?@example.com', 'user~@example.com'])('reads %s from its token', email => {
+    renderPage(`/register/complete#token=${linkToken(email)}`)
+
+    expect(emailField()).toHaveValue(email)
+  })
+
+  it.each([
+    ['compressed', '.eJyrVkpUslIqLU4tUqoFAB2bBHU.aTime.aSignature'],
+    ['not a token', 'garbage'],
+  ])('shows no address when the token is %s, but keeps the form', (_, token) => {
+    renderPage(`/register/complete#token=${token}`)
+
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
+    expect(field.password()).toBeInTheDocument()
   })
 
   it('asks the user to accept the terms and privacy notice, linked in new tabs', () => {
@@ -141,22 +176,24 @@ describe('CompleteRegistrationPage', () => {
   })
 
   describe('submitting', () => {
-    it("makes the account with the link's token, signs in and moves on", async () => {
-      vi.mocked(completeRegistration).mockResolvedValue(tokens('new-access', 'new-csrf'))
-      const { user } = renderPage()
+    it("makes the account with the link's token, signs in under the server's address and moves on", async () => {
+      // Another address than the token's, only to show which one is kept
+      vi.mocked(completeRegistration).mockResolvedValue(registered('account@example.com'))
+      const { user } = renderPage(`/register/complete#email=victim%40example.com&token=${TOKEN}`)
       await fill(user)
 
       await user.click(submitButton())
 
       expect(await screen.findByText('Signed in')).toBeInTheDocument()
-      expect(completeRegistration).toHaveBeenCalledExactlyOnceWith('a-token', 'a valid passphrase', TERMS_VERSION)
+      expect(completeRegistration).toHaveBeenCalledExactlyOnceWith(TOKEN, 'a valid passphrase', TERMS_VERSION)
       expect(storage.getAccessToken()).toBe('new-access')
-      expect(storage.getEmail()).toBe('user@example.com')
+      expect(storage.getEmail()).toBe('account@example.com')
     })
 
     it.each([
       ['an expired link', 'LINK_EXPIRED', 'This link has expired.', 'Start again', '/register'],
       ['a link this app never sent', 'LINK_INVALID', 'This link is not valid.', 'Start again', '/register'],
+      ['a link used for an account since deleted', 'LINK_USED', 'This link has already been used.', 'Start again', '/register'],
       ['a link already used', 'EMAIL_ALREADY_REGISTERED', 'This account is already set up.', 'Log in', '/login'],
     ] as const)('replaces the form for %s, focuses why, and offers what next', async (_, code, message, action, href) => {
       vi.mocked(completeRegistration).mockRejectedValue(httpError(400, errorBody(code, 'x')))
@@ -206,7 +243,7 @@ describe('CompleteRegistrationPage', () => {
     })
 
     it('keeps focus and ignores repeat submits while the request is in flight', async () => {
-      const { promise, resolve: finish } = Promise.withResolvers<ReturnType<typeof tokens>>()
+      const { promise, resolve: finish } = Promise.withResolvers<ReturnType<typeof registered>>()
       vi.mocked(completeRegistration).mockReturnValue(promise)
       const { user } = renderPage()
       await fill(user)
@@ -224,7 +261,7 @@ describe('CompleteRegistrationPage', () => {
       await user.click(termsCheckbox())
       expect(termsCheckbox()).toBeChecked()
       expect(completeRegistration).toHaveBeenCalledTimes(1)
-      await act(async () => finish(tokens()))
+      await act(async () => finish(registered()))
     })
   })
 })

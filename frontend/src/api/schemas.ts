@@ -18,6 +18,7 @@ export interface ApiSchemas {
   NotesListQuery: NotesListQuery;
   NotesPageResponse: NotesPageResponse;
   RegisterCompleteRequest: RegisterCompleteRequest;
+  RegisterCompleteResponse: RegisterCompleteResponse;
   RegisterRequest: RegisterRequest;
   TokensResponse: TokensResponse;
 }
@@ -108,6 +109,15 @@ export interface RegisterCompleteRequest {
   password: string;
   terms_version: number;
   token: string;
+}
+/**
+ * Sign-up's login, and the account's address: the token's, which the
+ * page signs in under, never anything else the link carried
+ */
+export interface RegisterCompleteResponse {
+  access_token: string;
+  email: string;
+  refresh_csrf?: string | null;
 }
 /**
  * Sign-up's first step: the address to send the link to

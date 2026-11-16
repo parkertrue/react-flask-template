@@ -48,13 +48,13 @@ describe('Authentication Flow Integration Tests', () => {
       let body
       server.use(http.post('/api/auth/register/complete', async ({ request }) => {
         body = await request.json()
-        return HttpResponse.json(tokens('new-access', 'new-csrf'))
+        return HttpResponse.json({ ...tokens('new-access', 'new-csrf'), email: 'test@example.com' })
       }))
       // With the account page to return to (GuestRoute reads the state), so
       // this shared test needs no example feature page after signing in
       const from: FromState = { from: { pathname: '/account', search: '', hash: '', state: null, key: 'k' } }
       const { user } = renderRoutes(routes, {
-        pathname: '/register/complete', hash: '#email=test%40example.com&token=a-token', state: from })
+        pathname: '/register/complete', hash: '#token=a-token', state: from })
 
       await finishRegistration(user)
 
@@ -69,7 +69,7 @@ describe('Authentication Flow Integration Tests', () => {
         http.post('/api/auth/register/complete', () => HttpResponse.json(
           errorBody('LINK_EXPIRED', 'This link has expired'), { status: 400 }))
       )
-      const { user } = renderRoutes(routes, '/register/complete#email=test%40example.com&token=a-token')
+      const { user } = renderRoutes(routes, '/register/complete#token=a-token')
 
       await finishRegistration(user)
 

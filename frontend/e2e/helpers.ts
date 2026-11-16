@@ -54,6 +54,13 @@ export async function emailedLink(address: string, subject = 'Finish signing up'
   return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
 }
 
+/**
+ * A sign-up link no server signed, for pages that need not finish: its
+ * token's payload names someone@example.com, which the page shows, and the
+ * backend refuses it as invalid
+ */
+export const UNSIGNED_LINK = '/register/complete#token=InNvbWVvbmVAZXhhbXBsZS5jb20i.aTime.aSignature'
+
 /** Ask for a sign-up link on the register page, without waiting */
 export async function requestLink(page: Page, email: string) {
   await page.getByLabel(/^email/i).fill(email)

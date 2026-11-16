@@ -141,6 +141,7 @@ services:
       - "on"
       - ">${REDIS_PASSWORD}"
       - "~refresh_tokens:*"
+      - "~used_links:*"
       - "~LIMITS:*"
       - "~dramatiq"
       - "~dramatiq:*"
