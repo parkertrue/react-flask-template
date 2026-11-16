@@ -284,6 +284,9 @@ def complete_registration() -> ResponseReturnValue:
     assert redis_service is not None
 
     try:
+        # Nothing to keep yet: end the read above, so no pooled database
+        # connection waits on a third party
+        db.session.rollback()
         # Last, so a request refused anyway never reaches the third party
         if is_breached(payload.password):
             redis_service.release_link(payload.token)

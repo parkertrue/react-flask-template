@@ -38,7 +38,9 @@ checks a new password against Have I Been Pwned's Pwned Passwords
 (`backend/app/utils/breached.py`), as NIST SP 800-63B requires, through its
 range API: 5 characters of the password's SHA-1 leave the server, padded, so
 the service learns nothing it could tie to the user. If the service is down
-or slow (2 s), the password is accepted and `breach_check_failed` logged,
+or slow (2 s for the whole call, the name lookup included: it runs on a
+pool of 4 threads, so a call past the deadline holds no request thread or
+database connection), the password is accepted and `breach_check_failed` logged,
 since a third party's outage must not stop sign-up; a breached password can
 slip through meanwhile. Login and account deletion never check: they only
 compare. CodeQL's `py/weak-sensitive-data-hashing` flags the SHA-1 of the
