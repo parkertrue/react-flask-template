@@ -14,8 +14,10 @@ from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import select, func
 from sqlalchemy.exc import OperationalError
 
+from app.auth import emails as auth_emails
 from app.auth import routes as auth_routes
-from app.auth.emails import REGISTRATION_LINK, REGISTRATION_LINK_LIFETIME, send_registration_email
+from app.auth.emails import (
+    REGISTRATION_LINK, REGISTRATION_LINK_HOURS, REGISTRATION_LINK_LIFETIME, send_registration_email)
 from app.auth.models import TERMS_VERSION, User
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
 from app.utils.jobs import QUEUE_NAME, PermanentJobFailure
@@ -103,10 +105,15 @@ class TestRegistrationEmail:
     def app_url(self, app, monkeypatch):
         monkeypatch.setitem(app.config, 'APP_URL', 'https://app.test')
 
+    @pytest.fixture(autouse=True)
+    def app_name(self, app, monkeypatch):
+        monkeypatch.setitem(app.config, 'APP_NAME', 'Some App')
+
     def link(self, message):
-        """The one link in an email's body"""
-        link, = [word for word in message.get_content().split() if word.startswith('https://')]
-        return urlsplit(link)
+        """The link to act on: an email's first, before the privacy notice's"""
+        links = [word for word in message.get_content().split() if word.startswith('https://')]
+        assert links[1:] == ['https://app.test/privacy']
+        return urlsplit(links[0])
 
     def test_a_new_address_gets_a_link_to_finish(self, app, db, outbox):
         send_registration_email('new@example.com')
@@ -114,9 +121,9 @@ class TestRegistrationEmail:
         message, = outbox
         link = self.link(message)
         fragment = parse_qs(link.fragment)
-        assert (message['To'], message['Subject']) == ('new@example.com', 'Finish signing up')
+        assert (message['To'], message['Subject']) == ('new@example.com', 'Finish signing up for Some App')
         assert (link.scheme, link.netloc, link.path, link.query) == (
-            'https', 'app.test', '/register/complete', '')
+            'https', 'app.test', '/signup/complete', '')
         # The token alone: it names the address, which the page reads from it
         assert set(fragment) == {'token'}
         assert read_link_token(
@@ -126,8 +133,43 @@ class TestRegistrationEmail:
         send_registration_email('test@example.com')
 
         message, = outbox
-        assert (message['To'], message['Subject']) == ('test@example.com', 'You already have an account')
+        assert (message['To'], message['Subject']) == ('test@example.com', 'You already have a Some App account')
         assert self.link(message).geturl() == 'https://app.test/login'
+
+    # A new address, and one with an account (sample_user's)
+    @pytest.mark.parametrize('email', ['new@example.com', 'test@example.com'])
+    def test_each_names_the_app_and_ends_with_the_privacy_notice(
+            self, app, db, sample_user, outbox, email):
+        """The privacy notice says who runs the app and why this came"""
+        send_registration_email(email)
+
+        message, = outbox
+        paragraphs = message.get_content().rstrip('\n').split('\n\n')
+        assert 'sign up for Some App with this email address' in paragraphs[0]
+        assert paragraphs[-1] == 'Who runs Some App, and what it keeps: https://app.test/privacy'
+
+    @pytest.mark.parametrize('email', ['new@example.com', 'test@example.com'])
+    def test_a_paragraph_is_one_line_for_the_reader_s_app_to_wrap(
+            self, app, db, sample_user, outbox, email):
+        send_registration_email(email)
+
+        message, = outbox
+        lines = message.get_content().rstrip('\n').split('\n')
+        # Paragraphs alternate with blank lines, and none is split
+        assert lines[1::2] == [''] * (len(lines) // 2)
+        assert '' not in lines[::2]
+
+    def test_the_link_s_lifetime_is_the_one_its_token_has(self, app, db, outbox):
+        assert REGISTRATION_LINK_LIFETIME.total_seconds() == REGISTRATION_LINK_HOURS * 3600
+
+    def test_says_how_long_the_link_works(self, app, db, outbox, monkeypatch):
+        """Read from the constant, so changing it changes the email"""
+        monkeypatch.setattr(auth_emails, 'REGISTRATION_LINK_HOURS', 36)
+
+        send_registration_email('new@example.com')
+
+        message, = outbox
+        assert 'open this link within 36 hours:' in message.get_content()
 
     @pytest.mark.parametrize('email', [
         'victim@example.com, attacker@example.com',

@@ -16,13 +16,13 @@ export default function TermsPage() {
 
       <h2>The service</h2>
       <p>
-        {OPERATOR.name} provides this service. By registering, you agree to
+        {OPERATOR.name} provides this service. By signing up, you agree to
         these terms. How we handle your personal data is explained in
         the <Link to="/privacy" className="text-link">privacy notice</Link>.
       </p>
 
       <h2>Who may use it</h2>
-      <p>You must be at least [13, or the age your audience requires] to register.</p>
+      <p>You must be at least [13, or the age your audience requires] to sign up.</p>
 
       <h2>Acceptable use</h2>
       <p>

@@ -21,19 +21,19 @@ type LinkProblem = 'missing' | 'expired' | 'invalid' | 'used' | 'registered'
 const PROBLEMS: Record<LinkProblem, { message: string; to: string; action: string }> = {
   missing: {
     message: 'This page needs the link from your email. Open the link in the email we sent you.',
-    to: '/register', action: 'Start again',
+    to: '/signup', action: 'Start again',
   },
   expired: {
     message: 'This link has expired. Ask for a new one to finish signing up.',
-    to: '/register', action: 'Start again',
+    to: '/signup', action: 'Start again',
   },
   invalid: {
     message: 'This link is not valid. Copy the whole link from the email, or ask for a new one.',
-    to: '/register', action: 'Start again',
+    to: '/signup', action: 'Start again',
   },
   used: {
     message: 'This link has already been used. Sign up again for a new one.',
-    to: '/register', action: 'Start again',
+    to: '/signup', action: 'Start again',
   },
   registered: {
     message: 'This account is already set up.',
@@ -107,7 +107,7 @@ export default function CompleteRegistrationPage() {
     const valid = validate(form, {
       password: validatePassword(values.password) ?? validateNotGuessable(values.password, link.email),
       confirmPassword: validatePasswordMatch(values.password, values.confirmPassword),
-      acceptTerms: values.acceptTerms ? undefined : 'Accept the Terms and the Privacy notice to register',
+      acceptTerms: values.acceptTerms ? undefined : 'Accept the Terms and the Privacy notice to sign up',
     })
     if (!valid) return
 

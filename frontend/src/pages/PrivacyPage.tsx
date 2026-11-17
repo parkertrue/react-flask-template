@@ -30,7 +30,7 @@ export default function PrivacyPage() {
         <li>In your browser: a sign-in cookie and a few values in local storage that keep you signed in. They are strictly necessary for the service you asked for, so we do not ask for consent to them, and we use no analytics or advertising cookies.</li>
       </ul>
       <p>
-        You need to give your email address and a password to register;
+        You need to give your email address and a password to sign up;
         without them we cannot create an account. We email the address a
         link first, and create the account only once it is used, so we know
         the address is yours. To keep you from choosing a password that has

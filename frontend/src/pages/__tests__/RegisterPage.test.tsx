@@ -9,7 +9,7 @@ import { APP_NAME } from '@/appInfo'
 vi.mock('@/auth/authService')
 
 function renderPage() {
-  return renderRoutes([{ path: '/register', element: <RegisterPage /> }], '/register')
+  return renderRoutes([{ path: '/signup', element: <RegisterPage /> }], '/signup')
 }
 
 const email = () => screen.getByLabelText(/^Email/)
@@ -28,13 +28,13 @@ describe('RegisterPage', () => {
   it('asks for the email alone, says what it is for, and offers to log in', () => {
     renderPage()
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Register' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Sign up' })).toBeInTheDocument()
     expect(email()).toHaveAttribute('autocomplete', 'email')
     expect(email()).toHaveAccessibleDescription("We'll email you a link to choose a password.")
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Privacy notice' })).toHaveAttribute('href', '/privacy')
     expect(screen.getByRole('link', { name: 'Log in' })).toHaveAttribute('href', '/login')
-    expect(document.title).toBe(`Register | ${APP_NAME}`)
+    expect(document.title).toBe(`Sign up | ${APP_NAME}`)
   })
 
   // One example per message: the rules themselves are covered in validation.test.ts
@@ -61,6 +61,7 @@ describe('RegisterPage', () => {
 
       expect(await screen.findByRole('heading', { level: 1, name: 'Check your inbox' })).toHaveFocus()
       expect(screen.getByText('user@example.com')).toBeInTheDocument()
+      expect(screen.getByText(/Open it within 24 hours to choose a password/)).toBeInTheDocument()
       expect(document.title).toBe(`Check your inbox | ${APP_NAME}`)
       expect(requestRegistration).toHaveBeenCalledExactlyOnceWith('user@example.com')
     })
@@ -102,7 +103,7 @@ describe('RegisterPage', () => {
 
       await user.click(useAnother())
 
-      expect(screen.getByRole('heading', { level: 1, name: 'Register' })).toHaveFocus()
+      expect(screen.getByRole('heading', { level: 1, name: 'Sign up' })).toHaveFocus()
       expect(email()).toHaveValue('user@example.com')
     })
 

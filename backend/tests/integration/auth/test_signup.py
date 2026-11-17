@@ -55,7 +55,7 @@ def test_sign_up_through_the_emailed_link(integration_client, worker):
     worker()
 
     message, = inbox()
-    link, = [word for word in message['Text'].split() if word.startswith('https://')]
+    link, privacy = [word for word in message['Text'].split() if word.startswith('https://')]
     fragment = parse_qs(urlsplit(link).fragment)
     complete = integration_client.post('/api/auth/register/complete', json={
         'token': fragment['token'][0], 'password': 'TestPassword123',
@@ -64,9 +64,10 @@ def test_sign_up_through_the_emailed_link(integration_client, worker):
         'Authorization': f"Bearer {complete.get_json()['access_token']}"})
 
     assert response.status_code == 202
-    assert message['Subject'] == 'Finish signing up'
-    assert link.startswith(f"{os.environ['APP_URL']}/register/complete#")
+    assert message['Subject'] == f"Finish signing up for {integration_client.application.config['APP_NAME']}"
+    assert link.startswith(f"{os.environ['APP_URL']}/signup/complete#")
     assert set(fragment) == {'token'}
+    assert privacy == f"{os.environ['APP_URL']}/privacy"
     assert complete.status_code == 200
     assert complete.get_json()['email'] == ADDRESS
     assert account.get_json()['email'] == ADDRESS
@@ -81,4 +82,4 @@ def test_a_registered_address_is_told_so(integration_client, worker):
     worker()
 
     message, = inbox()
-    assert message['Subject'] == 'You already have an account'
+    assert message['Subject'] == f"You already have a {integration_client.application.config['APP_NAME']} account"

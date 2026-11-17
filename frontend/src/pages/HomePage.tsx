@@ -20,7 +20,7 @@ export default function HomePage() {
             <Link to="/notes" className="btn btn-primary">View my notes</Link>
           ) : (
             <>
-              <Link to="/register" className="btn btn-primary">Get started</Link>
+              <Link to="/signup" className="btn btn-primary">Get started</Link>
               <Link to="/login" className="btn btn-secondary">Log in</Link>
             </>
           )}
