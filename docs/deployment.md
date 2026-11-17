@@ -16,7 +16,7 @@ Only Nginx is published (ports 80 and 443). The backend calls out to one third p
 
 ## Environment File
 
-`.env.prod` holds only the twelve values that differ per deployment (including `SERVER_NAME`, the domain nginx serves, and the mail server and sender, [Sending Email](#sending-email)), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
+`.env.prod` holds only the twelve values that differ per deployment (including `SERVER_NAME`, the domain nginx serves, and the mail server and sender, [Sending Email](#sending-email)), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Leaving one out stops every compose command with `set <NAME> in .env.prod` before anything starts, rather than running Redis on an empty password; an external database or Redis needs none of the bundled one's passwords. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
 openssl rand -hex 32
@@ -96,6 +96,8 @@ Sign-up emails a link before it makes an account, so the app takes no new users 
 The provider is a processor of your users' data: name it in the privacy notice ([Personal Data and Legal Pages](personal-data.md), "Before launch", step 3).
 
 A failed send is retried, first after 15 to 30 seconds, then about twice as long each time up to an hour, for about three hours; one the mail server refuses for good (the address does not exist) is not. A send cut off by a deploy is put back on the queue at once; one running when the worker is killed rather than stopped (out of memory, a host crash) runs again once the queue notices the dead worker, usually within ten minutes. The worker's log shows each outcome: `email_sent` with the email's Message-ID, which the provider's own log shows too, or Dramatiq's line about a failed job, naming its message by id. The provider's bounce and complaint reports are yours to read: the app does not act on them, and a provider suspends an account whose bounces or complaints run high.
+
+**Capacity.** The worker sends about 2 to 6 emails a second: it runs 2 threads (`WORKER_THREADS`, `backend/app/utils/jobs.py`), each waiting on the mail server for one email at a time. `deploy.sh` runs and replaces exactly one worker container; for more, raise `WORKER_THREADS` before adding containers.
 
 ## Redeploying
 
