@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   requestRegistration, completeRegistration, loginUser, logoutUser, logoutAllDevices,
   clearAuthCookies, deleteAccount, getAccount, exportAccountData, REGISTRATION_LINK_HOURS,
+  requestPasswordReset, completePasswordReset, PASSWORD_RESET_LINK_HOURS,
 } from '../authService'
 import { api } from '@/api/api'
 import { backendConstant } from '@/test/backend'
@@ -14,8 +15,11 @@ vi.mock('@/api/api')
 // CSRF headers are api.test.ts's job.
 // The page that says how long the emailed link works says what the backend
 // mints it for
-it('gives the sign-up link the lifetime the backend does', () => {
-  expect(REGISTRATION_LINK_HOURS).toBe(backendConstant('auth/emails.py', 'REGISTRATION_LINK_HOURS'))
+it.each([
+  ['sign-up', REGISTRATION_LINK_HOURS, 'REGISTRATION_LINK_HOURS'],
+  ['password reset', PASSWORD_RESET_LINK_HOURS, 'PASSWORD_RESET_LINK_HOURS'],
+])('gives the %s link the lifetime the backend does', (_, hours, name) => {
+  expect(hours).toBe(backendConstant('auth/emails.py', name))
 })
 
 describe('authService', () => {
@@ -24,6 +28,10 @@ describe('authService', () => {
       '/auth/register', { email: 'a@example.com' }],
     ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1),
       '/auth/register/complete', { token: 'a-token', password: 'a valid passphrase', terms_version: 1 }],
+    ['requestPasswordReset', () => requestPasswordReset('a@example.com'),
+      '/auth/password-reset', { email: 'a@example.com' }],
+    ['completePasswordReset', () => completePasswordReset('a-token', 'a valid passphrase'),
+      '/auth/password-reset/complete', { token: 'a-token', password: 'a valid passphrase' }],
     ['loginUser', () => loginUser('a@example.com', 'a valid passphrase'),
       '/auth/login', { email: 'a@example.com', password: 'a valid passphrase' }],
     ['logoutUser', () => logoutUser(), '/auth/logout', undefined],
@@ -62,6 +70,8 @@ describe('authService', () => {
   it.each([
     ['requestRegistration', () => requestRegistration('a@example.com')],
     ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1)],
+    ['requestPasswordReset', () => requestPasswordReset('a@example.com')],
+    ['completePasswordReset', () => completePasswordReset('a-token', 'a valid passphrase')],
     ['loginUser', () => loginUser('a@example.com', 'a valid passphrase')],
     ['logoutUser', () => logoutUser()],
     ['logoutAllDevices', () => logoutAllDevices()],

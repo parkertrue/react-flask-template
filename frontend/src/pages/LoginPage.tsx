@@ -13,16 +13,18 @@ import {
   EMAIL_MAX_LENGTH
 } from '@/utils/validation'
 
-// What the account page leaves in the location's state
+// What the page the user came from leaves in the location's state
 export interface LoginState {
+  // The account page: the account was deleted
   accountDeleted?: boolean
+  // A password reset's link page: the password was changed
+  passwordReset?: boolean
 }
 
 export default function LoginPage() {
   const { login, sessionEnded } = useAuth()
   const location = useLocation() as Location<LoginState | null>
-  // Where the user came from: deleting their account
-  const { accountDeleted } = location.state ?? {}
+  const { accountDeleted, passwordReset } = location.state ?? {}
   const { values, errors, handleChange, validate } = useFormFields({ email: '', password: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -30,6 +32,7 @@ export default function LoginPage() {
   // a live region added along with its text is not read.
   const [status, setStatus] = useState('')
   const notice = accountDeleted ? 'Your account has been deleted.'
+    : passwordReset ? 'Your password has been changed. Log in with the new one.'
     : sessionEnded ? 'Your session has ended. Please log in again.' : ''
 
   useEffect(() => {
@@ -69,7 +72,7 @@ export default function LoginPage() {
           <h1 id="login-heading">Log in</h1>
 
           {notice && (
-            <p className={accountDeleted ? 'success-message' : 'info-message'}>{notice}</p>
+            <p className={accountDeleted || passwordReset ? 'success-message' : 'info-message'}>{notice}</p>
           )}
           <p className="visually-hidden" role="status">{status}</p>
 
@@ -111,6 +114,9 @@ export default function LoginPage() {
             </button>
           </form>
 
+          <p className="auth-footer">
+            <Link to="/password-reset" className="text-link padded-link">Forgot your password?</Link>
+          </p>
           <p className="auth-footer">
             Don't have an account?{' '}
             <Link to="/signup" className="text-link">Sign up</Link>

@@ -53,12 +53,31 @@ export async function emailedLink(address: string, subject = `Finish signing up 
   return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
 }
 
-/**
- * A sign-up link no server signed, for pages that need not finish: its
- * token's payload names someone@example.com, which the page shows, and the
- * backend refuses it as invalid
- */
-export const UNSIGNED_LINK = '/signup/complete#token=InNvbWVvbmVAZXhhbXBsZS5jb20i.aTime.aSignature'
+// A token no server signed: its payload names someone@example.com, which
+// the page shows, and the backend refuses it as invalid
+const UNSIGNED_TOKEN = `${Buffer.from(JSON.stringify(['someone@example.com', ''])).toString('base64url')}.aTime.aSignature`
+
+/** A sign-up link no server signed, for pages that need not finish */
+export const UNSIGNED_LINK = `/signup/complete#token=${UNSIGNED_TOKEN}`
+
+/** A password reset link no server signed, for pages that need not finish */
+export const UNSIGNED_RESET_LINK = `/password-reset/complete#token=${UNSIGNED_TOKEN}`
+
+/** The subject of a password reset's email */
+export const RESET_SUBJECT = `Reset your ${APP_NAME} password`
+
+/** Ask for a password reset link on its page, without waiting */
+export async function requestReset(page: Page, email: string) {
+  await page.getByLabel(/^email/i).fill(email)
+  await page.getByRole('button', { name: /^send link$|sending link/i }).click()
+}
+
+/** Fill in and submit the emailed reset link's page, without waiting */
+export async function fillReset(page: Page, password = TEST_PASSWORD) {
+  await page.getByLabel('New password', { exact: true }).fill(password)
+  await page.getByLabel('Confirm new password').fill(password)
+  await page.getByRole('button', { name: /save password|saving/i }).click()
+}
 
 /** Ask for a sign-up link on the sign-up page, without waiting */
 export async function requestLink(page: Page, email: string) {

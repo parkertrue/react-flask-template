@@ -5,18 +5,12 @@ import CompleteRegistrationPage from '../CompleteRegistrationPage'
 import GuestRoute, { AFTER_LOGIN_PATH } from '@/auth/GuestRoute'
 import { completeRegistration } from '@/auth/authService'
 import { storage } from '@/auth/storage'
-import { errorBody, httpError, tokens } from '@/test/fixtures'
+import { errorBody, httpError, linkToken, tokens } from '@/test/fixtures'
 import { renderRoutes } from '@/test/router'
 import { APP_NAME, TERMS_VERSION } from '@/appInfo'
 
 vi.mock('@/auth/authService')
 
-// A token as the backend mints it: its payload, base64url JSON naming the
-// address, then the time and the signature
-function linkToken(email: string) {
-  const payload = btoa(JSON.stringify(email)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
-  return `${payload}.aTime.aSignature`
-}
 const TOKEN = linkToken('user@example.com')
 const LINK = `/signup/complete#token=${TOKEN}`
 

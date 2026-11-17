@@ -12,6 +12,8 @@ vi.mock('@/pages/HomePage', () => ({ default: vi.fn(() => <p>Home page</p>) }))
 vi.mock('@/pages/LoginPage', () => ({ default: () => <p>Login page</p> }))
 vi.mock('@/pages/RegisterPage', () => ({ default: () => <p>Register page</p> }))
 vi.mock('@/pages/CompleteRegistrationPage', () => ({ default: () => <p>Complete registration page</p> }))
+vi.mock('@/pages/PasswordResetPage', () => ({ default: () => <p>Password reset page</p> }))
+vi.mock('@/pages/CompletePasswordResetPage', () => ({ default: () => <p>Complete password reset page</p> }))
 vi.mock('@/pages/AccountPage', () => ({ default: () => <p>Account page</p> }))
 vi.mock('@/pages/PrivacyPage', () => ({ default: () => <p>Privacy page</p> }))
 vi.mock('@/pages/TermsPage', () => ({ default: () => <p>Terms page</p> }))
@@ -34,6 +36,8 @@ describe('routes', () => {
     ['/login', 'Login page'],
     ['/signup', 'Register page'],
     ['/signup/complete', 'Complete registration page'],
+    ['/password-reset', 'Password reset page'],
+    ['/password-reset/complete', 'Complete password reset page'],
     ['/privacy', 'Privacy page'],
     ['/terms', 'Terms page'],
     ['/contact', 'Contact page'],
@@ -53,10 +57,13 @@ describe('routes', () => {
     ['/privacy', 'Privacy page'],
     ['/terms', 'Terms page'],
     ['/contact', 'Contact page'],
+    // An emailed reset link works whoever is signed in on this browser
+    ['/password-reset/complete', 'Complete password reset page'],
     // A signed-in user has no use for these
     ['/login', 'Notes page'],
     ['/signup', 'Notes page'],
     ['/signup/complete', 'Notes page'],
+    ['/password-reset', 'Notes page'],
   ])('show a signed-in user at %s the %s', (path, expected) => {
     signIn()
     renderRoutes(routes, path)

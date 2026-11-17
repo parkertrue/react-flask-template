@@ -239,6 +239,41 @@
       "title": "NotesPageResponse",
       "type": "object"
     },
+    "PasswordResetCompleteRequest": {
+      "additionalProperties": false,
+      "description": "A password reset's second step, from the emailed link's page",
+      "properties": {
+        "password": {
+          "maxLength": 128,
+          "minLength": 15,
+          "type": "string"
+        },
+        "token": {
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "password"
+      ],
+      "title": "PasswordResetCompleteRequest",
+      "type": "object"
+    },
+    "PasswordResetRequest": {
+      "additionalProperties": false,
+      "description": "A password reset's first step: the account's address, to email a\nlink to",
+      "properties": {
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "title": "PasswordResetRequest",
+      "type": "object"
+    },
     "RegisterCompleteRequest": {
       "additionalProperties": false,
       "description": "Sign-up's second step, from the emailed link's page",

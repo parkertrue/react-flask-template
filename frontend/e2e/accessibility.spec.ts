@@ -1,8 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
-  expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
-  registerAndLogin, requestLink, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
+  expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, fillReset, holdRequests,
+  memberSince, registerAndLogin, requestLink, requestReset, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
+  UNSIGNED_RESET_LINK,
 } from './helpers'
 import { APP_NAME } from '../src/appInfo'
 
@@ -10,10 +11,12 @@ import { APP_NAME } from '../src/appInfo'
 // and the footer's three included)
 const VISITOR_PAGES: [string, string, string, number][] = [
   ['/', APP_NAME, `Welcome to ${APP_NAME}`, 8],
-  ['/login', `Log in | ${APP_NAME}`, 'Log in', 10],
+  ['/login', `Log in | ${APP_NAME}`, 'Log in', 11],
   ['/signup', `Sign up | ${APP_NAME}`, 'Sign up', 10],
   // Without the emailed link: what to do instead
   ['/signup/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
+  ['/password-reset', `Reset your password | ${APP_NAME}`, 'Reset your password', 9],
+  ['/password-reset/complete', `Choose a new password | ${APP_NAME}`, 'Choose a new password', 7],
   ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice', 9],
   ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service', 8],
   ['/contact', `Contact | ${APP_NAME}`, 'Contact', 10],
@@ -251,6 +254,93 @@ test.describe('Accessibility', () => {
         await expectTargetSize(page)
       })
     }
+  })
+
+  test.describe("a password reset's pages", () => {
+    test('asking for a link, busy and then failed, has no violations', async ({ page }) => {
+      const release = await holdRequests(page, 'POST', '**/api/auth/password-reset', serviceUnavailable)
+      await page.goto('/password-reset')
+      await requestReset(page, uniqueEmail('e2e-a11y-reset-busy'))
+
+      await expect(page.getByRole('button', { name: 'Sending link...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
+    })
+
+    test('the check-your-inbox step has no violations, reflows, shows focus and has large enough targets', async ({ page }) => {
+      await page.goto('/password-reset')
+      await requestReset(page, uniqueEmail('e2e-a11y-reset-inbox-of-a-rather-long-address'))
+
+      await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
+      await expectNoViolations(page)
+      await expectReflow(page)
+      // The navbar's and footer's, and the two buttons
+      await expectVisibleFocus(page, 8)
+      await expectTargetSize(page)
+    })
+
+    test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
+      await page.goto(UNSIGNED_RESET_LINK)
+
+      await expect(page.getByLabel('Email')).toHaveValue('someone@example.com')
+      await expectNoViolations(page)
+      await expectReflow(page)
+      // The navbar's and footer's, the three fields (the read-only email
+      // too), and the button
+      await expectVisibleFocus(page, 10)
+      await expectTargetSize(page)
+    })
+
+    test('saving, busy and then failed, has no violations', async ({ page }) => {
+      const release = await holdRequests(page, 'POST', '**/api/auth/password-reset/complete', serviceUnavailable)
+      await page.goto(UNSIGNED_RESET_LINK)
+      await fillReset(page)
+
+      await expect(page.getByRole('button', { name: 'Saving...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
+    })
+
+    test("the link's page, with every field refused, has no violations, and focuses the first", async ({ page }) => {
+      await page.goto(UNSIGNED_RESET_LINK)
+
+      await page.getByRole('button', { name: 'Save password' }).click()
+
+      const password = page.getByLabel('New password', { exact: true })
+      await expect(password).toBeFocused()
+      await expect(password).toHaveAttribute('aria-invalid', 'true')
+      await expectNoViolations(page)
+      await expectReflow(page)
+    })
+
+    test('a refused link has no violations, and focuses why', async ({ page }) => {
+      await page.goto(UNSIGNED_RESET_LINK)
+      await fillReset(page)
+
+      await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)
+      await expect(page.getByRole('alert')).toBeFocused()
+      await expectNoViolations(page)
+      await expectReflow(page)
+      await expectTargetSize(page)
+    })
+
+    test('the login page after a reset has no violations', async ({ page }) => {
+      await page.route('**/api/auth/password-reset/complete', route => route.fulfill({
+        status: 200, json: { message: 'Password changed' },
+      }))
+      await page.goto(UNSIGNED_RESET_LINK)
+      await fillReset(page)
+
+      await expect(page).toHaveURL(/\/login$/)
+      await expect(page.getByRole('status')).toHaveText('Your password has been changed. Log in with the new one.')
+      await expectNoViolations(page)
+    })
   })
 
   test.describe('a signed-in user', () => {

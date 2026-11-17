@@ -14,7 +14,7 @@ from app import db, limiter
 from app.auth.models import User
 from app.auth.routes import _request_email_key
 from app.utils.passwords import PasswordHashingBusy
-from tests.conftest import FakeRedisService, register
+from tests.conftest import FakeRedisService, register, reset_token
 from tests.unit.test_app_factory import build_app
 
 LOGIN = {'email': 'nobody@example.com', 'password': 'WrongPassword123'}
@@ -283,6 +283,61 @@ class TestRegistrationLimits:
                     .status_code for _ in range(11)]
 
         assert statuses == [200] + [409] * 9 + [429]
+
+
+def request_reset(client, ip, email):
+    return client.post('/api/auth/password-reset', json={'email': email},
+                       headers={'X-Forwarded-For': ip})
+
+
+class TestPasswordResetLimits:
+    """A reset emails a link too: per IP, and per address in the budget
+    sign-up's links use"""
+
+    def test_eleventh_from_one_ip_in_an_hour_is_rate_limited(self, limited_app):
+        client = limited_app.test_client()
+
+        statuses = [request_reset(client, '203.0.113.7', f'user{i}@example.com').status_code
+                    for i in range(11)]
+
+        assert statuses == [202] * 10 + [429]
+
+    def test_a_fourth_link_to_one_address_in_an_hour_is_rate_limited(self, limited_app):
+        client = limited_app.test_client()
+
+        statuses = [request_reset(client, f'203.0.113.{i}', email).status_code
+                    for i, email in enumerate(['inbox@example.com', 'INBOX@example.com'] * 2)]
+
+        assert statuses == [202, 202, 202, 429]
+
+    @pytest.mark.parametrize('first, then', [
+        (request_link, request_reset), (request_reset, request_link)],
+        ids=['sign-up, then a reset', 'a reset, then sign-up'])
+    def test_sign_up_and_a_reset_share_an_address_s_budget(self, limited_app, first, then):
+        """Alternating the two forms sends no more mail to one inbox"""
+        client = limited_app.test_client()
+        for i in range(3):
+            first(client, f'203.0.113.{i}', 'inbox@example.com')
+
+        assert then(client, '198.51.100.9', 'inbox@example.com').status_code == 429
+
+    def test_eleventh_completion_from_one_ip_in_an_hour_is_rate_limited(self, limited_app):
+        """Each a fast 400 after the first, which still counts"""
+        limited_app.extensions['redis_service'] = FakeRedisService()
+        with limited_app.app_context():
+            user = User(email='test@example.com')
+            user.set_password('TestPassword123')
+            db.session.add(user)
+            db.session.commit()
+        token = reset_token(limited_app, 'test@example.com')
+        client = limited_app.test_client()
+
+        statuses = [client.post('/api/auth/password-reset/complete',
+                                json={'token': token, 'password': 'a valid passphrase'},
+                                headers={'X-Forwarded-For': '203.0.113.7'}).status_code
+                    for _ in range(11)]
+
+        assert statuses == [200] + [400] * 9 + [429]
 
 
 class TestRefreshLimit:

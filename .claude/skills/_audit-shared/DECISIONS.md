@@ -122,9 +122,9 @@ opinion that doesn't matter for a few static files. See the `nginx` job in
 ./run_dev.sh` turns it off for one run. Production forces it off in
 `ProductionConfig`.
 
-**Access tokens outlive logout by up to 15 minutes.** Logout and "Log out all
-devices" revoke refresh tokens only; an access token already issued works
-until it expires. Revoking those too would put a Redis lookup on every API
+**Access tokens outlive logout by up to 15 minutes.** Logout, "Log out all
+devices" and a password reset revoke refresh tokens only; an access token
+already issued works until it expires. Revoking those too would put a Redis lookup on every API
 request and make every request depend on Redis.
 *Revisit when:* the app holds data where a 15-minute window after logout
 matters.
@@ -731,9 +731,11 @@ findings.
 
 - **Email change** (GDPR Art. 16), which the privacy notice handles by
   email meanwhile.
-- **Account security beyond the basics:** no password change, password
-  reset or multi-factor login (ASVS 5.0 chapter 6, Authentication). Reset and change can build on what sign-up
-  uses: the worker, email and signed links (`backend/app/utils/links.py`).
+- **Account security beyond the basics:** no password change while signed
+  in, and no multi-factor login (ASVS 5.0 chapter 6, Authentication). A
+  change can build on what the password reset uses: `Password`,
+  `is_guessable`, `is_breached`, ending every session, and the "password
+  was changed" email.
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.

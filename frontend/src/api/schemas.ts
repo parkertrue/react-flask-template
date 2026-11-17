@@ -17,6 +17,8 @@ export interface ApiSchemas {
   NoteUpdateRequest: NoteUpdateRequest;
   NotesListQuery: NotesListQuery;
   NotesPageResponse: NotesPageResponse;
+  PasswordResetCompleteRequest: PasswordResetCompleteRequest;
+  PasswordResetRequest: PasswordResetRequest;
   RegisterCompleteRequest: RegisterCompleteRequest;
   RegisterCompleteResponse: RegisterCompleteResponse;
   RegisterRequest: RegisterRequest;
@@ -101,6 +103,20 @@ export interface NotesListQuery {
 export interface NotesPageResponse {
   next_cursor: number | null;
   notes: NoteResponse[];
+}
+/**
+ * A password reset's second step, from the emailed link's page
+ */
+export interface PasswordResetCompleteRequest {
+  password: string;
+  token: string;
+}
+/**
+ * A password reset's first step: the account's address, to email a
+ * link to
+ */
+export interface PasswordResetRequest {
+  email: string;
 }
 /**
  * Sign-up's second step, from the emailed link's page
