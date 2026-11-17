@@ -3,9 +3,8 @@ import AxeBuilder from '@axe-core/playwright'
 import { createHmac, randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME, TERMS_VERSION } from '../src/appInfo'
 import type { DataExportResponse } from '../src/api/schemas'
-import { TERMS_VERSION } from '../src/legal'
 import config from '../playwright.config'
 
 // What the helpers below leave on the page's window

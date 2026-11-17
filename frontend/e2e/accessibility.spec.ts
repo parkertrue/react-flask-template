@@ -4,7 +4,7 @@ import {
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
   registerAndLogin, requestLink, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
 } from './helpers'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME } from '../src/appInfo'
 
 // Path, title, h1, and how many Tab stops the page has (its navbar's three
 // and the footer's three included)

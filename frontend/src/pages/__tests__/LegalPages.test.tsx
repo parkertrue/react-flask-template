@@ -5,8 +5,7 @@ import PrivacyPage from '../PrivacyPage'
 import TermsPage from '../TermsPage'
 import ContactPage from '../ContactPage'
 import { renderRoutes } from '@/test/router'
-import { APP_NAME } from '@/appName'
-import { OPERATOR, TERMS_VERSION } from '@/legal'
+import { APP_NAME, OPERATOR, TERMS_VERSION } from '@/appInfo'
 
 function renderPage(Page: ComponentType) {
   return renderRoutes([{ path: '/', element: <Page /> }], '/')

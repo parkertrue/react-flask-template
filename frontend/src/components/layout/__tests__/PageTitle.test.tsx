@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import PageTitle from '../PageTitle'
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 
 describe('PageTitle', () => {
   it.each([

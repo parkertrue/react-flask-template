@@ -55,7 +55,7 @@ describe('import rules', () => {
     ['src/features/notes/x.ts', "import '@/pages/HomePage'", 'no-restricted-imports'],
     ['src/features/notes/x.ts', "import '@/routes'", 'no-restricted-imports'],
     ['src/features/notes/__tests__/x.ts', "import '@/features/health/useHealth'", 'no-restricted-imports'],
-    ['src/legal.ts', "import '@/features/notes/useNotes'", 'no-restricted-imports'],
+    ['src/appInfo.ts', "import '@/features/notes/useNotes'", 'no-restricted-imports'],
     ['src/styles/__tests__/x.test.ts', "import '@/pages/HomePage'", 'no-restricted-imports'],
     ['src/test/x.ts', "import '@/features/notes/useNotes'", 'no-restricted-imports'],
     ['src/test/integration/x.test.tsx', "import '@/pages/HomePage'", 'no-restricted-imports'],

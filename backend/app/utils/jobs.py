@@ -4,8 +4,9 @@ A request that sends an email must not wait on a mail server, or fail with
 it. It queues a job instead (Job.send), which the worker (backend/worker.py)
 runs in an app context, retrying it with backoff when it fails.
 
-A feature declares its jobs from its blueprint (`@job(notes_bp)`), as it
-registers an export, so the core imports no feature. Messages are JSON and
+A feature declares its jobs from its blueprint, as it registers an export,
+so the core imports no feature: `@job(<blueprint>)` on the function, or
+`job(auth_bp)(send_registration_email)` (auth/routes.py). Messages are JSON and
 name a declared job: a message written to Redis can only run a job the code
 declares, with JSON arguments, never an arbitrary function.
 """

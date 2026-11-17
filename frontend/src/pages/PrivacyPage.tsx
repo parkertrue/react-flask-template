@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import PageTitle from '@/components/layout/PageTitle'
-import { OPERATOR } from '@/legal'
+import { OPERATOR } from '@/appInfo'
 import PlaceholderNotice from './PlaceholderNotice'
 
 // The template's outline of a privacy notice, seeded from the data the

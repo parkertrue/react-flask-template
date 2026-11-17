@@ -75,6 +75,17 @@ def test_only_the_first_five_characters_of_the_hash_leave(api):
     assert request.get_header('Add-padding') == 'true'
 
 
+def test_it_introduces_itself_by_the_app_s_name(app, api, monkeypatch):
+    """Pwned Passwords asks each client to name its app, so one app's
+    misuse never gets every app built from the template blocked"""
+    monkeypatch.setitem(app.config, 'APP_NAME', 'Another App')
+
+    is_breached(PASSWORD)
+
+    (request, _), = api.requests
+    assert request.get_header('User-agent') == 'Another App'
+
+
 @pytest.mark.parametrize('error', [
     urllib.error.URLError('unreachable'),
     urllib.error.HTTPError(API, 503, 'Service Unavailable', {}, None),
