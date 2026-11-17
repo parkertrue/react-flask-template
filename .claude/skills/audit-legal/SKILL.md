@@ -37,10 +37,12 @@ as RULES.md.
     a page, a config value) plus a step in README's "Starting a New App" that
     tells the developer what to fill in, and why.
 - **Rate by what's true today, then say what would raise it.** Notes are
-  private, there is no email, payment or analytics yet; a risk that only
-  arrives with such a feature is **low** with its trigger named in the Fix.
-  Known gaps in DECISIONS.md (data export, no centralized logging) are
-  not new findings, but say when the law makes one more urgent than recorded.
+  private; the app sends transactional email (sign-up) and calls one
+  outside API (Pwned Passwords, 5 characters of a hash); there is no
+  payment or analytics yet. A risk that only arrives with such a feature is
+  **low** with its trigger named in the Fix. Known gaps in DECISIONS.md
+  (email change, password change or reset, certificate renewal) are not
+  new findings, but say when the law makes one more urgent than recorded.
 
 ### Severity for legal findings
 
@@ -81,6 +83,9 @@ as RULES.md.
 - **Copied material.** Code with a source link or attribution comment
   (Stack Overflow is CC BY-SA), fonts, icons, images and other assets: is
   each one's license known and honored?
+- **Outside APIs' terms.** For each third-party API the backend calls
+  (today Pwned Passwords), read its terms: attribution, the user agent it
+  asks for (the app's name, `APP_NAME`), acceptable use.
 
 ## 2. privacy
 
@@ -88,7 +93,9 @@ as RULES.md.
   its infrastructure collect or derive: account fields, note content, IP
   addresses and user agents (nginx access logs, rate-limit keys, app logs),
   tokens and their claims, Redis keys, MySQL rows, backups (when they exist),
-  browser storage (`localStorage`, cookies). For each: where it is stored,
+  browser storage (`localStorage`, cookies), queued jobs' arguments (Redis),
+  Redis's on-disk persistence (its log and `dump.rdb`) and what it keeps past
+  a key's TTL, emails at the mail provider, and tokens in emailed links. For each: where it is stored,
   for how long, who can read it, and whether anything ever deletes it. Read
   the code and config for each answer (log formats and rotation in compose
   files and `nginx.conf`, TTLs in `redis_service.py`). Put the inventory in
@@ -111,7 +118,9 @@ as RULES.md.
   does. Check for any request the browser makes to a third party (fonts,
   CDNs, scripts, images in `index.html`, CSS and the built bundle): each one
   sends the visitor's IP abroad (LG München I, 3 O 17493/20, on Google
-  Fonts).
+  Fonts). Then every outbound call the backend or worker makes
+  (`grep -rnE "urlopen|requests\.|smtplib" backend/app`), and what each
+  sends.
 - **Children:** is there an age statement or gate? COPPA applies to services
   directed at, or knowingly collecting from, under-13s; GDPR Art. 8 sets 13
   to 16 for consent by country.
@@ -121,8 +130,9 @@ as RULES.md.
   be detected and scoped from the logs that exist (72-hour notification).
 - **Processors and transfers:** third-party services the app or its docs
   send personal data to (hosting, email, error tracking), and what each needs
-  (a data processing agreement, a transfer mechanism). None today is fine;
-  say what README should warn about.
+  (a data processing agreement, a transfer mechanism). Today: the host and
+  the mail provider (`docs/deployment.md`, Sending Email); check that the
+  privacy page's outline and `docs/personal-data.md` name each.
 
 ## 3. terms: terms of service and consumer protection
 
@@ -134,9 +144,10 @@ as RULES.md.
   is ending things as easy as starting them? Signing out everywhere,
   deleting the account, and later cancelling a subscription should take no
   more steps than signing up.
-- **Email** (CAN-SPAM, CASL, PECR): when the app sends email (verification
-  and password reset are planned), what each kind requires (transactional vs
-  marketing, unsubscribe, sender identity). A low finding until email exists.
+- **Email** (CAN-SPAM, CASL, PECR): the template's emails are transactional
+  (sign-up's two): check that each names its sender truthfully
+  (`EMAIL_FROM`), names the app and links the privacy notice. Marketing
+  email would add CAN-SPAM's unsubscribe and PECR's and CASL's consent.
 
 ## 4. content: user-generated content
 

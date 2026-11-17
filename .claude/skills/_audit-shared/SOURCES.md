@@ -97,6 +97,11 @@ Ground rules when using these:
   - Flask-Limiter: https://flask-limiter.readthedocs.io (key functions, storage fallback)
   - Pydantic: https://docs.pydantic.dev
   - Gunicorn: https://docs.gunicorn.org (Design page for worker types, Settings page)
+  - Dramatiq: https://dramatiq.io (brokers, retries, the worker's shutdown and
+    message redelivery)
+- **Mail**
+  - RFC 8314, Cleartext Considered Obsolete: https://www.rfc-editor.org/rfc/rfc8314
+    (implicit TLS for submission, and STARTTLS never optional)
 - **Python tooling**
   - Ruff rules: https://docs.astral.sh/ruff/rules/ (rule sets worth enabling)
   - pytest Good Integration Practices: https://docs.pytest.org/en/stable/explanation/goodpractices.html
@@ -236,9 +241,9 @@ before citing: thresholds, deadlines and state laws change often.
 
 | Check | Start with |
 |---|---|
-| `/audit-infra` | The layer's section above; diff config against h5bp (nginx), Mozilla SSL generator (TLS), Docker best practices, bulletproof-react / fastapi-best-practices (structure), 12factor (config) |
+| `/audit-infra` | The layer's section above; diff config against h5bp (nginx), Mozilla SSL generator (TLS), Docker best practices, bulletproof-react / fastapi-best-practices (structure), 12factor (config); Dramatiq and RFC 8314 for the worker and mail |
 | `/audit-tests` | Testing section; pytest good practices; Testing Library principles; Playwright best practices |
-| `/audit-security` | OWASP ASVS 5.0 L2 + Cheat Sheets; WSTG / Testing Checklist; once deployed: Observatory + SSL Labs against the site, Docker Bench + CIS on the host |
+| `/audit-security` | OWASP ASVS 5.0 L2 + Cheat Sheets; RFC 8314 for mail; WSTG / Testing Checklist; once deployed: Observatory + SSL Labs against the site, Docker Bench + CIS on the host |
 | `/audit-recovery` | MySQL Backup and Recovery chapter; Redis persistence; SRE book chapters on postmortems and data integrity |
 | `/audit-a11y` | WCAG 2.2 quick reference; WAI-ARIA APG |
 | `/audit-infra` (bottlenecks) | Use The Index, Luke; Gunicorn Design page; SQLAlchemy pooling |

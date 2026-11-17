@@ -34,7 +34,9 @@ Read every page, layout and form component in `frontend/src/` (`pages/`,
 - Navigation: focus moves to the new page's `h1` on route change (CLAUDE.md's design);
   back and forward work.
 - Dynamic content: "Load more" moves or keeps focus sensibly and announces new
-  items; the API status demo announces changes without being noisy.
+  items; the API status demo announces changes without being noisy; a step
+  that changes without a navigation (sign-up's "Check your inbox", a
+  refused link's message) moves focus to its own heading or message.
 - Contrast: `styles/__tests__/tokens.test.ts` computes every ratio (4.5:1
   text, 3:1 large text and UI components, including focus rings, borders of
   inputs, and disabled-looking states). Check that it lists every pairing the
@@ -61,6 +63,17 @@ with Playwright from a script in the scratch directory. Setup that works:
   in code); reach the expired-session state with `expireAccessToken` from
   `frontend/e2e/helpers.ts`, or by corrupting `access_token` in
   localStorage and clearing cookies.
+- **Sign-up:** sign up as `e2e/helpers.ts`' `register` does, reading the
+  link from Mailpit's API (`127.0.0.1:8026`, `emailedLink`). Check the
+  "Check your inbox" step (focus on its h1; Send again busy, sent and
+  failed; "Use a different email" focusing the Sign up h1), and the link's
+  page (`/signup/complete`): its field errors, `PASSWORD_GUESSABLE` and
+  `PASSWORD_BREACHED` on the Password field, the read-only address, and a
+  missing, expired, forged, used and already-registered link (answer the
+  codes with `page.route`), each focusing its message and its lone link 24
+  px tall. Read both sign-up emails (`auth/emails.py`) for usable wording:
+  the link on its own line, what it is for, how long it lasts, what to do
+  if unasked, each paragraph one line.
 - After navigation (including back and forward), wait for the focus change
   before reading `document.activeElement`; read straight after `waitForURL`
   and it is too early.

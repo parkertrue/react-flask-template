@@ -44,7 +44,9 @@ Files: `.env.dev`, `.env.test`, `.env.prod.example`, `backend/app/config.py`,
 - Does every variable the app requires reach it in each environment
   (CLAUDE.md's Naming Conventions table)? Are they listed explicitly, never via
   `env_file:`? Does only the `db` service get the root password, and only
-  `migrate` the migration URL?
+  `migrate` the migration URL? Does only the worker get `EMAIL_URL`,
+  `EMAIL_FROM`, `SERVER_NAME` and `APP_URL`, and does each secret it and
+  the backend read stop Compose when unset (`:?`, `check_compose.py`)?
 - External services (`docs/deployment.md`, "External Database or Redis"): are `db` and
   `redis` under the profiles `.env.prod.example`'s `COMPOSE_PROFILES` turns
   on, with every `depends_on` on them `required: false`? Does production
@@ -83,8 +85,12 @@ Files: `nginx/` (Dockerfile, `nginx.conf`, `proxy_params.conf`,
   choose it (`.github/smoke/platform.yml` runs that layout)?
 
 ### docker: images and Compose
-Files: `backend/Dockerfile`, `backend/entrypoint.sh`, `nginx/Dockerfile`,
-`docker-compose.yml`, `docker-compose.dev.yml`, `docker-compose.test.yml`.
+Files: `backend/Dockerfile`, `backend/entrypoint.sh`, `backend/worker.py`,
+`nginx/Dockerfile`, `docker-compose.yml`, `docker-compose.dev.yml`,
+`docker-compose.test.yml`.
+- The worker: its healthcheck (the ready file), and a `stop_grace_period`
+  longer than its wait for running jobs (`SHUTDOWN_TIMEOUT`,
+  `utils/jobs.py`)? Mailpit's image in dev and test only?
 - Base images pinned and current (MySQL, Redis, Python, Node, nginx all
   supported releases)? Multi-stage builds, non-root users, minimal layers?
 - Production: health checks on every service, restart policies, resource
@@ -126,6 +132,10 @@ Files: `backend/app/__init__.py`, `config.py`, `features.py`, each feature's `ro
 - Are timeouts, pool settings and Redis client options set so an outage fails
   fast instead of hanging?
 - Is anything example-feature specific leaking into shared code?
+- **Jobs and mail:** `utils/jobs.py`'s retries, time limit and failed-job
+  TTL; `utils/mail.py`'s timeout and TLS (STARTTLS never optional);
+  `utils/breached.py`'s total deadline and the backend's one egress (Pwned
+  Passwords, `docs/deployment.md`); Mailpit in dev and test.
 
 ### mysql
 Files: each feature's `models.py` (`backend/app/*/models.py`), `backend/migrations/`, the `db` services.
@@ -145,9 +155,11 @@ Files: each feature's `models.py` (`backend/app/*/models.py`), `backend/migratio
 ### redis
 Files: `backend/app/utils/redis_service.py` (and the rest of `utils/`), the
 `redis` services.
-- ACL user scope (key patterns, `-@dangerous`), `noeviction`, `maxmemory`,
-  persistence settings in production vs what losing Redis would cost
-  (sessions and rate limits), key TTLs so nothing grows without bound.
+- ACL scope of both users (`app`; `worker` with `+keys`, the queue's keys
+  alone), `noeviction`, `maxmemory`, persistence settings in production
+  (the on-disk log compacted at 1 MB) vs what losing Redis would cost
+  (sessions, rate limits, used sign-up links, queued jobs), key TTLs so
+  nothing grows without bound.
 
 ### frontend: build and runtime config
 Files: `frontend/vite.config.ts`, `package.json`, `index.html`,
@@ -178,7 +190,8 @@ Files: `.github/workflows/`, `.github/dependabot.yml`, `backend/lock_deps.sh`,
 - Request path cost: queries per request (N+1), missing indexes, unbounded
   lists, password hashing cost vs worker and thread counts
   (`PASSWORD_HASH_CONCURRENCY`, `WEB_CONCURRENCY`), Redis round trips per
-  request, nginx buffering and keepalive.
+  request, nginx buffering and keepalive, the worker's threads
+  (`WORKER_THREADS`) against a burst of sign-ups.
 - Frontend: bundle size, waterfalls, polling intervals, re-renders on hot
   paths.
 - Estimate the first bottleneck under load (which resource saturates first,
