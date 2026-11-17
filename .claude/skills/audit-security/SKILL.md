@@ -25,7 +25,9 @@ Read all of `backend/app/`, `frontend/src/` (except tests), `nginx/`, the
 Dockerfiles and compose files. Walk the ASVS 5.0 Level 2 chapters that apply to
 this app and record what each one turns up:
 
-- **Authentication and sessions:** password policy and NFKC handling,
+- **Authentication and sessions:** the NIST password rules (ASVS
+  6.2.1-6.2.12: length, the breached-password check, and the words a
+  password may not hold, `is_guessable`) and NFKC handling,
   hashing parameters and the concurrency limit, login timing, rate limits per
   IP and per account (key functions, `normalize_email`, ProxyFix with
   `TRUSTED_PROXY_COUNT`), access and refresh token lifetimes, rotation (the
@@ -40,6 +42,28 @@ this app and record what each one turns up:
   (`POST /api/account/delete`): a wrong password answers 403
   `WRONG_PASSWORD` and logs `wrong_password`; it revokes every session before
   deleting, and answers 503 with nothing deleted when Redis cannot revoke them.
+- **Emailed links, jobs and mail:**
+  - `utils/links.py`: a salt per purpose, the 24-hour expiry, what the
+    token names, and whether `CompleteRegistrationPage` shows that or
+    anything else from the URL; it reads the fragment once and strips it.
+    Each link works once (`claim_link`, `LINK_USED`), even after its
+    account is deleted; finishing answers 503 while Redis is down.
+  - Links built from `APP_URL`, never the request's Host header; the token
+    in the fragment and out of every log (nginx's access and error logs,
+    the backend's, the worker's).
+  - Enumeration through register's answer, its timing and the two emails;
+    inbox flooding (10 links an hour per IP, 3 an hour and 6 a day per
+    address).
+  - `utils/jobs.py`: a message names only a declared job, its arguments are
+    re-validated inside the job, what a holder of the `app` or `worker`
+    Redis password can queue; `_MessageIdOnly` against what Dramatiq
+    really logs.
+  - `utils/mail.py`: TLS and STARTTLS never optional, the certificate and
+    host name checked, header injection through every header, what its
+    errors and logs carry; `EMAIL_URL` on the worker alone.
+  - `utils/breached.py`: only 5 hex characters leave, padding, fail-open,
+    the 2 s timeout as a total deadline, `PWNED_PASSWORDS_URL` `https://`
+    only, the `User-Agent` naming the app.
 - **Input and output:** every request body and query passes through a Pydantic
   schema; size limits at nginx and Flask; email and password normalization
   (lint already refuses SQL built from strings, `dangerouslySetInnerHTML`,
@@ -58,7 +82,8 @@ this app and record what each one turns up:
   (`NGINX_TRUSTED_PROXIES`), or get anything but `/api/health` from the
   catch-all?
 - **Containers and Redis:** non-root users, capabilities, read-only roots,
-  networks (can nginx reach MySQL? should it?), exposed ports, the Redis ACL,
+  networks (can nginx reach MySQL? should it?), exposed ports, the Redis ACL
+  of both users (`app`, and `worker` with `+keys`),
   and the MySQL privileges of the app's and the migration user
   (`db/init/01-app-user.sh`), checked live.
 - **Deploys:** `deploy.sh` builds and runs any commit on `origin/main`, as a
@@ -76,8 +101,8 @@ this app and record what each one turns up:
   clients, unbounded queries or lists, Redis memory growth.
 - **What is missing:** ASVS 5.0 L2 requirements the app neither meets nor has
   recorded in DECISIONS.md. Report each one as a gap with its ASVS 5.0 number.
-  Group gaps that one feature would close (password reset, MFA, email
-  verification) into one finding each. Check the security events
+  Group gaps that one feature would close (password reset, password
+  change, MFA) into one finding each. Check the security events
   `utils/log.py` logs against ASVS 5.0 chapter 16 (Security Logging) rather
   than reporting logging as missing.
 
@@ -103,7 +128,8 @@ this app and record what each one turns up:
   the built images for OS-package CVEs, which tag checks can't see:
   `docker run --rm -v //var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity HIGH,CRITICAL --ignore-unfixed <image>`
   for the backend and nginx images (build them first, or scan the stack's)
-  and the MySQL and Redis images.
+  and the MySQL and Redis images. Mailpit's image runs in dev and test
+  only: report it, but it never blocks.
 - Unused or misplaced packages: compare `requirements.in` and
   `package.json` against actual imports (`backend/app`, `frontend/src`), config
   files and scripts. A package used only by tests belongs in the dev lists.
@@ -150,7 +176,16 @@ describes. Nothing else.
   17 KB body, send malformed JSON, log in
   with a password that differs only by Unicode normalization, and delete an
   account with a wrong password, then with the right one (every session of
-  that account must then be refused).
+  that account must then be refused). Sign-up links: complete one from
+  Mailpit's API (`127.0.0.1:8026`, as `e2e/helpers.ts`' `emailedLink`
+  does); use it again (409), after deleting its account (`LINK_USED`),
+  with one character changed, as another purpose's token, and expired
+  (mint both with the test stack's `SECRET_KEY` from `.env.test`); open one
+  whose fragment carries an `email=` besides its token (the page must show
+  the token's). Queue, as the `app` Redis user, a message for an undeclared
+  actor and one for the sign-up job with a list of recipients: neither may
+  send. Grep the backend's, worker's and nginx's logs for addresses and
+  tokens.
 - **`behind-proxy` probes,** once the test stack is down (both use the
   `app_test` project): bring up the platform smoke stack
   (`docker compose --env-file .env.test -f docker-compose.test.yml -f .github/smoke/platform.yml --profile platform up -d --build --wait`,
@@ -165,8 +200,12 @@ describes. Nothing else.
   writes (`docker exec app_test-platform-nginx-1 cat /etc/nginx/conf.d/real-ip.conf`).
 
 Tear the test stack down. Then, **for the rate-limit probes only**, bring up
-the production-config stack (RULES.md): the test stack runs `IntegrationConfig`,
-which turns Flask's limits off and trusts no proxy. Check each login limit
+the production-config stack (RULES.md, its mail sink included, or the
+worker refuses to start): the test stack runs `IntegrationConfig`, which
+turns Flask's limits off and trusts no proxy. Besides login's below, probe
+register's (10 an hour per IP; 3 an hour and 6 a day per address, from any
+IP), the completion's (10 an hour per IP) and the data export's (10 an
+hour per user). Check each login limit
 (`backend/app/auth/routes.py`): 5 failures a minute for one account from one
 address answer 429, while the same account still logs in from a second
 address (a stranger's guesses lock out only the stranger); 100 failures an

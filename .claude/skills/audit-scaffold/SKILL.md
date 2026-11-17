@@ -29,8 +29,8 @@ Carry out README's **Starting a New App** steps in order, exactly as
 written, as a developer who knows only what the docs say. Create files with the
 Write tool, not shell heredocs (Git Bash mangles backslashes and backticks).
 
-**Checkpoint after every step, before fixing anything:** run ruff, ESLint and
-both unit suites, and record the failure counts. Then fix what the step left
+**Checkpoint after every step, before fixing anything:** run ruff, mypy,
+ESLint, `npm run typecheck` and both unit suites, and record the failure counts. Then fix what the step left
 broken. For each step, record:
 - whether every file, symbol and command it names exists,
 - the failures at its checkpoint, and what you had to do that the step does
@@ -48,7 +48,11 @@ cause. Then grep for leftovers (`notes?`, `Note`, `health`, excluding
 notes into a `bookmarks` resource (`url` and `title`, owned by a user,
 cursor-paginated list, create), following the notes slice's pattern as
 CLAUDE.md describes it (model, schema, routes, service, hook, page, unit
-tests, and its E2E spec, ported and linted). Alternate runs may take the
+tests, and its E2E spec, ported and linted), with a job of its own
+(`@job(bookmarks_bp)`, queued on create, sending an email), tested with
+the `jobs` and `outbox` fixtures. After each schema change, run
+`export_schemas.py` and `npm run api-types` as README says; expect E2E's
+Tab-stop counts to change with the navbar. Alternate runs may take the
 "delete it" route instead, building `bookmarks` from scratch beside the
 deleted example; say which route the report covers. Keep it minimal. The point is to discover what the pattern
 makes hard, not to write a good feature. In step 4, generate its migration as
@@ -79,18 +83,27 @@ the worktree, set `VIRTUAL_ENV` and `PATH` to the main tree's venv), and the
 E2E suite (`npm run test:e2e`), since the ported specs and shared helpers are
 where scaffolding breaks quietly. Tear the stack down afterward.
 
+Then the dev flow, as a developer would first run it: start the renamed dev
+stack and `backend/run_dev.sh`, sign up through Mailpit
+(`http://localhost:8025`), create a bookmark, and confirm the worker
+declares the feature's job and its email arrives. Stop both, and `down -v`
+the dev stack under the project name it was started with.
+
 ## 4. Judge the experience
 
 - How many files did removing the example touch, and how many had to be
   edited rather than deleted? Every edit outside the feature's own folders is
   a coupling to question: could shared code avoid knowing about the example?
 - Which renames (`app`, `appdb`, `APP_NAME`, compose projects) were spread over
-  more places than the steps admit?
+  more places than the steps admit? Grep for the template's name and its
+  slug across the backend, the env files (`EMAIL_FROM`) and the tests, not
+  only the frontend (`appInfo.test.ts` guards the code and tests).
 - Could any step be replaced by a check that fails loudly (a test or lint
   rule) instead of a line in the docs? CI's Scaffold job already runs
   `.github/scripts/remove_examples.py` and then the suites: compare its
   `DELETE` and `EDITS` with what each step actually needed, and say what else
-  could move into the script or a test.
+  could move into the script or a test. After the script, does the worker
+  still declare `auth.send_registration_email`, and do sign-up's tests pass?
 
 Clean up: tear down any stack, remove the worktree as RULES.md describes
 (unlink `node_modules` first), and delete any branch you created.
