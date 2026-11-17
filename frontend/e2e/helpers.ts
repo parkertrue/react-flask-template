@@ -349,8 +349,13 @@ export async function expectTargetSize(page: Page) {
     ...document.querySelectorAll('a[href], button, input, textarea, select'),
   ]
     // A link in running text (a paragraph, an address, or a label such as
-    // the terms checkbox's) is exempt (SC 2.5.8's inline exception)
-    .filter(el => el.checkVisibility() && !el.closest('p, address, label'))
+    // the terms checkbox's) is exempt (SC 2.5.8's inline exception), but
+    // not one alone in its paragraph, which no sentence holds
+    .filter(el => {
+      const text = el.closest('p, address, label')
+      const inSentence = text !== null && text.textContent.trim() !== el.textContent.trim()
+      return el.checkVisibility() && !inSentence
+    })
     .map(el => ({ el, box: el.getBoundingClientRect() }))
     .filter(({ box }) => box.width < 24 || box.height < 24)
     .map(({ el, box }) => `${el.outerHTML.slice(0, 80)} is ${box.width}x${box.height}`))
