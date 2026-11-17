@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   requestRegistration, completeRegistration, loginUser, logoutUser, logoutAllDevices,
-  clearAuthCookies, deleteAccount, getAccount, exportAccountData,
+  clearAuthCookies, deleteAccount, getAccount, exportAccountData, REGISTRATION_LINK_HOURS,
 } from '../authService'
 import { api } from '@/api/api'
+import { backendConstant } from '@/test/backend'
 import { account, dataExport, tokens } from '@/test/fixtures'
 
 vi.mock('@/api/api')
@@ -11,6 +12,12 @@ vi.mock('@/api/api')
 // Thin wrappers over the api client: each must hit the right endpoint with
 // the right body, and hand back what callers use. Interceptors, refresh and
 // CSRF headers are api.test.ts's job.
+// The page that says how long the emailed link works says what the backend
+// mints it for
+it('gives the sign-up link the lifetime the backend does', () => {
+  expect(REGISTRATION_LINK_HOURS).toBe(backendConstant('auth/emails.py', 'REGISTRATION_LINK_HOURS'))
+})
+
 describe('authService', () => {
   it.each([
     ['requestRegistration', () => requestRegistration('a@example.com'),

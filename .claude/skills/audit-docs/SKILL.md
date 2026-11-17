@@ -26,8 +26,13 @@ Run commands where it is cheap and safe to do so (`--help`, `config --quiet`,
 directory it names, with the environment it implies**? (For example, a
 `flask` command needs whatever loads the env file that `run_dev.sh` loads.)
 Try the ones that need no running services. Pay most attention to the parts
-that drift: setup steps, test commands, ports, env var lists, the HTTPS and deployment sections, and the
-architecture descriptions of folders. Compare the routes in `flask routes` and
+that drift: setup steps, test commands, ports (Mailpit's included), env var
+lists and which service gets each (`check_compose.py`), the worker's and
+email's settings, the lists of rate-limited routes against the code (the
+security events' list has a test), `docs/personal-data.md`'s table against
+what each store holds, every "(DECISIONS.md)" citation (an entry must
+exist), the HTTPS and deployment sections, and the architecture
+descriptions of folders. Compare the routes in `flask routes` and
 the pages in `frontend/src/routes.tsx` with every inventory the skills give
 (routes to probe, journeys to test, states to check): a route or page missing
 from one makes that audit report it covered without looking.
@@ -46,7 +51,8 @@ the README, and `docs/` where it links there, as a new user would, top to bottom
 the code: clone, set up, run dev, run each test suite, build and run
 production. Note every step that is missing, out of order, or that only works
 with knowledge the document doesn't give. Do the same for an operator: deploy,
-renew certificates, back up, upgrade, roll back, rotate secrets, read logs.
+set up email, renew certificates, back up, upgrade, roll back, rotate secrets
+(the SMTP credentials included), read logs.
 What DECISIONS.md leaves to other tools ("Generic server operations are out
 of scope": alerts, log shipping, scheduled backups, hardening) is mentioned
 only if "Operating in Production" fails to say it is not provided. Certificate

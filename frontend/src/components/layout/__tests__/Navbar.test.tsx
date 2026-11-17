@@ -21,7 +21,7 @@ describe('Navbar', () => {
   it('offers a visitor the way in', () => {
     renderNavbar('/')
 
-    expect(links()).toEqual({ Home: '/', 'Log in': '/login', Register: '/register' })
+    expect(links()).toEqual({ Home: '/', 'Log in': '/login', 'Sign up': '/signup' })
     expect(screen.queryByRole('button', { name: 'Log out' })).not.toBeInTheDocument()
   })
 
@@ -39,7 +39,7 @@ describe('Navbar', () => {
   it.each([
     ['/', ['Home']],
     ['/login', ['Log in']],
-    ['/register', ['Register']],
+    ['/signup', ['Sign up']],
   ])('marks the link to %s as the current page', (path, expected) => {
     renderNavbar(path)
 

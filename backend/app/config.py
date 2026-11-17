@@ -228,6 +228,11 @@ class Config:
     # with Redis and rate limiting off.
     USES_SERVICES = True
 
+    # The app's one name, as it introduces itself to other services (the
+    # breach check's User-Agent). frontend/src/appInfo.ts holds the same
+    # name, and a test there keeps the two equal.
+    APP_NAME = 'React + Flask Template'
+
     def __init__(self) -> None:
         # Parse as a string: os.getenv always returns str, and the bare string
         # "0" is truthy, which would silently enable debug mode wherever

@@ -38,7 +38,9 @@ checks a new password against Have I Been Pwned's Pwned Passwords
 (`backend/app/utils/breached.py`), as NIST SP 800-63B requires, through its
 range API: 5 characters of the password's SHA-1 leave the server, padded, so
 the service learns nothing it could tie to the user. If the service is down
-or slow (2 s), the password is accepted and `breach_check_failed` logged,
+or slow (2 s for the whole call, the name lookup included: it runs on a
+pool of 4 threads, so a call past the deadline holds no request thread or
+database connection), the password is accepted and `breach_check_failed` logged,
 since a third party's outage must not stop sign-up; a breached password can
 slip through meanwhile. Login and account deletion never check: they only
 compare. CodeQL's `py/weak-sensitive-data-hashing` flags the SHA-1 of the
@@ -54,25 +56,44 @@ sessions. Revoking on reuse would also log out a second tab that lost the
 rotation race. *Revisit when:* the app holds data that justifies logging users
 out on a false positive.
 
-**No per-IP quota on the whole API.** Only login, register, refresh and
-account deletion have Flask limits; users sharing an address (offices, carrier NAT) would lock each
+**No per-IP quota on the whole API.** Only login, sign-up's two steps,
+refresh, account deletion and the data export have Flask limits; users sharing an address (offices, carrier NAT) would lock each
 other out. nginx's per-IP `limit_req`/`limit_conn` on `/api` is the coarse
 backstop.
+
+**Sign-up proves the address first, and answers every address alike**
+(user, 2026-11-09). `POST /api/auth/register` takes an email alone, answers
+202 whatever the address, and queues one of two emails: a link to finish
+(24 hours, `utils/links.py`) or, for a registered address, a note saying so
+with a login link. No row exists until the link is used. The form therefore
+never tells a stranger which addresses have accounts, and a mistyped address
+leaves nothing behind. Each link works once, even after the account it made
+is deleted (its hash is kept in Redis for its lifetime); a link for an
+address that has an account since answers 409. The costs: sign-up takes two
+steps, and nobody can sign up while email is down or unconfigured (a local
+production run included) or while Redis is down, since finishing claims the
+link there. *Revisit when:* an app needs accounts without a verified email
+(an invitation flow, SSO), or the 24-hour window proves too short or too
+long.
 
 **Rate limits fall back to per-worker memory while Redis is down.** Limits get
 looser (per worker, reset on restart) instead of every limited route failing.
 
-**A Redis outage still costs a few seconds once per reconnect window.** While
-Redis is down, `RedisService`'s circuit breaker fails calls at once, but every
-`RECONNECT_INTERVAL_SECONDS` (5 s) each worker lets one call probe Redis. The
-probe pays the 1 s lookup of the stopped container's name twice (the client's
-one retry, kept so a connection Redis dropped is replaced unseen), and login
-adds Flask-Limiter's own 1 s probe. Measured (PR #28, backend on
-`APP_ENV=production`): login 503 in about 4 s at worst, refresh 3 s, other
-routes 1 s, everything else in the window under 100 ms. The answer is the
-same 503 either way. A no-retry probe client would save about 1 s for a
-second client and more breaker code. *Revisit when:* a readiness check or
-alert exists for Redis, or users see these delays outside an outage.
+**A Redis outage still costs a few seconds once per reconnect window.** Every
+call a request makes to Redis (the token store and the job queue, so login,
+refresh, sign-up, logout and account deletion alike) shares one breaker per
+worker process (`redis_unreachable`, `redis_service.py`): once a call fails to
+connect, each fails at once for `RECONNECT_INTERVAL_SECONDS` (5 s), then one
+call probes Redis again. The probe pays the 1 s lookup of the stopped
+container's name twice (the client's one retry, kept so a connection Redis
+dropped is replaced unseen); a rate-limited route adds Flask-Limiter's own
+probe, which backs off by itself and counts in memory meanwhile. Measured:
+login 503 in about 4 s at worst, refresh 3 s (PR #28, backend on
+`APP_ENV=production`); sign-up 2.2 s for the probe, then as fast as a
+sign-up with Redis up (E2E stack, 2026-11-16). The answer is the same 503
+either way. A no-retry probe client would save about 1 s for a second client
+and more breaker code. *Revisit when:* a readiness check or alert exists for
+Redis, or users see these delays outside an outage.
 
 **Flask rate limits are off in E2E.** E2E registers dozens of accounts from
 one address, which register's `10 per hour` would block, so the E2E backend
@@ -193,7 +214,7 @@ attribution from derived apps.
 
 **Legal placeholders are not enforced at build.** Nothing stops a
 production image from serving the placeholder `OPERATOR` values in
-`frontend/src/legal.ts`, `contact@example.com` in `security.txt`, or the
+`frontend/src/appInfo.ts`, `contact@example.com` in `security.txt`, or the
 "Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before launch" list is
 the only safeguard: a build check would have to tell the production image
 apart from the test stack's, which serves the same placeholders on purpose

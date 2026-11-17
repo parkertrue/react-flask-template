@@ -1,4 +1,6 @@
+import hashlib
 import time
+
 import redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
@@ -7,7 +9,9 @@ from flask import Flask, current_app
 # How long to wait after a failed connection before trying again. Each attempt
 # can block a request for several seconds while Redis is down: the timeouts
 # below don't cover looking up the name of a stopped container, which can
-# take seconds on its own.
+# take seconds on its own. Every call a request makes to Redis (the token
+# store here, the job queue in jobs.py) skips it meanwhile; the rate limiter
+# keeps its own back-off.
 RECONNECT_INTERVAL_SECONDS = 5
 
 # The app's client. redis-py's default retries a failed command 10 times with
@@ -35,6 +39,18 @@ class TokenStoreUnavailable(Exception):
     """
 
 
+def redis_unreachable(app: Flask) -> bool:
+    """Whether a call to Redis failed to connect within the last
+    RECONNECT_INTERVAL_SECONDS, so the next one should not try"""
+    retry_at: float = app.extensions.get('redis_retry_at', 0.0)
+    return time.monotonic() < retry_at
+
+
+def mark_redis_unreachable(app: Flask) -> None:
+    """Make the app's calls to Redis fail at once for RECONNECT_INTERVAL_SECONDS"""
+    app.extensions['redis_retry_at'] = time.monotonic() + RECONNECT_INTERVAL_SECONDS
+
+
 def get_redis_service() -> 'RedisService | None':
     """The current app's RedisService, or None if Redis is disabled or down.
 
@@ -53,8 +69,7 @@ def connect_redis(app: Flask) -> 'RedisService | None':
     A worker that boots while Redis is unreachable would otherwise stay
     without it for life; once connected, redis-py reconnects by itself.
     """
-    now = time.monotonic()
-    if now < app.extensions.get('redis_retry_at', 0):
+    if redis_unreachable(app):
         return None
 
     try:
@@ -64,7 +79,7 @@ def connect_redis(app: Flask) -> 'RedisService | None':
     except Exception:
         app.logger.exception(
             'Redis connection failed; retrying in %ss', RECONNECT_INTERVAL_SECONDS)
-        app.extensions['redis_retry_at'] = now + RECONNECT_INTERVAL_SECONDS
+        mark_redis_unreachable(app)
         return None
 
     app.extensions['redis_service'] = service
@@ -80,6 +95,12 @@ MAX_SESSIONS_PER_USER = 10
 def _tokens_key(user_id: int) -> str:
     """One sorted set per user: member = refresh-token JTI, score = expiry time"""
     return f'refresh_tokens:{user_id}'
+
+
+def _used_link_key(token: str) -> str:
+    """One key per emailed link once used: a hash of its token, never the
+    token, which a reader of Redis could otherwise use"""
+    return f'used_links:{hashlib.sha256(token.encode()).hexdigest()}'
 
 
 # Records a refresh token, in place of the one it replaces when rotating.
@@ -123,9 +144,9 @@ class RedisService:
     without the log a full Redis (OOM), a wrong password and a key outside
     the ACL user's patterns (NOPERM) would all look the same.
 
-    After a connection failure, calls fail at once for
-    RECONNECT_INTERVAL_SECONDS instead of each waiting out the outage, so a
-    few requests can't tie up every worker thread.
+    After a connection failure, here or in the job queue, calls fail at once
+    for RECONNECT_INTERVAL_SECONDS instead of each waiting out the outage, so
+    a few requests can't tie up every worker thread.
     """
 
     def __init__(self, url: str, max_connections: int):
@@ -141,7 +162,6 @@ class RedisService:
             **REDIS_CLIENT_OPTIONS,
         )
         self._client.ping()
-        self._retry_at = 0.0
         # Sent by hash (EVALSHA) after the first call, loaded again if Redis
         # restarted and forgot it
         self._record_token = self._client.register_script(_RECORD_TOKEN)
@@ -151,16 +171,16 @@ class RedisService:
         return self._client
 
     def _check_reachable(self) -> None:
-        if time.monotonic() < self._retry_at:
+        if redis_unreachable(current_app):
             raise _Skipped('Redis was unreachable; not retrying yet')
 
-    def _failed(self, error: redis.RedisError, message: str, user_id: int) -> None:
+    def _failed(self, error: redis.RedisError, message: str, *args: object) -> None:
         """Log a failure, and stop calling Redis for a while if it is unreachable"""
         if isinstance(error, _Skipped):
             return  # logged when the connection failed
         if isinstance(error, (redis.ConnectionError, redis.TimeoutError)):
-            self._retry_at = time.monotonic() + RECONNECT_INTERVAL_SECONDS
-        current_app.logger.exception(message, user_id)
+            mark_redis_unreachable(current_app)
+        current_app.logger.exception(message, *args)
 
     def _record(self, user_id: int, jti: str, ttl_seconds: int, replaces: str) -> bool:
         self._check_reachable()
@@ -231,3 +251,24 @@ class RedisService:
         except redis.RedisError as error:
             self._failed(error, 'Could not revoke the sessions of user %s', user_id)
             return None
+
+    def claim_link(self, token: str, ttl_seconds: int) -> bool | None:
+        """Mark an emailed link used, for as long as it could still work.
+
+        False if it was used already, None if Redis failed: a link must work
+        once, so the caller refuses it either way.
+        """
+        try:
+            self._check_reachable()
+            return bool(self._client.set(_used_link_key(token), 1, nx=True, ex=ttl_seconds))
+        except redis.RedisError as error:
+            self._failed(error, 'Could not mark a link used')
+            return None
+
+    def release_link(self, token: str) -> None:
+        """Let a claimed link work again: what it was used for failed"""
+        try:
+            self._check_reachable()
+            self._client.delete(_used_link_key(token))
+        except redis.RedisError as error:
+            self._failed(error, 'Could not release a used link')

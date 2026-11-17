@@ -4,7 +4,7 @@ Every app built from the template collects personal data from its first sign-up,
 
 **What ships:**
 - `/privacy`, `/terms` and `/contact` (`frontend/src/pages/`), linked from the footer of every page. Each opens with a placeholder notice and gives one heading per topic, with what to write in brackets.
-- `frontend/src/legal.ts`: the operator's name, address and contact email, which the pages show, and `TERMS_VERSION`.
+- `frontend/src/appInfo.ts`: the operator's name, address and contact email, which the pages show, and `TERMS_VERSION`.
 - A required checkbox on the page the sign-up email links to, "I accept the Terms and the Privacy notice". The form sends the version it showed, the backend refuses any but the current `TERMS_VERSION` (`backend/app/auth/models.py`) with a 409 `TERMS_OUTDATED`, and `users` records `terms_version` and `terms_accepted_at`.
 - `frontend/public/.well-known/security.txt` (RFC 9116), where to report a security problem.
 
@@ -18,9 +18,11 @@ Every app built from the template collects personal data from its first sign-up,
 | Refresh-token ids, at most 10 per user | Redis | Until the session expires (7 days idle, 30 at most), logs out or deletes the account |
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
 | Queued jobs' arguments, such as an email's recipient | Redis | Until the job runs; a day after its last try, for one that keeps failing |
+| A hash of each sign-up link used, no address | Redis | 24 hours, the link's lifetime |
+| Everything above that Redis held, deleted and expired values included | Redis's on-disk log (the bundled Redis, in production) | Until Redis compacts the log, after about 1 MB of writes; a managed Redis keeps it on its provider's terms |
 | Emails sent | Your mail provider | By the provider's retention |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
-| Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |
+| Security events: IP, user id; a keyed hash of the typed email on a failed login or a sign-up request | The backend's stdout, kept by Docker | The same |
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
 | Refresh token | Cookie `__Secure-refresh_token` (HttpOnly) | Up to 30 days |
 
@@ -33,15 +35,15 @@ Deleting an account (the Account page asks for the password) deletes its `users`
 No analytics and no third-party requests: the browser talks to your server alone. The server sends email through the mail provider you choose ([Sending Email](deployment.md#sending-email)), a processor like your host and any managed service you add. The cookie and `localStorage` are strictly necessary for the login the user asked for, so no consent banner is needed.
 
 **Before launch:**
-1. Fill in `legal.ts`, then write the three pages for your app from the table above and your own features.
+1. Fill in `OPERATOR` in `appInfo.ts`, then write the three pages for your app from the table above and your own features.
 2. Choose how long to keep logs (France's CNIL suggests 6 to 12 months for security logs), state it in the privacy notice, and enforce it by age once logs are shipped ([Logs](deployment.md#logs)). On the Compose path, save or ship the logs before each deploy, or the deploy erases them: they also hold the only record of which accounts were deleted, which a restore brings back and you must delete again ([Deleted accounts come back](deployment.md#deleted-accounts-come-back)). A restore that loses data (the accounts and writes since the backup) is a personal data breach to record (GDPR Art. 33(5)). The bundled MySQL keeps no binary log; turning it back on (for point-in-time recovery) keeps every write, deleted rows included, for its retention: state that in the notice.
 3. Name every provider that processes personal data for you (the host, a log service, a CDN, an email service) in the privacy notice, and sign each one's data processing agreement. If one processes EU or UK users' data outside the EU/EEA or UK, note the transfer safeguard in the notice (an adequacy decision, or the standard contractual clauses in its agreement), or choose a region inside. Encrypt the server's disk ([Not Included](deployment.md#not-included)), and name it in the notice and the record of processing as one of your security measures.
-4. Set `security.txt`'s `Contact` to the email in `legal.ts` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year (the same test fails from 30 days before it lapses).
+4. Set `security.txt`'s `Contact` to the email in `appInfo.ts` (a test checks they match) and `Expires` to under a year away, and renew `Expires` every year (the same test fails from 30 days before it lapses).
 5. Ask the lawyer whether your markets need a checkbox or whether a sentence beside the button would do, and whether a German audience needs the contact page labelled "Impressum" with more details on it.
 6. Check whether the European Accessibility Act covers your service (e-commerce, banking and a few other sectors; microenterprises are exempt).
-7. When the terms change, raise `TERMS_VERSION` in both `legal.ts` and `backend/app/auth/models.py`. Asking existing users to accept the new terms is your app's job.
+7. When the terms change, raise `TERMS_VERSION` in both `appInfo.ts` and `backend/app/auth/models.py`. Asking existing users to accept the new terms is your app's job.
 
 **Duties that start with a feature:**
 - **Content other users can see** (sharing, profiles, comments, uploads): a way to report illegal content (EU Digital Services Act, Art. 16), and in the US a DMCA agent and a repeat-infringer policy.
 - **Children:** an audience under 13, or knowing that a user is, brings COPPA, and consent-based processing the GDPR's age of consent.
-- **Email** (verification, password reset, newsletters): CAN-SPAM, PECR and CASL.
+- **Email beyond sign-up** (newsletters, product announcements): CAN-SPAM, PECR and CASL, with consent and an unsubscribe link. Sign-up's email is transactional, which needs neither, but must name its sender truthfully (`EMAIL_FROM`).

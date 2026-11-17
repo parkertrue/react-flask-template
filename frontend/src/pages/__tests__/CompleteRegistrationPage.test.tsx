@@ -7,17 +7,28 @@ import { completeRegistration } from '@/auth/authService'
 import { storage } from '@/auth/storage'
 import { errorBody, httpError, tokens } from '@/test/fixtures'
 import { renderRoutes } from '@/test/router'
-import { APP_NAME } from '@/appName'
-import { TERMS_VERSION } from '@/legal'
+import { APP_NAME, TERMS_VERSION } from '@/appInfo'
 
 vi.mock('@/auth/authService')
 
-const LINK = '/register/complete#email=user%40example.com&token=a-token'
+// A token as the backend mints it: its payload, base64url JSON naming the
+// address, then the time and the signature
+function linkToken(email: string) {
+  const payload = btoa(JSON.stringify(email)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+  return `${payload}.aTime.aSignature`
+}
+const TOKEN = linkToken('user@example.com')
+const LINK = `/signup/complete#token=${TOKEN}`
+
+// The backend's answer: the login, and the account's address
+function registered(email = 'user@example.com') {
+  return { ...tokens('new-access', 'new-csrf'), email }
+}
 
 function renderPage(entry = LINK) {
   return renderRoutes([{
     element: <GuestRoute />,
-    children: [{ path: '/register/complete', element: <CompleteRegistrationPage /> }],
+    children: [{ path: '/signup/complete', element: <CompleteRegistrationPage /> }],
   },
   // Wherever signing in leads, a feature's page the test need not know
   { path: AFTER_LOGIN_PATH, element: <p>Signed in</p> },
@@ -47,7 +58,7 @@ async function fill(user: UserEvent, values: Values = {}) {
 }
 
 describe('CompleteRegistrationPage', () => {
-  it("shows the link's address, read-only, for password managers, and the password fields", () => {
+  it("shows the token's address, read-only, for password managers, and the password fields", () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Finish signing up' })).toBeInTheDocument()
@@ -62,15 +73,38 @@ describe('CompleteRegistrationPage', () => {
   it('takes the token off the address bar and out of history, keeping the state', async () => {
     const state = { from: { pathname: '/account' } }
     const { router } = renderRoutes([{
-      path: '/register/complete', element: <CompleteRegistrationPage />,
-    }], { pathname: '/register/complete', hash: LINK.slice(LINK.indexOf('#')), state })
+      path: '/signup/complete', element: <CompleteRegistrationPage />,
+    }], { pathname: '/signup/complete', hash: LINK.slice(LINK.indexOf('#')), state })
 
     await waitFor(() => expect(router.state.location.hash).toBe(''))
-    expect(router.state.location.pathname).toBe('/register/complete')
+    expect(router.state.location.pathname).toBe('/signup/complete')
     expect(router.state.historyAction).toBe('REPLACE')
     expect(router.state.location.state).toEqual(state)
     // The page still holds what it read
     expect(emailField()).toHaveValue('user@example.com')
+  })
+
+  it("shows the address the token names, never one the link adds", () => {
+    renderPage(`/signup/complete#email=victim%40example.com&token=${linkToken('attacker@example.com')}`)
+
+    expect(emailField()).toHaveValue('attacker@example.com')
+  })
+
+  // Their payloads hold base64url's own characters, '_' and '-'
+  it.each(['user?@example.com', 'user~@example.com'])('reads %s from its token', email => {
+    renderPage(`/signup/complete#token=${linkToken(email)}`)
+
+    expect(emailField()).toHaveValue(email)
+  })
+
+  it.each([
+    ['compressed', '.eJyrVkpUslIqLU4tUqoFAB2bBHU.aTime.aSignature'],
+    ['not a token', 'garbage'],
+  ])('shows no address when the token is %s, but keeps the form', (_, token) => {
+    renderPage(`/signup/complete#token=${token}`)
+
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
+    expect(field.password()).toBeInTheDocument()
   })
 
   it('asks the user to accept the terms and privacy notice, linked in new tabs', () => {
@@ -87,10 +121,10 @@ describe('CompleteRegistrationPage', () => {
   })
 
   it('says what to do without a link, and offers to start again', () => {
-    renderPage('/register/complete')
+    renderPage('/signup/complete')
 
     expect(screen.getByText(/This page needs the link from your email/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
+    expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/signup')
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -124,8 +158,10 @@ describe('CompleteRegistrationPage', () => {
     // One example per field: the rules themselves are covered in validation.test.ts
     it.each<[string, Values, keyof typeof field | 'acceptTerms', string]>([
       ['a short password', { password: 'too short' }, 'password', 'at least 15 characters'],
+      ['a password holding the address', { password: 'mine is user@example.com' }, 'password',
+        "doesn't contain your email address"],
       ['passwords that differ', { confirmPassword: 'Different123' }, 'confirmPassword', 'Passwords do not match'],
-      ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to register'],
+      ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to sign up'],
     ])('stops %s, explains, and focuses the first bad field', async (_, values, name, message) => {
       const { user } = renderPage()
       await fill(user, values)
@@ -141,22 +177,24 @@ describe('CompleteRegistrationPage', () => {
   })
 
   describe('submitting', () => {
-    it("makes the account with the link's token, signs in and moves on", async () => {
-      vi.mocked(completeRegistration).mockResolvedValue(tokens('new-access', 'new-csrf'))
-      const { user } = renderPage()
+    it("makes the account with the link's token, signs in under the server's address and moves on", async () => {
+      // Another address than the token's, only to show which one is kept
+      vi.mocked(completeRegistration).mockResolvedValue(registered('account@example.com'))
+      const { user } = renderPage(`/signup/complete#email=victim%40example.com&token=${TOKEN}`)
       await fill(user)
 
       await user.click(submitButton())
 
       expect(await screen.findByText('Signed in')).toBeInTheDocument()
-      expect(completeRegistration).toHaveBeenCalledExactlyOnceWith('a-token', 'a valid passphrase', TERMS_VERSION)
+      expect(completeRegistration).toHaveBeenCalledExactlyOnceWith(TOKEN, 'a valid passphrase', TERMS_VERSION)
       expect(storage.getAccessToken()).toBe('new-access')
-      expect(storage.getEmail()).toBe('user@example.com')
+      expect(storage.getEmail()).toBe('account@example.com')
     })
 
     it.each([
-      ['an expired link', 'LINK_EXPIRED', 'This link has expired.', 'Start again', '/register'],
-      ['a link this app never sent', 'LINK_INVALID', 'This link is not valid.', 'Start again', '/register'],
+      ['an expired link', 'LINK_EXPIRED', 'This link has expired.', 'Start again', '/signup'],
+      ['a link this app never sent', 'LINK_INVALID', 'This link is not valid.', 'Start again', '/signup'],
+      ['a link used for an account since deleted', 'LINK_USED', 'This link has already been used.', 'Start again', '/signup'],
       ['a link already used', 'EMAIL_ALREADY_REGISTERED', 'This account is already set up.', 'Log in', '/login'],
     ] as const)('replaces the form for %s, focuses why, and offers what next', async (_, code, message, action, href) => {
       vi.mocked(completeRegistration).mockRejectedValue(httpError(400, errorBody(code, 'x')))
@@ -172,10 +210,13 @@ describe('CompleteRegistrationPage', () => {
       expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     })
 
-    // The field's own message, focused, like a failed submit's
-    it('ties a breached password to the Password field, and lets the user try another', async () => {
-      vi.mocked(completeRegistration).mockRejectedValue(httpError(422, errorBody(
-        'PASSWORD_BREACHED', 'This password has appeared in a data breach. Choose another.')))
+    // The field's own message, focused, like a failed submit's. A guessable
+    // one reaches the server when the page could not read the token's address.
+    it.each([
+      ['breached', 'PASSWORD_BREACHED', 'This password has appeared in a data breach. Choose another.'],
+      ['guessable', 'PASSWORD_GUESSABLE', "Choose a password that doesn't contain your email address or the app's name."],
+    ] as const)('ties a %s password to the Password field, and lets the user try another', async (_, code, message) => {
+      vi.mocked(completeRegistration).mockRejectedValue(httpError(422, errorBody(code, message)))
       const { user } = renderPage()
       await fill(user)
 
@@ -183,8 +224,7 @@ describe('CompleteRegistrationPage', () => {
 
       await waitFor(() => expect(field.password()).toHaveFocus())
       expect(field.password()).toHaveAttribute('aria-invalid', 'true')
-      expect(field.password()).toHaveAccessibleDescription(expect.stringContaining(
-        'This password has appeared in a data breach. Choose another.'))
+      expect(field.password()).toHaveAccessibleDescription(expect.stringContaining(message))
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
     })
@@ -206,7 +246,7 @@ describe('CompleteRegistrationPage', () => {
     })
 
     it('keeps focus and ignores repeat submits while the request is in flight', async () => {
-      const { promise, resolve: finish } = Promise.withResolvers<ReturnType<typeof tokens>>()
+      const { promise, resolve: finish } = Promise.withResolvers<ReturnType<typeof registered>>()
       vi.mocked(completeRegistration).mockReturnValue(promise)
       const { user } = renderPage()
       await fill(user)
@@ -224,7 +264,7 @@ describe('CompleteRegistrationPage', () => {
       await user.click(termsCheckbox())
       expect(termsCheckbox()).toBeChecked()
       expect(completeRegistration).toHaveBeenCalledTimes(1)
-      await act(async () => finish(tokens()))
+      await act(async () => finish(registered()))
     })
   })
 })

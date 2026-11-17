@@ -75,8 +75,11 @@ Checks: <check>: <verdict> (<report file>), ...
 ## High
 ## Medium
 ## Low and nits
-(one line each: ID, location, finding, fix; link the check's report; keep
-each finding's `(open: ...)` tag, RULES.md)
+(one line each: ID, location, finding, fix; link the check's report)
+
+## Excluded
+What the checks saw that OPEN-ISSUES.md or DECISIONS.md already documents:
+one line each, the check, the issue or entry, and any edit proposed to it.
 
 ## Cross-check themes
 Problems reported by more than one check, merged into one item, and patterns
@@ -115,12 +118,14 @@ leave the container columns empty)
 The verdict is BLOCKED if any check found a blocker, or any check could not
 run at all.
 
-Then reply to the user with: the verdict, counts by severity, the blockers and
-high findings (one line each), one line per proposed PR (title and the IDs
-it fixes), the IDs going to OPEN-ISSUES.md or DECISIONS.md, the *Decisions
-for you* in full, and the path to the consolidated report. Lead with
-findings recorded nowhere yet; give the ones tagged `(open: ...)` as a
-count and their IDs. A known blocker still blocks. Do not fix or record
-anything. End by asking the user to answer the decisions, and whether to
-record every finding as the *Recording plan* says (OPEN-ISSUES.md's issues and
-DECISIONS.md, combined with what is already there).
+Then reply to the user in RULES.md's reply form, across every check: the
+verdict and the accounting (findings by severity, per check, and every
+excluded item with its issue or entry, so nothing is silently dropped);
+then the findings grouped by proposed PR, each on its own line with its own
+ID, each PR's decisions in full beside it; then the OPEN-ISSUES.md and
+DECISIONS.md groups the same way; then the path to the consolidated report.
+Check by script that every ID in every check's report appears in the reply
+exactly once. A known blocker still blocks. Do not fix or record anything.
+End by asking the user to answer the decisions, one at a time, and whether
+to record every finding as the *Recording plan* says (combined with what
+OPEN-ISSUES.md and DECISIONS.md already hold).

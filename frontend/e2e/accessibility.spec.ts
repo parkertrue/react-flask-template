@@ -2,18 +2,18 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, holdRequests, memberSince,
-  registerAndLogin, requestLink, serviceUnavailable, uniqueEmail,
+  registerAndLogin, requestLink, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
 } from './helpers'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME } from '../src/appInfo'
 
 // Path, title, h1, and how many Tab stops the page has (its navbar's three
 // and the footer's three included)
 const VISITOR_PAGES: [string, string, string, number][] = [
   ['/', APP_NAME, `Welcome to ${APP_NAME}`, 8],
   ['/login', `Log in | ${APP_NAME}`, 'Log in', 10],
-  ['/register', `Register | ${APP_NAME}`, 'Register', 10],
+  ['/signup', `Sign up | ${APP_NAME}`, 'Sign up', 10],
   // Without the emailed link: what to do instead
-  ['/register/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
+  ['/signup/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
   ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice', 9],
   ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service', 8],
   ['/contact', `Contact | ${APP_NAME}`, 'Contact', 10],
@@ -53,7 +53,7 @@ test.describe('Accessibility', () => {
     }
 
     test('form errors are announced and pass', async ({ page }) => {
-      await page.goto('/register')
+      await page.goto('/signup')
       await page.getByRole('button', { name: 'Continue' }).click()
 
       await expect(page.getByLabel('Email')).toBeFocused()
@@ -111,7 +111,7 @@ test.describe('Accessibility', () => {
 
     test('asking for a link, busy and then failed, has no violations', async ({ page }) => {
       const release = await holdRequests(page, 'POST', '**/api/auth/register', serviceUnavailable)
-      await page.goto('/register')
+      await page.goto('/signup')
       await requestLink(page, uniqueEmail('e2e-a11y-busy'))
 
       await expect(page.getByRole('button', { name: 'Sending link...' })).toBeFocused()
@@ -123,7 +123,7 @@ test.describe('Accessibility', () => {
     })
 
     test('the check-your-inbox step has no violations, reflows, shows focus and has large enough targets', async ({ page }) => {
-      await page.goto('/register')
+      await page.goto('/signup')
       // Long, with nowhere to break, as an address can be: it must wrap
       await requestLink(page, uniqueEmail('e2e-a11y-inbox-of-a-rather-long-address'))
 
@@ -136,8 +136,25 @@ test.describe('Accessibility', () => {
       await expectTargetSize(page)
     })
 
+    test('sending the link again, busy and then failed, has no violations', async ({ page }) => {
+      await page.goto('/signup')
+      await requestLink(page, uniqueEmail('e2e-a11y-again'))
+      await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
+      const release = await holdRequests(page, 'POST', '**/api/auth/register', serviceUnavailable)
+
+      await page.getByRole('button', { name: 'Send again' }).click()
+
+      await expect(page.getByRole('button', { name: 'Sending...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
+      await expectReflow(page)
+    })
+
     test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
-      await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+      await page.goto(UNSIGNED_LINK)
 
       await expect(page.getByLabel('Email')).toHaveValue('someone@example.com')
       await expectNoViolations(page)
@@ -150,7 +167,7 @@ test.describe('Accessibility', () => {
 
     test("finishing, busy and then failed, has no violations", async ({ page }) => {
       const release = await holdRequests(page, 'POST', '**/api/auth/register/complete', serviceUnavailable)
-      await page.goto('/register/complete#email=someone%40example.com&token=a-token')
+      await page.goto(UNSIGNED_LINK)
       await fillRegistration(page)
 
       await expect(page.getByRole('button', { name: 'Creating account...' })).toBeFocused()
@@ -161,15 +178,79 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
     })
 
-    test('a refused link has no violations, and focuses why', async ({ page }) => {
-      await page.goto('/register/complete#email=someone%40example.com&token=forged.token.here')
+    test("the link's page, with every field refused, has no violations, and focuses the first", async ({ page }) => {
+      await page.goto(UNSIGNED_LINK)
+
+      await page.getByRole('button', { name: 'Create account' }).click()
+
+      const password = page.getByLabel('Password', { exact: true })
+      await expect(password).toBeFocused()
+      await expect(password).toHaveAttribute('aria-invalid', 'true')
+      await expectNoViolations(page)
+      await expectReflow(page)
+    })
+
+    test("a breached password is the field's own message, focused, with no violations", async ({ page }) => {
+      await page.route('**/api/auth/register/complete', route => route.fulfill({
+        status: 422,
+        json: { error: { code: 'PASSWORD_BREACHED', message: 'This password has appeared in a data breach. Choose another.' } },
+      }))
+      await page.goto(UNSIGNED_LINK)
       await fillRegistration(page)
 
+      const password = page.getByLabel('Password', { exact: true })
+      await expect(password).toBeFocused()
+      await expect(password).toHaveAccessibleDescription(/appeared in a data breach/)
+      await expectNoViolations(page)
+    })
+
+    test('read-only fields look inactive, busy ones included', async ({ page }) => {
+      const release = await holdRequests(page, 'POST', '**/api/auth/register/complete', serviceUnavailable)
+      await page.goto(UNSIGNED_LINK)
+      const background = (label: string) => page.getByLabel(label, { exact: true })
+        .evaluate(el => getComputedStyle(el).backgroundColor)
+      const readOnly = await background('Email')
+      expect(await background('Password')).not.toBe(readOnly)
+
+      await fillRegistration(page)
+
+      await expect(page.getByRole('button', { name: 'Creating account...' })).toBeFocused()
+      expect(await background('Password')).toBe(readOnly)
+      release()
+      await expect(page.getByRole('alert')).toBeVisible()
+    })
+
+    test('a forged link has no violations, and focuses why', async ({ page }) => {
+      await page.goto(UNSIGNED_LINK)
+      await fillRegistration(page)
+
+      await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)
       await expect(page.getByRole('alert')).toBeFocused()
       await expectNoViolations(page)
       await expectReflow(page)
       await expectTargetSize(page)
     })
+
+    // What the backend answers for a link it signed but won't take
+    for (const [why, status, code, message] of [
+      ['an expired link', 400, 'LINK_EXPIRED', /This link has expired/],
+      ['a link used for an account since deleted', 400, 'LINK_USED', /already been used/],
+      ['a link that made its account already', 409, 'EMAIL_ALREADY_REGISTERED', /already set up/],
+    ] as const) {
+      test(`${why} has no violations, and focuses why`, async ({ page }) => {
+        await page.route('**/api/auth/register/complete', route => route.fulfill({
+          status, json: { error: { code, message: 'refused' } },
+        }))
+        await page.goto(UNSIGNED_LINK)
+        await fillRegistration(page)
+
+        await expect(page.getByRole('alert')).toHaveText(message)
+        await expect(page.getByRole('alert')).toBeFocused()
+        await expectNoViolations(page)
+        await expectReflow(page)
+        await expectTargetSize(page)
+      })
+    }
   })
 
   test.describe('a signed-in user', () => {

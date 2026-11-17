@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME } from '../src/appInfo'
 import { uniqueEmail } from './helpers'
 
 test.describe('System Health Check', () => {
@@ -17,11 +17,11 @@ test.describe('System Health Check', () => {
     await expect(page.getByRole('heading', { level: 1, name: `Welcome to ${APP_NAME}` })).toBeVisible({ timeout: 10000 })
   })
 
-  test('can navigate to register page', async ({ page }) => {
-    await page.goto('/register')
+  test('can navigate to the sign-up page', async ({ page }) => {
+    await page.goto('/signup')
 
-    await expect(page).toHaveURL(/\/register/)
-    await expect(page.getByRole('heading', { name: /register/i })).toBeVisible()
+    await expect(page).toHaveURL(/\/signup/)
+    await expect(page.getByRole('heading', { name: 'Sign up' })).toBeVisible()
   })
 
   test('registration API returns JSON through nginx', async ({ request }) => {

@@ -167,7 +167,7 @@ class TestDeleteAccount:
         email, terms_version = sample_user.email, sample_user.terms_version
         delete_account(client, auth_headers)
 
-        response = register(client, email, PASSWORD, terms_version)
+        response = register(client, email, 'a brand new passphrase', terms_version)
 
         assert response.status_code == 200
 

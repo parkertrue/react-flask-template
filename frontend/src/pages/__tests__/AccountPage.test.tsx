@@ -9,11 +9,11 @@ import { storage } from '@/auth/storage'
 import {
   getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData,
 } from '@/auth/authService'
-import { saveJsonFile } from '@/utils/download'
+import { saveJsonFile, slugify } from '@/utils/download'
 import type { ErrorCode } from '@/api/errors'
 import { account, dataExport, errorBody, httpError } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 
 vi.mock('@/auth/authService')
 // Only the browser's download is stood in for; the file's name is the page's
@@ -192,7 +192,7 @@ describe('AccountPage', () => {
       await user.click(downloadButton())
 
       // The server's UTC date, whatever the local clock says
-      const filename = 'react-flask-template-data-2026-03-14.json'
+      const filename = `${slugify(APP_NAME)}-data-2026-03-14.json`
       expect(await section().findByRole('status')).toHaveTextContent(`Download started: ${filename}`)
       expect(saveJsonFile).toHaveBeenCalledExactlyOnceWith(filename, dataExport())
     })

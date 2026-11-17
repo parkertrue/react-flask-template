@@ -76,7 +76,7 @@ real users' data. `docs/deployment.md` has the detail of each.
   Certbot's DNS-01 challenge with your DNS host's plugin and a deploy hook
   that copies the certificate into `nginx/certs/` and reloads nginx. Use
   Let's Encrypt's staging server while trying it. `DECISIONS.md` records
-  that this waits for a server.
+  that this waits for a real deployment.
 - **Email.** Sign up with a mail provider, set up the sending domain
   (SPF, DKIM, DMARC) and set `EMAIL_URL` and `EMAIL_FROM` ("Sending
   Email"). Send one email end to end, ask for the provider's production

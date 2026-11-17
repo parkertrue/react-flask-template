@@ -154,6 +154,8 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -subj "/C=US/ST=California/L=San Francisco/O=Dev/CN=localhost"
 ```
 
+Locally too, sign-up needs a real mail provider: production refuses Mailpit and the example's email values, and its worker stops without them ([Sending Email](docs/deployment.md#sending-email)). To try the app without one, use the dev or E2E stack, which deliver to Mailpit.
+
 ### Build and Start
 
 ```bash
@@ -177,7 +179,9 @@ The app is at `https://<SERVER_NAME>`. On a server, deploy with `deploy.sh` inst
 - `frontend/src/components/layout/Navbar.tsx` and `frontend/src/pages/HomePage.tsx`: the links to it, and their tests
 - `AFTER_LOGIN_PATH` in `frontend/src/auth/GuestRoute.tsx`: where logging in leads
 
-CI's Scaffold job deletes the examples and edits exactly these files (`.github/scripts/remove_examples.py`), then runs lint and the unit suites, so shared code can't come to depend on an example. Changing a wiring point means changing the script with it.
+A feature's background jobs plug in through its own blueprint, as its data export does: `@job(<blueprint>)` on the function (`backend/app/utils/jobs.py`; sign-up's is in `backend/app/auth/routes.py`), queued from a route with `.send(...)`. Its unit tests read what a request queued with the `jobs` fixture and the email a job sent with `outbox` (`backend/tests/unit/conftest.py`).
+
+CI's Scaffold job deletes the examples and edits exactly these files (`.github/scripts/remove_examples.py`), renames the app (step 5), then runs lint and the unit suites, so shared code can't come to depend on an example or the template's name. Changing a wiring point means changing the script with it.
 
 **Steps:**
 
@@ -198,7 +202,7 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
    ```
 
    Upgrade first: Alembic only writes a migration against an up-to-date database. In the generated file, keep only the `op.drop_table(...)` lines in `downgrade()`: MySQL will not drop an index that a foreign key uses, and dropping the table drops its indexes anyway. Then run `./run_tests.sh integration`, whose `test_migrations.py` checks that the migrations match the models and undo cleanly.
-5. Name the app, without using anyone else's trademark: `APP_NAME` in `frontend/src/appName.ts` and the `<title>` in `frontend/index.html` (a test checks they match), and describe it in `APP_TAGLINE` beside the name. Replace the placeholder icon, `frontend/public/favicon.svg`.
+5. Name the app, without using anyone else's trademark, in three places: `APP_NAME` in `frontend/src/appInfo.ts`, the `<title>` in `frontend/index.html`, and `APP_NAME` in `backend/app/config.py`, which the backend introduces itself by (a test checks that the three match, and that no other code or test writes the name). Describe it in `APP_TAGLINE` beside the name. Put the name in the sender of the emails the app sends: `EMAIL_FROM` in `.env.dev` and `.env.test`, and in your `.env.prod`. Replace the placeholder icon, `frontend/public/favicon.svg`.
 6. Rewrite this README, `docs/` and `CLAUDE.md` for your app, and choose its license: replace `LICENSE` and the `license` field in `frontend/package.json`, then run `npm install` in `frontend/` so `package-lock.json` matches (the template is MIT-0, so your app owes it no notice). Delete `.claude/skills/audit-scaffold/`, which acts out these steps on the template, and remove it from `/audit`'s `periodic` tier and Docker order (`.claude/skills/audit/SKILL.md`); keep the other audits in `.claude/skills/` and update their references to notes and to `audit-scaffold`, or delete them. Keep `.claude/skills/_audit-shared/OPEN-ISSUES.md` as your app's list of open work, starting with its getting-started issues, and `DECISIONS.md` beside it as its accepted trade-offs.
 7. Write the legal pages and work through the "Before launch" list in [docs/personal-data.md](docs/personal-data.md).
 

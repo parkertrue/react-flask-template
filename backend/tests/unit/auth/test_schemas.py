@@ -278,3 +278,40 @@ class TestPasswordNormalization:
         password = RegisterRequest(email='test@example.com', password='㌕' * 3).password
 
         assert password == 'キログラム' * 3
+
+
+class TestGuessablePasswords:
+    """is_guessable: what anyone could guess a password from (ASVS 6.2.11)"""
+
+    EMAIL = 'jordan@example.com'
+    APP = 'Some App'
+
+    @pytest.mark.parametrize('password', [
+        'my address is jordan@example.com',
+        'JORDAN@EXAMPLE.COM is my address',
+        'hello jordan, a long passphrase',
+        'Ｊｏｒｄａｎ in full-width letters',
+        'the some app is my favourite',
+        'SOME APP is my favourite thing',
+    ])
+    def test_refuses_the_address_its_local_part_or_the_app_s_name(self, password):
+        assert schemas.is_guessable(password, self.EMAIL, self.APP) is True
+
+    @pytest.mark.parametrize('password', [
+        'a valid passphrase of words',
+        # Pieces of the words, not the words
+        'jorda example some ap',
+    ])
+    def test_accepts_a_password_holding_none_of_them(self, password):
+        assert schemas.is_guessable(password, self.EMAIL, self.APP) is False
+
+    def test_a_short_local_part_may_appear(self):
+        """Too short to tell from an ordinary word"""
+        assert schemas.is_guessable('a joyful passphrase', 'joy@example.com', self.APP) is False
+
+    def test_the_whole_address_is_refused_even_when_its_local_part_is_short(self):
+        assert schemas.is_guessable('write to joy@example.com', 'joy@example.com', self.APP) is True
+
+    def test_a_local_part_at_the_shortest_length_is_refused(self):
+        local_part = 'x' * schemas.GUESSABLE_LOCAL_PART_MIN_LENGTH
+        assert schemas.is_guessable(f'a {local_part} passphrase', f'{local_part}@example.com', self.APP) is True

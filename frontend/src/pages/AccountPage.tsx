@@ -14,7 +14,7 @@ import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
 import { saveJsonFile, slugify } from '@/utils/download'
 import { validatePassword, PASSWORD_INPUT_MAX_LENGTH } from '@/utils/validation'
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 import type { LoginState } from './LoginPage'
 
 // The export's file name starts with the app's name

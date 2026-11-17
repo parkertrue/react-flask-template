@@ -16,7 +16,7 @@ Only Nginx is published (ports 80 and 443). The backend calls out to one third p
 
 ## Environment File
 
-`.env.prod` holds only the twelve values that differ per deployment (including `SERVER_NAME`, the domain nginx serves, and the mail server and sender, [Sending Email](#sending-email)), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
+`.env.prod` holds only the twelve values that differ per deployment (including `SERVER_NAME`, the domain nginx serves, and the mail server and sender, [Sending Email](#sending-email)), plus `COMPOSE_PROFILES`, which runs the bundled MySQL and Redis ([External Database or Redis](#external-database-or-redis) replaces either); hosts, ports and `APP_ENV` are fixed in `docker-compose.yml`. Set strong, unique values for every password and `SECRET_KEY`. Leaving one out stops every compose command with `set <NAME> in .env.prod` before anything starts, rather than running Redis on an empty password; an external database or Redis needs none of the bundled one's passwords. Production refuses to start with a `SECRET_KEY` shorter than 32 characters or with the example file's placeholder passwords. Generate values with:
 
 ```bash
 openssl rand -hex 32
@@ -36,7 +36,7 @@ The database keeps its own copy of its users and passwords; `.env.prod` only tel
 docker compose --env-file .env.prod exec db mysql -uroot -p -e "ALTER USER '<user>'@'%' IDENTIFIED BY '<new password>'"
 ```
 
-For a new `DB_ROOT_PASSWORD`, change both `'root'@'%'` and `'root'@'localhost'`; nothing outside the `db` container holds it. A new `REDIS_PASSWORD` or `REDIS_WORKER_PASSWORD` (with the bundled Redis, which reads them at each start) needs only `up -d`, and so does a new `EMAIL_URL` or `EMAIL_FROM`. A new `SECRET_KEY` signs every user out.
+For a new `DB_ROOT_PASSWORD`, change both `'root'@'%'` and `'root'@'localhost'`; nothing outside the `db` container holds it. A new `REDIS_PASSWORD` or `REDIS_WORKER_PASSWORD` (with the bundled Redis, which reads them at each start) needs only `up -d`, and so does a new `EMAIL_URL` or `EMAIL_FROM`. A new `SECRET_KEY` signs every user out and voids every sign-up link not yet used.
 
 ---
 
@@ -90,12 +90,14 @@ Sign-up emails a link before it makes an account, so the app takes no new users 
    EMAIL_FROM="App <no-reply@mail.yourdomain.com>"
    ```
 
-   Percent-encode any `@`, `:` or `/` in the user or password (a provider's user is often an API key or an address). Production refuses plain `smtp://`, the example file's placeholder password and its `example.com` sender. The worker reads both at start and refuses to start without them, so a deploy with a missing or refused value fails there and is rolled back.
+   Percent-encode any `@`, `:` or `/` in the user or password (a provider's user is often an API key or an address). Production refuses plain `smtp://`, the example file's placeholder password and its `example.com` sender. The worker reads both at start and refuses to start without them, so a deploy with a missing or refused value fails there and is rolled back. A local production run needs a real provider too: without one, nobody can sign up there (the dev and E2E stacks deliver to Mailpit instead).
 4. Deploy, then send one email end to end. A new provider account usually starts in a sandbox that delivers only to addresses you have verified: ask for production access before launch.
 
 The provider is a processor of your users' data: name it in the privacy notice ([Personal Data and Legal Pages](personal-data.md), "Before launch", step 3).
 
-A failed send is retried, backing off from 15 seconds to an hour, for about three hours; one the mail server refuses for good (the address does not exist) is not. The worker's log shows each outcome: `email_sent` with the email's Message-ID, which the provider's own log shows too, or Dramatiq's line about a failed job, naming its message by id. The provider's bounce and complaint reports are yours to read: the app does not act on them, and a provider suspends an account whose bounces or complaints run high.
+A failed send is retried, first after 15 to 30 seconds, then about twice as long each time up to an hour, for about three hours; one the mail server refuses for good (the address does not exist) is not. A send cut off by a deploy is put back on the queue at once; one running when the worker is killed rather than stopped (out of memory, a host crash) runs again once the queue notices the dead worker, usually within ten minutes. The worker's log shows each outcome: `email_sent` with the email's Message-ID, which the provider's own log shows too, or Dramatiq's line about a failed job, naming its message by id. The provider's bounce and complaint reports are yours to read: the app does not act on them, and a provider suspends an account whose bounces or complaints run high.
+
+**Capacity.** The worker sends about 2 to 6 emails a second: it runs 2 threads (`WORKER_THREADS`, `backend/app/utils/jobs.py`), each waiting on the mail server for one email at a time. `deploy.sh` runs and replaces exactly one worker container; for more, raise `WORKER_THREADS` before adding containers.
 
 ## Redeploying
 
@@ -261,7 +263,7 @@ The database name may hold only letters, digits and `_`, and `_` is a wildcard i
 **Redis settings the app cannot check.** Its ACL user may not read the server's configuration, so set these yourself:
 
 * `maxmemory-policy noeviction`. Every refresh token carries an expiry, so a policy that evicts keys with one (ElastiCache's default, `volatile-lru`) silently signs users out once memory fills. On ElastiCache, use a custom parameter group.
-* A user named in `REDIS_URL` (required), with the bundled ACL's rules (the `redis` service in `docker-compose.yml`): its own keys, `+@all -@dangerous`, and minus the command category of each module the server loads (`-@search -@json -@timeseries -@bloom -@cuckoo -@cms -@topk -@tdigest`), which `@dangerous` doesn't cover. On ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~LIMITS:* ~dramatiq ~dramatiq:* +@all -@dangerous`, plus a `-@<category>` for each module your engine version offers (not yet checked against ElastiCache). An AUTH token alone, on the `default` user, is refused.
+* A user named in `REDIS_URL` (required), with the bundled ACL's rules (the `redis` service in `docker-compose.yml`): its own keys, `+@all -@dangerous`, and minus the command category of each module the server loads (`-@search -@json -@timeseries -@bloom -@cuckoo -@cms -@topk -@tdigest`), which `@dangerous` doesn't cover. On ElastiCache, an RBAC user with the access string `on ~refresh_tokens:* ~used_links:* ~LIMITS:* ~dramatiq ~dramatiq:* +@all -@dangerous`, plus a `-@<category>` for each module your engine version offers (not yet checked against ElastiCache). An AUTH token alone, on the `default` user, is refused.
 * A second user for the worker, named in `REDIS_WORKER_URL`, with the bundled ACL's `worker` rules: the job queue's keys alone, and `KEYS`, which the queue's upkeep calls, as its one dangerous command. On ElastiCache, the access string `on ~dramatiq ~dramatiq:* +@all -@dangerous +keys`, minus the same module categories.
 * Cluster mode disabled: the app's Redis client is not cluster-aware. That rules out ElastiCache Serverless, which is always clustered and whose eviction policy is fixed at `volatile-lru`; use a node-based cluster.
 
@@ -301,7 +303,7 @@ docker build --platform linux/amd64 -f nginx/Dockerfile -t <registry>/<repo>/ngi
 
 **The client's address.** The load balancer terminates TLS and sends nginx plain HTTP with `X-Forwarded-For`. nginx trusts that header only from `NGINX_TRUSTED_PROXIES` and forwards the result to the backend, whose `TRUSTED_PROXY_COUNT` stays 1. Get the range wrong, and either every user shares the balancer's address (one rate-limit bucket, so one user can lock everyone out), or a client can choose its own address. Set `TRUSTED_PROXY_COUNT` only if you leave nginx out: 1 behind a load balancer, 2 with a CDN in front of it.
 
-**Keep nginx in front of the backend.** It's the layer the E2E suite and the audits test: security headers and CSP, the 16 KB body cap, per-IP rate limits, JSON error bodies and unknown-host refusal. It costs about 10-20 MB per task. Replacing it means rebuilding all of that in the load balancer or CDN. Its per-IP limits count per task, so three tasks give one client three times the budget. The backend's own limits (login, register, refresh, account deletion) count in Redis and stay exact. For exact limits at the edge, use the load balancer's WAF.
+**Keep nginx in front of the backend.** It's the layer the E2E suite and the audits test: security headers and CSP, the 16 KB body cap, per-IP rate limits, JSON error bodies and unknown-host refusal. It costs about 10-20 MB per task. Replacing it means rebuilding all of that in the load balancer or CDN. Its per-IP limits count per task, so three tasks give one client three times the budget. The backend's own limits (login, sign-up's two steps, refresh, account deletion, the data export) count in Redis and stay exact. For exact limits at the edge, use the load balancer's WAF.
 
 CI's Platform smoke job runs this layout (the backend and a `behind-proxy` nginx sharing one network namespace, and the worker on its own) and checks health, headers, the body cap, the HTTPS redirect, the client's address and that the worker starts. Only the Compose stack gets the full E2E suite.
 
@@ -364,7 +366,7 @@ nginx logs one request in 100 that it refuses for a client's rate (a 429), and e
 
 nginx's access log is the one record of each request: the client's address, the request's path, its status and how long it took. The path is logged without its query string, where a link's token would sit, and cut at 512 characters; the User-Agent and Referer are cut at 256. Each line has a `request_id`, which nginx also hands the backend: every backend line written during that request carries the same one, which joins the two.
 
-The backend logs errors, and security events on the `app.security` logger: `login_succeeded`, `login_failed`, `registration_requested` (a sign-up link asked for, naming the address by the same keyed hash as a failed login), `registered`, `refresh_refused` (an old refresh token used again, as a stolen cookie would be), `token_invalid` (a token the app never issued, a refresh token sent as an access token, a refresh cookie without its CSRF value, or a token of a deleted or replaced account), `logout`, `logout_all`, `wrong_password` (a wrong password when deleting the account), `account_deleted` and `rate_limited`. Each names the client by address, and the user by id where there is one (`rate_limited` gives the path and the limit instead). The worker logs `email_sent` (on `app.mail`) with each email's Message-ID, and Dramatiq's lines about each job (`dramatiq.*`), which name a job's message by id: neither holds an address. A failed login names the account by `account`, a keyed hash of its email, so one guessed-at address can be followed across IPs without the log holding it. No line holds a password, token or email.
+The backend logs errors, and security events on the `app.security` logger: `login_succeeded`, `login_failed`, `registration_requested` (a sign-up link asked for, naming the address by the same keyed hash as a failed login), `registered`, `link_refused` (a sign-up link refused as invalid, expired, used or already registered; a run of them from one address is someone probing or replaying links), `refresh_refused` (an old refresh token used again, as a stolen cookie would be), `token_invalid` (a token the app never issued, a refresh token sent as an access token, a refresh cookie without its CSRF value, or a token of a deleted or replaced account), `logout`, `logout_all`, `wrong_password` (a wrong password when deleting the account), `account_deleted`, `data_exported` (a user downloaded their data, the record of an access request) and `rate_limited`. Each names the client by address, and the user by id where there is one (`rate_limited` gives the path and the limit instead). The worker logs `email_sent` (on `app.mail`) with each email's Message-ID, and Dramatiq's lines about each job (`dramatiq.*`), which name a job's message by id: neither holds an address. A failed login names the account by `account`, a keyed hash of its email, so one guessed-at address can be followed across IPs without the log holding it. No line holds a password, token or email.
 
 Two of these events have innocent causes too. `refresh_refused` is a lead, not proof: a refresh whose answer never reached the client (a 504 on `/api/auth/refresh` from the same address just before) has already rotated its token, so the client's next refresh is refused the same way. And after a `SECRET_KEY` rotation, every token signed with the old key logs `token_invalid` once.
 
@@ -394,9 +396,18 @@ Every long-running service has `restart: unless-stopped`, so after a reboot, a p
 
 Docker does not restart a container that runs but fails its health check; only [an alert](#not-included) tells you. With full-disk encryption, every boot waits for the passphrase at the console, so automatic updates that reboot leave the app down until someone types it; and take a virtual machine's snapshots with it powered off, since a running one's snapshot saves its memory, unlocked disk key included.
 
+### Redis in Production
+
+Login, refresh, sign-up, logging out of all devices and account deletion need Redis: while it is down they answer 503 at once (the app stops calling it for a few seconds after a failed call, `DECISIONS.md`), rate limits fall back to each worker's memory, and the rest of the app keeps working. So keep it running:
+
+- **Managed** (ElastiCache, Memorystore, Azure Cache): choose replication with automatic failover ([External Database or Redis](#external-database-or-redis)). A failover still drops connections for a few seconds.
+- **Bundled:** it restarts by itself ([Restarts](#restarts)) and keeps its data across a restart in an on-disk log, written every second and compacted after about 1 MB of writes, so a crash loses at most the last second. A deploy that changes its settings or image restarts it, a few seconds of 503s.
+
+Neither is backed up ([Backups and Restoring](#backups-and-restoring)): sessions, rate limits and used links expire within a month anyway, and a lost queue costs only the emails not yet sent.
+
 ### Backups and Restoring
 
-The bundled MySQL's volume holds everything worth keeping. Redis holds only sessions and rate-limit counters: it is not backed up, and losing it signs everyone out. Each command below runs from the clone; on a server that deploys with `deploy.sh`, add `--env-file .env.deploy` after `.env.prod` once its first deploy has written it.
+The bundled MySQL's volume holds everything worth keeping. Redis holds sessions, rate-limit counters, used sign-up links and the job queue: it is not backed up, and losing it signs everyone out and drops any email not yet sent (for a sign-up link, the user asks again). See [Redis in Production](#redis-in-production). Each command below runs from the clone; on a server that deploys with `deploy.sh`, add `--env-file .env.deploy` after `.env.prod` once its first deploy has written it.
 
 **Back up** as the migration user, which owns the database. Its password is already in the `db` container, so it never appears on a command line:
 
@@ -460,7 +471,7 @@ Any restore, a managed database's snapshot included, brings back the accounts de
 
 `.env.prod` and the TLS certificate and key in `nginx/certs/` exist only on the server. Keep a copy in a password manager or a secrets store, so a new server can start with the same values.
 
-**After a compromise**, issue new secrets rather than restoring the old ones: a new `SECRET_KEY`, new database and Redis passwords ([Changing a Value Later](#changing-a-value-later)), and a new TLS key and certificate. For a private repository, remove the old server's deploy key in the repository's settings and make a new one on the new server. Treat any dump that was on the old server as exposed: every email and password hash in it. Restore onto a new server rather than cleaning the old one.
+**After a compromise**, issue new secrets rather than restoring the old ones: a new `SECRET_KEY`, new database and Redis passwords ([Changing a Value Later](#changing-a-value-later)), new SMTP credentials from the mail provider (revoke the old ones there, since they send mail as your domain), and a new TLS key and certificate. For a private repository, remove the old server's deploy key in the repository's settings and make a new one on the new server. Treat any dump that was on the old server as exposed: every email and password hash in it. Restore onto a new server rather than cleaning the old one.
 
 ### The Host
 

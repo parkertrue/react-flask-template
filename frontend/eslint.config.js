@@ -211,7 +211,7 @@ export default defineConfig([
   {
     // Shared code never depends on a feature or a page, so deleting a
     // feature folder cannot break it
-    files: ['src/{api,auth,components,utils,styles}/**', 'src/{appName,legal}.ts'],
+    files: ['src/{api,auth,components,utils,styles}/**', 'src/appInfo.ts'],
     rules: restrictImports({
       group: ['@/features/*', '@/pages/*', '@/routes'],
       message: 'Shared code must not import a feature or a page.',

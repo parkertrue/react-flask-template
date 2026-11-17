@@ -20,6 +20,9 @@ PASSWORD_MAX_LENGTH = 128
 # a lone surrogate (half an emoji, which JSON can carry), which has no UTF-8
 # form to hash.
 PASSWORD_REFUSED_CATEGORY = 'Cc'
+# The shortest part of an address before the @ that a password may not hold:
+# a shorter one (jo@...) turns up in ordinary words
+GUESSABLE_LOCAL_PART_MIN_LENGTH = 4
 # Well above a sign-up link's token (about 100 characters), so only a body
 # that is not one is refused for its length
 LINK_TOKEN_MAX_LENGTH = 1024
@@ -47,6 +50,15 @@ def normalize_email(value: str) -> str:
     return ascii_email
 
 
+def is_normalized_email(value: str) -> bool:
+    """Whether value is an address normalize_email accepts, already in its
+    canonical form: one an emailed link or a queued job may be trusted with"""
+    try:
+        return normalize_email(value) == value
+    except ValueError:
+        return False
+
+
 def _normalize_password(value: object) -> object:
     # NFKC, so the same password typed on any device hashes the same: an
     # accented letter can arrive as one character or as a letter plus a
@@ -54,6 +66,20 @@ def _normalize_password(value: object) -> object:
     # 800-63B recommends it. Done before the length checks, which then count
     # the form that is hashed.
     return unicodedata.normalize('NFKC', value) if isinstance(value, str) else value
+
+
+def is_guessable(password: str, email: str, app_name: str) -> bool:
+    """Whether the password holds what anyone could guess it from (ASVS
+    6.2.11): the account's address, the part of it before the @ when that
+    is long enough to matter, or the app's name. Ignoring case, after NFKC.
+    Checked at sign-up, never at login, which accepts any password it holds.
+    frontend/src/utils/validation.ts mirrors it."""
+    local_part = email.partition('@')[0]
+    words = [email, app_name]
+    if len(local_part) >= GUESSABLE_LOCAL_PART_MIN_LENGTH:
+        words.append(local_part)
+    folded = unicodedata.normalize('NFKC', password).casefold()
+    return any(unicodedata.normalize('NFKC', word).casefold() in folded for word in words)
 
 
 def _check_password_characters(value: str) -> str:
@@ -67,11 +93,13 @@ def _check_password_characters(value: str) -> str:
 # is loosened in all of them, and no password registration refuses can be
 # tried anywhere. NIST SP 800-63B's: length alone, no rules on which kinds of
 # character it holds; spaces and every script and emoji welcome (passphrases).
-# Sign-up also refuses a breached one (app/utils/breached.py).
+# Sign-up also refuses a guessable one (is_guessable) and a breached one
+# (app/utils/breached.py).
 Password = Annotated[
     str,
-    # Before the validator, so pydantic counts characters (its message says
-    # so); the validator still runs first
+    # Listed first, so the length is pydantic's own check on the str (its
+    # message counts characters); the BeforeValidator still runs before it,
+    # so the NFKC form is what is counted
     Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
     BeforeValidator(_normalize_password),
     AfterValidator(_check_password_characters),
@@ -111,3 +139,9 @@ class TokensResponse(BaseModel):
     refresh token set in the cookie (none when CSRF protection is off)"""
     access_token: str
     refresh_csrf: str | None = None
+
+
+class RegisterCompleteResponse(TokensResponse):
+    """Sign-up's login, and the account's address: the token's, which the
+    page signs in under, never anything else the link carried"""
+    email: str

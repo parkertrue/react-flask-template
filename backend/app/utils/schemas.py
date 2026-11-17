@@ -14,5 +14,5 @@ UtcDatetime = Annotated[
 
 
 class MessageResponse(BaseModel):
-    """A reply that only says what happened: registered, logged out, ..."""
+    """A reply that only says what happened: a link sent, logged out, ..."""
     message: str

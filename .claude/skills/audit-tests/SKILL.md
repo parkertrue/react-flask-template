@@ -40,14 +40,18 @@ router, fixtures), `frontend/playwright.config.ts`, `frontend/e2e/helpers.ts`.
   errors, branch coverage at 95% (backend and frontend), random order,
   unhandled MSW requests failing, `act()` warnings failing, `mockReset`?
 - Isolation: any test that depends on order, leftover data, wall-clock time,
-  real network, or a shared account? Any fixture using `current_app` without
+  real network (the breach check: `PWNED_PASSWORDS_URL` stays unset outside
+  production; a test of it serves its own local socket), or a shared
+  account? Any fixture using `current_app` without
   requesting `app`? E2E: does every test register its own account?
 - Speed and scale: report only a test over 2s or a suite over 60s
   (`pytest --durations=15`, Vitest's report). Will the patterns hold at ten
   features: fixtures per feature, table-driven cases, no copy-paste per case?
 - Thresholds: do global coverage thresholds hide a weak critical file? List
   the coverage of each security-critical module (`backend/app/auth/routes.py`,
-  `utils/redis_service.py`, `frontend/src/api/api.ts`, `src/auth/`). If any is
+  `utils/redis_service.py`, `utils/links.py`, `utils/breached.py`,
+  `utils/jobs.py`, `utils/mail.py`, `frontend/src/api/api.ts`, `src/auth/`,
+  `src/pages/CompleteRegistrationPage.tsx`). If any is
   well below the global figure, the guard is a per-path threshold.
 - Flakiness: fixed sleeps, polling without a deadline, selectors tied to
   markup instead of roles and labels (lint already refuses E2E
@@ -68,6 +72,12 @@ tests. Check that they still pass, then look for what they can't see:
 - Tests that never assert, or whose only assertion is that nothing threw.
 - Frontend tests asserting markup structure instead of roles, labels and
   text (lint already refuses `data-testid` and `toHaveClass`).
+- **Fakes that replace a library wholesale** (`urlopen`, `smtplib`, a
+  hand-built `dramatiq.Message` or `LogRecord`, `fake_redis`): each needs
+  at least one test against the library's real behavior (a local socket,
+  a real `Worker`, Mailpit, real Redis), or the fake can encode the same
+  wrong assumption as the code. That is how the worker logged addresses
+  while its test passed (11-09, INFRA-1).
 
 **Mutation spot check:** pick at least five places where a bug would hurt
 most (auth checks, token rotation, rate-limit keys, input validation, error
@@ -94,11 +104,14 @@ which needs no services) with its documented status codes, and every page
 in `frontend/src/routes.tsx`. Add every error code in `backend/app` (the
 frontend `errorBody` list must match), every config guard, every CLAUDE.md
 claim about failure handling (Redis down, DB dropped, refresh race, rate
-limit hit), and every user journey. Journeys include, for example: register
-(with the terms checkbox, and `TERMS_OUTDATED` for a stale terms version),
-login, logout, logout-all, clear-cookies, refresh, the 7-day idle timeout
+limit hit), and every user journey. Journeys include, for example: sign-up's
+two steps (the same 202 for any address and the two emails; the link's page
+with the terms checkbox; `TERMS_OUTDATED`, `LINK_EXPIRED`, `LINK_INVALID`,
+`LINK_USED`, a used link's 409, `PASSWORD_GUESSABLE`, `PASSWORD_BREACHED`,
+the breach check failing open; the per-address limits), a job's retry and
+permanent failure, login, logout, logout-all, clear-cookies, refresh, the 7-day idle timeout
 and the 30-day cap across refreshes, the account page and
-`GET /api/account`, account deletion (wrong password, cancel, confirm, then
+`GET /api/account`, the data export, account deletion (wrong password, cancel, confirm, then
 the login page), the legal pages signed in and out, notes create, paginate,
 edit, and delete (confirm and cancel), the notes cap, another user's note as
 a 404, the protected route redirect, the 404 and error pages.

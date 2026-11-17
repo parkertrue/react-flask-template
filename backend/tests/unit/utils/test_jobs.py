@@ -1,21 +1,26 @@
 """Background jobs on Dramatiq's in-memory broker, with jobs of their own:
 the app's belong to its features"""
+import io
 import json
 import logging
 import threading
 from datetime import timedelta
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from dramatiq import Message, Worker
 from dramatiq.brokers.redis import RedisBroker
+from dramatiq.middleware import Retries, TimeLimit
 from flask import Blueprint, current_app
 from redis import ConnectionError as RedisConnectionError
+from redis import ResponseError, TimeoutError as RedisTimeoutError
 
 from app import create_app
 from app.utils import jobs
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
-from app.utils.jobs import QUEUE_NAME, PermanentJobFailure, job
+from app.utils.jobs import QUEUE_NAME, JobQueueUnavailable, PermanentJobFailure, job
+from app.utils.redis_service import RedisService, redis_unreachable
 
 
 @pytest.fixture
@@ -102,6 +107,43 @@ class TestSend:
         assert response.get_json() == {'error': {
             'code': 'SERVICE_UNAVAILABLE', 'message': SERVICE_UNAVAILABLE_MESSAGE}}
 
+    @pytest.mark.parametrize(('error', 'unreachable'), [
+        (RedisConnectionError('Connection refused'), True),
+        (RedisTimeoutError('Timeout reading from socket'), True),
+        (ResponseError('NOPERM this user has no permissions'), False),
+    ], ids=['refused', 'timed out', 'refused by the ACL'])
+    def test_only_an_unreachable_redis_is_skipped_for_a_while(
+            self, tidy, monkeypatch, error, unreachable):
+        """A full Redis or a NOPERM answers fast; only unreachable means wait"""
+        app, declared = tidy
+
+        def refuse(message, *, delay=None):
+            raise error
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+
+        with app.app_context(), pytest.raises(JobQueueUnavailable):
+            declared.send(7, 'a label')
+
+        assert redis_unreachable(app) is unreachable
+
+    def test_a_token_store_that_failed_to_connect_skips_the_queue(self, tidy, monkeypatch):
+        """The token store and the queue share one state: whichever fails
+        first spares the other the wait"""
+        app, declared = tidy
+        enqueued = []
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue',
+                            lambda message, *, delay=None: enqueued.append(message))
+        with patch('app.utils.redis_service.redis.Redis'):
+            service = RedisService('redis://app:secret@redis:6379/0', max_connections=5)
+        service.get_client().zscore.side_effect = RedisConnectionError('Connection refused')
+
+        with app.app_context():
+            assert service.is_token_valid(1, 'jti') is None
+            with pytest.raises(JobQueueUnavailable):
+                declared.send(7, 'a label')
+
+        assert enqueued == []
+
 
 class TestRun:
     def test_runs_in_an_app_context(self, make_app):
@@ -158,6 +200,16 @@ class TestRun:
         assert len(app.extensions['jobs_broker'].dead_letters) == 1
 
 
+def test_the_job_settings(app):
+    """What CLAUDE.md and docs/deployment.md promise, as literals: ten
+    retries backing off from 15s to an hour, and a minute per try"""
+    middleware = {type(each): each for each in app.extensions['jobs_broker'].middleware}
+    retries, time_limit = middleware[Retries], middleware[TimeLimit]
+
+    assert (retries.max_retries, retries.min_backoff, retries.max_backoff) == (10, 15_000, 3_600_000)
+    assert time_limit.time_limit == 60_000
+
+
 def test_closing_closes_a_redis_brokers_client(app, monkeypatch):
     """Dramatiq's RedisBroker.close closes nothing, and the client is ours"""
     client = MagicMock()
@@ -168,39 +220,67 @@ def test_closing_closes_a_redis_brokers_client(app, monkeypatch):
     client.close.assert_called_once_with()
 
 
-def test_logs_name_a_message_by_its_id_alone():
-    """Dramatiq logs a failed message with its arguments: an email address"""
-    message = Message(queue_name=QUEUE_NAME, actor_name='things.tidy',
-                      args=('someone@example.com',), kwargs={}, options={})
-    record = logging.LogRecord('dramatiq.worker', logging.ERROR, __file__, 1,
-                               'Failed to process message %s.', (message,), None)
+@pytest.mark.parametrize(('error', 'line'), [
+    (ConnectionError('the mail server is down'), 'with unhandled exception'),
+    (PermanentJobFailure('the address does not exist'), 'with expected exception'),
+])
+def test_the_worker_logs_a_failed_message_by_its_id_alone(make_app, error, line):
+    """A real worker logs the message it consumed, arguments and all, through
+    the handler run_worker installs: the address must not reach the log"""
+    blueprint = Blueprint('things', __name__)
 
-    jobs._MessageIdOnly().filter(record)
+    @job(blueprint)
+    def notify(address):
+        raise error
 
-    assert record.getMessage() == f'Failed to process message {message.message_id}.'
+    app = make_app(blueprint)
+    with app.app_context():
+        notify.send('someone@example.com')
+    stream = io.StringIO()
+    handler = jobs._worker_log_handler(stream)
+    log = logging.getLogger('dramatiq')
+    level = log.level
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    try:
+        run_jobs(app)
+    finally:
+        log.removeHandler(handler)
+        log.setLevel(level)
+
+    [failed] = app.extensions['jobs_broker'].dead_letters
+    assert 'someone@example.com' not in stream.getvalue()
+    assert f'Failed to process message {failed.message_id} {line}' in stream.getvalue()
 
 
 class TestRunWorker:
     @pytest.fixture
     def worker(self, make_app, monkeypatch, tmp_path):
         """run_worker on a thread, with the signal handlers it installs kept
-        here: a thread may not install its own. Yields the app, the job's
-        calls and the handler that stops it."""
+        here: a thread may not install its own. Its job records each id it
+        starts, waits the seconds it is given, then records the id done."""
         handlers = {}
         monkeypatch.setattr(jobs.signal, 'signal', lambda signum, handler: handlers.setdefault(signum, handler))
         monkeypatch.setattr(jobs, 'READY_FILE', tmp_path / 'worker-ready')
-        seen = []
+        started, done = [], []
         blueprint = Blueprint('things', __name__)
 
         @job(blueprint)
-        def record(thing_id):
-            seen.append(thing_id)
+        def record(thing_id, seconds=0):
+            started.append(thing_id)
+            threading.Event().wait(seconds)
+            done.append(thing_id)
 
         app = make_app(blueprint)
         thread = threading.Thread(target=jobs.run_worker, args=(app,))
         thread.start()
-        yield app, record, seen, handlers
-        handlers[jobs.signal.SIGTERM](jobs.signal.SIGTERM, None)
+
+        def stop(signum='SIGTERM'):
+            number = getattr(jobs.signal, signum)
+            handlers[number](number, None)
+        yield SimpleNamespace(app=app, record=record, started=started, done=done,
+                              stop=stop, thread=thread)
+        stop()
         thread.join(timeout=10)
         logging.getLogger('dramatiq').handlers.clear()
 
@@ -213,19 +293,30 @@ class TestRunWorker:
         return False
 
     def test_runs_jobs_once_ready(self, worker):
-        app, record, seen, _ = worker
         assert self.eventually(jobs.READY_FILE.exists)
 
-        with app.app_context():
-            record.send(7)
+        with worker.app.app_context():
+            worker.record.send(7)
 
-        assert self.eventually(lambda: seen == [7])
+        assert self.eventually(lambda: worker.done == [7])
 
     @pytest.mark.parametrize('signum', ['SIGTERM', 'SIGINT'])
     def test_a_signal_stops_it(self, worker, signum):
-        _, _, _, handlers = worker
         assert self.eventually(jobs.READY_FILE.exists)
 
-        handlers[getattr(jobs.signal, signum)](getattr(jobs.signal, signum), None)
+        worker.stop(signum)
 
         assert self.eventually(lambda: not jobs.READY_FILE.exists())
+
+    def test_lets_a_running_job_finish_when_stopped(self, worker):
+        """SIGTERM waits for running jobs (SHUTDOWN_TIMEOUT), so a deploy
+        does not cut an email off halfway"""
+        assert self.eventually(jobs.READY_FILE.exists)
+        with worker.app.app_context():
+            worker.record.send(7, 0.5)
+        assert self.eventually(lambda: worker.started == [7])
+
+        worker.stop()
+        worker.thread.join(timeout=10)
+
+        assert worker.done == [7]

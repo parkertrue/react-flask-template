@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type SubmitEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { requestRegistration } from '@/auth/authService'
+import { REGISTRATION_LINK_HOURS, requestRegistration } from '@/auth/authService'
 import { getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
@@ -75,7 +75,7 @@ export default function RegisterPage() {
           <div className="auth-card">
             <h1 ref={heading} tabIndex={-1}>Check your inbox</h1>
             <p className="sent-to">
-              We sent a link to <strong>{sentTo}</strong>. Open it within 24 hours to
+              We sent a link to <strong>{sentTo}</strong>. Open it within {REGISTRATION_LINK_HOURS} hours to
               choose a password and finish signing up.
             </p>
             <p>Not there? Check your spam folder, or send it again.</p>
@@ -107,10 +107,10 @@ export default function RegisterPage() {
 
   return (
     <div className="centered-page">
-      <PageTitle>Register</PageTitle>
+      <PageTitle>Sign up</PageTitle>
       <div className="auth-container">
         <div className="auth-card">
-          <h1 id="register-heading" ref={heading} tabIndex={-1}>Register</h1>
+          <h1 id="register-heading" ref={heading} tabIndex={-1}>Sign up</h1>
 
           <form
             onSubmit={e => void handleSubmit(e)}

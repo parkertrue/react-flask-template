@@ -17,7 +17,8 @@ as RULES.md.
 
 **Files:** every tracked file (`git ls-files`) except lockfiles,
 `backend/migrations/{README,alembic.ini,script.py.mako}` (Alembic's
-generated files), and `.claude/` (part 5 reads the audit prompts, but only to
+generated files), the generated `frontend/src/api/schemas.{json,ts}` (their
+drift tests guard them), and `.claude/` (part 5 reads the audit prompts, but only to
 find manual checks lint could take over). Tests are in scope, but for test
 comments report only stale or wrong ones, not redundant narration.
 
@@ -73,6 +74,9 @@ way that would mislead someone into a bug (then **medium**).
 - Files: anything tracked that nothing references (scripts, configs, assets),
   and test files whose subject is gone.
 - Config: settings, env vars, compose keys and CI steps that have no effect.
+  Compose `environment:` entries the service's code never reads, and code
+  settings no service is given (check the worker apart from the backend).
+- A `@job` nothing `.send`s; a security event or error code nothing emits.
 - Code only tests use (a method, parameter or return value no app code
   reads) counts as dead, unless a comment marks it as a deliberate test seam.
 - Debug leftovers that lint can't see. Lint already enforces `print` (ruff
@@ -92,6 +96,13 @@ Check names and patterns against CLAUDE.md's conventions and against each other:
 - The same concept spelled the same way everywhere (for example, error codes,
   env var prefixes, compose service and volume names, CSS custom properties,
   and UI wording such as "Log out" vs "Logout").
+- A value held as a constant but repeated as text or in another file (a
+  link's lifetime in an email and a page; a path or timeout in a compose
+  file): each copy reads the constant or has a check (`backendConstant`,
+  `backendString`, `check_compose.py`).
+- One flow named alike everywhere: job names (`<blueprint>.<function>`),
+  security events, email subjects, and the wording users see ("Sign up"
+  where code says register, CLAUDE.md).
 - The same job done the same way everywhere: error responses through
   `error_response`, backend calls through a service module, forms through
   `FormField`, imports through `@/`, React or React Router built-ins instead of
@@ -145,12 +156,19 @@ Files: `backend/ruff.toml`, `backend/mypy.ini`, `backend/pytest.ini`, `backend/.
 (`backend/tests/unit/test_import_rules.py`,
 `backend/tests/unit/test_assertions.py`,
 `frontend/src/__tests__/eslintRules.test.ts`,
-`frontend/src/__tests__/typescriptRules.test.ts`), plus the lint jobs in
-`.github/workflows/`. Run `ruff check .`, `mypy`, `npm run lint` and
-`npm run typecheck` first; a red run is a blocker.
+`frontend/src/__tests__/typescriptRules.test.ts`, `test_rate_limit_keys.py`,
+`test_requirements.py`, `test_export_schemas.py`, `test_foreign_keys.py`,
+`test_exports.py`, `utils/test_schemas.py`, `utils/test_log.py`'s events
+check, `frontend/src/styles/__tests__/stylesheets.test.ts`, `apiTypes.test.ts`,
+`appInfo.test.ts`), `.github/scripts/check_lint_rules.py`,
+`.github/scripts/ruff.toml`, `.github/scripts/check_compose.py`, plus the
+lint jobs in `.github/workflows/`. Run `ruff check .`, `mypy`,
+`python .github/scripts/check_lint_rules.py` (from the backend venv),
+`npm run lint` and `npm run typecheck` first; a red run is a blocker.
 
 - **Redundant config:** options set to their default (check the tool's docs
-  for the installed version), rules repeated across blocks, blocks that could
+  for the installed version; for tsconfig, the installed TypeScript's
+  `ts.optionDeclarations`), rules repeated across blocks, blocks that could
   merge, ignores that match nothing.
 - **Custom code a maintained rule now covers:** each custom ESLint rule,
   `no-restricted-syntax` selector and AST-scanning test: does a plugin rule,

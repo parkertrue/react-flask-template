@@ -8,7 +8,15 @@ export const BACKEND_APP = path.resolve(import.meta.dirname, '../../../backend/a
 /** The integer a backend module assigns at top level (`NAME = 123`) */
 export function backendConstant(file: string, name: string) {
   const source = readFileSync(path.join(BACKEND_APP, file), 'utf8')
-  const match = new RegExp(`^${name} = (\\d+)$`, 'm').exec(source)
+  const match = new RegExp(`^${name} = (\\d+)\\r?$`, 'm').exec(source)
   if (!match) throw new Error(`${file} assigns no ${name}`)
   return Number(match[1])
+}
+
+/** The string a backend module or class assigns (`NAME = 'text'`) */
+export function backendString(file: string, name: string) {
+  const source = readFileSync(path.join(BACKEND_APP, file), 'utf8')
+  const match = new RegExp(`^\\s*${name} = '([^']*)'\\r?$`, 'm').exec(source)
+  if (!match) throw new Error(`${file} assigns no ${name}`)
+  return match[1]
 }
