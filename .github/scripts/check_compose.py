@@ -9,7 +9,8 @@ backend, migrate, worker and nginx to run read-only, the services that run
 the backend image to drop every capability, the mail server's password to
 the worker alone, and its backend's wait for `migrate` to succeed, which a
 plain `docker compose up` (README, Build and Start) relies on; deploy.sh
-runs migrate itself. Production's and the test stack's worker must outlast
+runs migrate itself. Its Redis must compact its on-disk log at 1 MB, which
+otherwise keeps deleted values, such as a job's recipient, until 64 MB. Production's and the test stack's worker must outlast
 its wait for running jobs when stopped, and check the file it writes once
 ready, both read from backend/app/utils/jobs.py. Each file is read as
 `docker compose config` resolves it, anchors and merges applied.
@@ -38,6 +39,9 @@ READ_ONLY = ('backend', 'migrate', 'worker', 'nginx')
 BACKEND_IMAGE = ('backend', 'migrate', 'worker')
 # What only the worker, which sends email, may be given
 WORKER_ONLY = ('EMAIL_URL', 'EMAIL_PASSWORD')
+# The size at which production's Redis compacts its on-disk log, as
+# docs/personal-data.md tells users
+AOF_REWRITE_MIN_SIZE = '1mb'
 
 
 def config(*args):
@@ -67,6 +71,12 @@ def acl(redis):
     start = command.index('--user')
     end = max(i for i, arg in enumerate(command) if arg.startswith('-@')) + 1
     return ['>password' if arg.startswith('>') else arg for arg in command[start:end]]
+
+
+def flag_value(service, flag):
+    """The value after flag in a service's command, or None"""
+    command = service.get('command') or []
+    return command[command.index(flag) + 1] if flag in command[:-1] else None
 
 
 def init_mounts(db):
@@ -136,6 +146,8 @@ def problems(prod, test, dev):
             yield f"{name}: gets {', '.join(given)}, which only the worker may hold"
     if '--disable-log-bin' not in prod['db'].get('command', []):
         yield 'db: production does not run with --disable-log-bin'
+    if flag_value(prod['redis'], '--auto-aof-rewrite-min-size') != AOF_REWRITE_MIN_SIZE:
+        yield f'redis: production does not compact its on-disk log at {AOF_REWRITE_MIN_SIZE}'
     drain, ready = worker_settings()
     for stack, services in (('production', prod), ('test', test)):
         yield from worker_problems(stack, services['worker'], drain, ready)
@@ -153,7 +165,7 @@ def main():
     if found:
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
-                     'ports are IPv4 only, the db keeps no binary log, '
+                     'ports are IPv4 only, the db keeps no binary log, Redis compacts its log at 1 MB, '
                      'the backend, migrate, worker and nginx are read-only, '
                      'the backend image drops every capability, '
                      'only the worker holds the mail password, '
