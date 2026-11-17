@@ -122,10 +122,13 @@ opinion that doesn't matter for a few static files. See the `nginx` job in
 ./run_dev.sh` turns it off for one run. Production forces it off in
 `ProductionConfig`.
 
-**Access tokens outlive logout by up to 15 minutes.** Logout, "Log out all
-devices" and a password reset revoke refresh tokens only; an access token
-already issued works until it expires. Revoking those too would put a Redis lookup on every API
-request and make every request depend on Redis.
+**Access tokens outlive logout by up to 15 minutes.** Logout and "Log out
+all devices" revoke refresh tokens only; an access token already issued works
+until it expires. Revoking those too would put a Redis lookup on every API
+request and make every request depend on Redis. A password reset does not
+wait: every token carries the password's state, which the user loader
+already compares on its database read, so a reset refuses every token
+issued before it at once.
 *Revisit when:* the app holds data where a 15-minute window after logout
 matters.
 

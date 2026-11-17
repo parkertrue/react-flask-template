@@ -1,6 +1,7 @@
+import hmac
 from typing import TYPE_CHECKING, Any
 
-from flask import Flask, Response, request
+from flask import Flask, Response, g, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
@@ -97,16 +98,24 @@ def create_app() -> Flask:
     from app.auth.models import User
 
     @jwt.additional_claims_loader
-    def add_account_claims(identity: str) -> dict[str, int]:
-        """Every token names its account by id and creation time.
+    def add_account_claims(identity: str) -> dict[str, int | str]:
+        """Every token names its account by id and creation time, and the
+        password it was issued under.
 
         An id alone can name another account: a restored backup hands out
         ids again from where the dump left off, so a token of an account
         created after the backup would work as the next one registered.
+        The password's state (User.password_state, a keyed hash that reveals
+        nothing, since a token can be read) ends every token issued before
+        the password changes, on every device, at its next request: a
+        password reset locks out whoever had the old one at once. Anything
+        that rewrites password_hash (a rehash under new parameters, were one
+        added) ends every session too.
         """
         user = db.session.get(User, int(identity))
         # A test may mint a token for no account; the user loader refuses it anyway
-        return {'user_created_at': user.created_timestamp} if user else {}
+        return ({'user_created_at': user.created_timestamp, 'password_state': user.password_state}
+                if user else {})
 
     @jwt.user_lookup_loader
     def load_user(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> User | None:
@@ -115,17 +124,23 @@ def create_app() -> Flask:
         A deleted account's access token stays valid until it expires; this
         turns it away on every route at the cost of one primary-key lookup,
         rather than each route remembering to check, and turns away a token
-        whose id now names a different account (add_account_claims). Routes
-        read the user as flask_jwt_extended.current_user.
+        whose id now names a different account, or that was issued under a
+        password the account no longer has (add_account_claims). Routes read
+        the user as flask_jwt_extended.current_user.
         """
         user = db.session.get(User, int(jwt_payload['sub']))
         if user is None or jwt_payload.get('user_created_at') != user.created_timestamp:
+            g.token_refused = 'User not found or replaced'
+            return None
+        state = jwt_payload.get('password_state')
+        if not isinstance(state, str) or not hmac.compare_digest(state, user.password_state):
+            g.token_refused = 'Password changed'
             return None
         return user
 
     @jwt.user_lookup_error_loader
     def user_not_found(jwt_header: dict[str, Any], jwt_payload: dict[str, Any]) -> ErrorResponse:
-        security_event('token_invalid', reason='User not found or replaced',
+        security_event('token_invalid', reason=g.token_refused,
                        user_id=int(jwt_payload['sub']))
         # Answered as a bad token, so the frontend signs the user out
         return token_invalid()

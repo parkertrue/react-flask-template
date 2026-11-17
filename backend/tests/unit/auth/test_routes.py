@@ -961,6 +961,89 @@ class TestReplacedAccount:
         assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
 
 
+class TestTokensAfterAPasswordChange:
+    """A token is issued under the account's password: once the password
+    changes, every token issued before stops working, on every device, at
+    its next request, rather than when it expires"""
+
+    @staticmethod
+    def change_password(db, user):
+        """Change it as a reset does, but leave Redis alone, so only the
+        token's claim can refuse it"""
+        user.set_password('a changed passphrase')
+        db.session.commit()
+
+    @staticmethod
+    def bearer(token):
+        return {'Authorization': f'Bearer {token}'}
+
+    def test_tokens_carry_the_password_s_state(self, client, sample_user, fake_redis):
+        state = sample_user.password_state
+        response = client.post('/api/auth/login', json=LOGIN_PAYLOAD)
+        login_refresh = refresh_claims(client)
+
+        refreshed = client.post('/api/auth/refresh', headers={
+            'X-CSRF-REFRESH-TOKEN': response.get_json()['refresh_csrf']})
+
+        assert [decode_token(response.get_json()['access_token'])['password_state'],
+                login_refresh['password_state'],
+                decode_token(refreshed.get_json()['access_token'])['password_state'],
+                refresh_claims(client)['password_state']] == [state] * 4
+
+    def test_an_access_token_issued_before(self, client, db, sample_user, fake_redis, security_events):
+        token = client.post('/api/auth/login', json=LOGIN_PAYLOAD).get_json()['access_token']
+        self.change_password(db, sample_user)
+
+        response = client.get('/api/account', headers=self.bearer(token))
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+        assert security_events()[1:] == [{'message': 'token_invalid', 'ip': '127.0.0.1',
+                                          'reason': 'Password changed',
+                                          'user_id': sample_user.id}]
+
+    def test_a_refresh_token_issued_before(self, client, db, sample_user, fake_redis):
+        """Still recorded in Redis here: the claim alone refuses it"""
+        csrf = login(client)
+        self.change_password(db, sample_user)
+
+        response = client.post('/api/auth/refresh', headers=csrf)
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+
+    def test_a_token_issued_after_works(self, client, db, sample_user, fake_redis):
+        self.change_password(db, sample_user)
+        token = client.post('/api/auth/login', json={
+            'email': 'test@example.com', 'password': 'a changed passphrase'}).get_json()['access_token']
+
+        assert client.get('/api/account', headers=self.bearer(token)).status_code == 200
+
+    def test_a_password_reset_ends_another_device_s_access_token_at_once(
+            self, client, db, sample_user, fake_redis):
+        token = client.post('/api/auth/login', json=LOGIN_PAYLOAD).get_json()['access_token']
+
+        client.post('/api/auth/password-reset/complete', json={
+            'token': reset_token(client.application, 'test@example.com'),
+            'password': 'a valid passphrase'})
+
+        assert client.get('/api/account', headers=self.bearer(token)).status_code == 401
+
+    @pytest.mark.parametrize('state', [{}, {'password_state': 1}, {'password_state': 'not the state'}],
+                             ids=['none', 'not text', 'another password'])
+    def test_a_token_without_the_password_s_state(self, app, client, sample_user, state):
+        now = int(time.time())
+        claims = {'sub': str(sample_user.id), 'type': 'access', 'fresh': False, 'jti': 'j',
+                  'iat': now, 'nbf': now, 'exp': now + 600,
+                  'user_created_at': sample_user.created_timestamp, **state}
+        token = jwt.encode(claims, app.config['JWT_SECRET_KEY'], algorithm='HS256')
+
+        response = client.get('/api/account', headers=self.bearer(token))
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+
+
 class TestLogoutEndpoint:
     """Test suite for POST /api/auth/logout and /api/auth/logout-all."""
 
