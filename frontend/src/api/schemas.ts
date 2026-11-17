@@ -68,7 +68,7 @@ export interface LoginRequest {
   password: string;
 }
 /**
- * A reply that only says what happened: registered, logged out, ...
+ * A reply that only says what happened: a link sent, logged out, ...
  */
 export interface MessageResponse {
   message: string;

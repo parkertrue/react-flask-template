@@ -3,21 +3,29 @@
 CI's Compose job runs this. The test stack copies production's hardening, so
 that E2E catches a service an image change breaks under it, and all three
 stacks copy the Redis ACL and mount the database's init scripts, which create
-the app's data-only user; nothing else compares the copies. It also pins
-production's ports to IPv4, its db to run without a binary log, its
-backend, migrate, worker and nginx to run read-only, the services that run
-the backend image to drop every capability, the mail server's password to
-the worker alone, and its backend's wait for `migrate` to succeed, which a
-plain `docker compose up` (README, Build and Start) relies on; deploy.sh
-runs migrate itself. Its Redis must compact its on-disk log at 1 MB, which
-otherwise keeps deleted values, such as a job's recipient, until 64 MB.
-Every secret it reads must be required (`:?`) wherever the backend, migrate
-and the worker use it, so a missing one stops compose rather than starting
-Redis on an empty password; read from the file itself, since `config`
-resolves the variables. Production's and the test stack's worker must outlast
-its wait for running jobs when stopped, and check the file it writes once
-ready, both read from backend/app/utils/jobs.py. Each file is read as
-`docker compose config` resolves it, anchors and merges applied.
+the app's data-only user; nothing else compares the copies.
+
+It also pins, in production (one line per rule: add a new one as a line):
+- ports published on IPv4 only;
+- db without a binary log;
+- Redis compacting its on-disk log at 1 MB, which otherwise keeps deleted
+  values, such as a job's recipient, until 64 MB;
+- every secret required (`:?`) wherever the backend, migrate and the worker
+  use it, so a missing one stops compose rather than starting Redis on an
+  empty password (read from the file itself, since `config` resolves it);
+- backend, migrate, worker and nginx read-only;
+- every capability dropped by the services that run the backend image;
+- the mail server's password on the worker alone;
+- the backend waiting for `migrate` to succeed, which a plain
+  `docker compose up` (README, Build and Start) relies on; deploy.sh runs
+  migrate itself.
+And in production and the test stack:
+- the worker outlasting its wait for running jobs when stopped, and
+  checking the file it writes once ready, both read from
+  backend/app/utils/jobs.py.
+
+Each file is read as `docker compose config` resolves it, anchors and
+merges applied.
 """
 import json
 import re

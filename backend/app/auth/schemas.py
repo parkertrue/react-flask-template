@@ -97,8 +97,9 @@ def _check_password_characters(value: str) -> str:
 # (app/utils/breached.py).
 Password = Annotated[
     str,
-    # Before the validator, so pydantic counts characters (its message says
-    # so); the validator still runs first
+    # Listed first, so the length is pydantic's own check on the str (its
+    # message counts characters); the BeforeValidator still runs before it,
+    # so the NFKC form is what is counted
     Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH),
     BeforeValidator(_normalize_password),
     AfterValidator(_check_password_characters),

@@ -46,7 +46,7 @@ jobs:
           ruff check .
           ruff check ../.github/scripts
 
-      # Strict, on app/ and the scripts the image runs (backend/mypy.ini)
+      # Strict, on app/ and the scripts beside it (backend/mypy.ini)
       - name: Type check
         run: mypy
 

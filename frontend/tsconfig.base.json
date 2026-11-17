@@ -9,10 +9,8 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "skipLibCheck": true,
-    "allowJs": false,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
-    "noUncheckedSideEffectImports": true,
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
