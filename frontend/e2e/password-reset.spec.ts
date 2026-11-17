@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import {
-  createAccount, emailedLink, emailTo, expireAccessToken, fillReset, login, memberSince,
+  createAccount, emailedLink, emailTo, fillReset, login, memberSince,
   requestReset, RESET_SUBJECT, uniqueEmail, UNSIGNED_RESET_LINK,
 } from './helpers'
 import { APP_NAME } from '../src/appInfo'
@@ -59,9 +59,7 @@ test.describe('Password reset', () => {
     await fillReset(page, NEW_PASSWORD)
     await expect(page).toHaveURL(/\/login$/)
 
-    // Its access token runs out within 15 minutes (DECISIONS.md); its
-    // refresh is refused at once
-    await expireAccessToken(other)
+    // At its next request: its tokens were issued under the old password
     await other.reload()
     await expect(other).toHaveURL(/\/login/)
     await expect(other.getByRole('status')).toHaveText('Your session has ended. Please log in again.')
