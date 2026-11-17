@@ -4,7 +4,7 @@ import RegisterPage from '../RegisterPage'
 import { requestRegistration } from '@/auth/authService'
 import { errorBody, httpError } from '@/test/fixtures'
 import { renderRoutes } from '@/test/router'
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 
 vi.mock('@/auth/authService')
 

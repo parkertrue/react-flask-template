@@ -7,8 +7,7 @@ import { completeRegistration } from '@/auth/authService'
 import { storage } from '@/auth/storage'
 import { errorBody, httpError, tokens } from '@/test/fixtures'
 import { renderRoutes } from '@/test/router'
-import { APP_NAME } from '@/appName'
-import { TERMS_VERSION } from '@/legal'
+import { APP_NAME, TERMS_VERSION } from '@/appInfo'
 
 vi.mock('@/auth/authService')
 

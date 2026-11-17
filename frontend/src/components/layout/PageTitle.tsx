@@ -1,4 +1,4 @@
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 
 // React puts a <title> rendered anywhere into the document head, so each page
 // names itself in the browser tab and to screen readers

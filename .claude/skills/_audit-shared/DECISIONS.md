@@ -199,7 +199,7 @@ attribution from derived apps.
 
 **Legal placeholders are not enforced at build.** Nothing stops a
 production image from serving the placeholder `OPERATOR` values in
-`frontend/src/legal.ts`, `contact@example.com` in `security.txt`, or the
+`frontend/src/appInfo.ts`, `contact@example.com` in `security.txt`, or the
 "Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before launch" list is
 the only safeguard: a build check would have to tell the production image
 apart from the test stack's, which serves the same placeholders on purpose

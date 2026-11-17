@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME } from '../src/appInfo'
 import { uniqueEmail } from './helpers'
 
 test.describe('System Health Check', () => {

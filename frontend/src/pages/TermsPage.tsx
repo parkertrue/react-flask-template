@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom'
 import PageTitle from '@/components/layout/PageTitle'
-import { OPERATOR, TERMS_VERSION } from '@/legal'
+import { OPERATOR, TERMS_VERSION } from '@/appInfo'
 import PlaceholderNotice from './PlaceholderNotice'
 
 // The template's outline of terms of service. Each bracketed passage is for
-// the app's developer to replace; raise TERMS_VERSION (src/legal.ts and
+// the app's developer to replace; raise TERMS_VERSION (src/appInfo.ts and
 // backend/app/auth/models.py) whenever the terms change.
 export default function TermsPage() {
   return (

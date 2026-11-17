@@ -1,5 +1,6 @@
 """Act out README's "Starting a New App" on a checkout: delete the notes
-example and the API-status demo, then rewire what plugged them in.
+example and the API-status demo, rewire what plugged them in, and rename
+the app.
 
 CI's Scaffold job runs this, then the linters and both unit suites, so a
 change that couples shared code to an example fails there rather than in a
@@ -7,8 +8,9 @@ new app. The account page stands in for the first real feature.
 
 Every edit must match exactly once, or the script stops and names the file:
 update it alongside the wiring point. The files edited here are README's
-"Where a feature plugs in" list; one outside it is a coupling to remove,
-not an edit to add.
+"Where a feature plugs in" list, plus the three that hold the app's name
+(README step 5); one outside them is a coupling to remove, not an edit to
+add.
 """
 import shutil
 import sys
@@ -27,7 +29,21 @@ DELETE = [
     'frontend/e2e/api-status.spec.ts',
 ]
 
+# A name unlike the template's, so a test or a line of code that wrote the
+# template's name instead of reading APP_NAME fails here
+TEMPLATE_NAME = 'React + Flask Template'
+NEW_NAME = 'Scaffold Check'
+
 EDITS = {
+    'frontend/src/appInfo.ts': [
+        (f"APP_NAME = '{TEMPLATE_NAME}'", f"APP_NAME = '{NEW_NAME}'"),
+    ],
+    'frontend/index.html': [
+        (f'<title>{TEMPLATE_NAME}</title>', f'<title>{NEW_NAME}</title>'),
+    ],
+    'backend/app/config.py': [
+        (f"APP_NAME = '{TEMPLATE_NAME}'", f"APP_NAME = '{NEW_NAME}'"),
+    ],
     'backend/app/features.py': [
         ('from app.notes.routes import notes_bp\n', ''),
         ('BLUEPRINTS = [account_bp, auth_bp, health_bp, notes_bp]',

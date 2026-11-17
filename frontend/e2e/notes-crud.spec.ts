@@ -4,7 +4,7 @@ import {
   expectVisibleFocus, createAccount, downloadData, holdRequests, login, logout, openAccount,
   registerAndLogin, serviceUnavailable, uniqueEmail,
 } from './helpers'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME } from '../src/appInfo'
 
 /** The note field, found by its label as a screen reader finds it */
 const noteInput = (page: Page) => page.getByLabel('New note')

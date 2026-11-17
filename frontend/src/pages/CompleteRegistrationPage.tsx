@@ -6,7 +6,7 @@ import { errorCode, getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
-import { TERMS_VERSION } from '@/legal'
+import { TERMS_VERSION } from '@/appInfo'
 import {
   validatePassword,
   validatePasswordMatch,

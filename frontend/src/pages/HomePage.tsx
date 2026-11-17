@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { APP_NAME, APP_TAGLINE } from '@/appName'
+import { APP_NAME, APP_TAGLINE } from '@/appInfo'
 import { useAuth } from '@/auth/useAuth'
 import PageTitle from '@/components/layout/PageTitle'
 import ApiStatus from '@/features/health/ApiStatus'

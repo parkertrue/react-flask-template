@@ -4,7 +4,7 @@ import {
   logout, memberSince, openAccount, register, registerAndLogin, requestLink, TEST_PASSWORD, uniqueEmail,
   UNSIGNED_LINK,
 } from './helpers'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME } from '../src/appInfo'
 
 test.describe('Critical User Journey', () => {
   let testEmail: string

@@ -44,7 +44,11 @@ def is_breached(password: str) -> bool:
     digest = hashlib.sha1(password.encode(), usedforsecurity=False).hexdigest().upper()
     prefix, suffix = digest[:5], digest[5:]
     request = urllib.request.Request(
-        url + prefix, headers={'Add-Padding': 'true', 'User-Agent': 'react-flask-template'})
+        url + prefix, headers={
+            'Add-Padding': 'true',
+            # The API refuses a request that names no app
+            'User-Agent': current_app.config['APP_NAME'],
+        })
     try:
         body = _calls.submit(_fetch, request).result(timeout=TIMEOUT_SECONDS)
     except (OSError, ValueError) as e:

@@ -7,7 +7,7 @@ import { NOTE_MAX_LENGTH } from '../validation'
 import { listed, note, notesPage } from './fixtures'
 import { errorBody, httpError } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 
 vi.mock('../notesService')
 
