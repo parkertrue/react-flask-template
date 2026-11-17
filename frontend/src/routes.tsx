@@ -5,6 +5,8 @@ import HomePage from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import CompleteRegistrationPage from '@/pages/CompleteRegistrationPage'
+import PasswordResetPage from '@/pages/PasswordResetPage'
+import CompletePasswordResetPage from '@/pages/CompletePasswordResetPage'
 import AccountPage from '@/pages/AccountPage'
 import PrivacyPage from '@/pages/PrivacyPage'
 import TermsPage from '@/pages/TermsPage'
@@ -31,6 +33,9 @@ export const routes: RouteObject[] = [
           { path: 'privacy', element: <PrivacyPage /> },
           { path: 'terms', element: <TermsPage /> },
           { path: 'contact', element: <ContactPage /> },
+          // The emailed reset link's page: a signed-in user's link must not
+          // be lost to GuestRoute's redirect
+          { path: 'password-reset/complete', element: <CompletePasswordResetPage /> },
           {
             element: <GuestRoute />,
             children: [
@@ -38,6 +43,7 @@ export const routes: RouteObject[] = [
               { path: 'signup', element: <RegisterPage /> },
               // The emailed link's page
               { path: 'signup/complete', element: <CompleteRegistrationPage /> },
+              { path: 'password-reset', element: <PasswordResetPage /> },
             ],
           },
           {

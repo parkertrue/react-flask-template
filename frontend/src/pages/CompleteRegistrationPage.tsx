@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
+import { useEmailLink } from '@/auth/emailLink'
 import { completeRegistration } from '@/auth/authService'
 import { errorCode, getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
@@ -41,37 +42,12 @@ const PROBLEMS: Record<LinkProblem, { message: string; to: string; action: strin
   },
 }
 
-// The link's fragment: #token=…. A fragment, not a query string, so the
-// token never reaches a server's log (DECISIONS.md). Anything else the link
-// carries is ignored: only the token decides the account.
-function readLink(hash: string) {
-  const token = new URLSearchParams(hash.slice(1)).get('token')
-  return { token, email: tokenEmail(token) }
-}
-
-// The address a token names, to show before the account exists. Its first
-// part is the payload, base64url JSON, signed but not encrypted. One that
-// starts with '.' is compressed, which only a long, repetitive address
-// makes: none is shown then, and the backend still uses the token's.
-function tokenEmail(token: string | null) {
-  try {
-    const payload = token?.split('.')[0] ?? ''
-    const value: unknown = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-    return typeof value === 'string' ? value : ''
-  } catch {
-    return ''
-  }
-}
-
 // Sign-up's second step, the page the emailed link opens: the password and
 // the terms. The token proves the address; the backend makes the account
 // and logs in, and GuestRoute moves the user on.
 export default function CompleteRegistrationPage() {
   const { login } = useAuth()
-  const location = useLocation()
-  const navigate = useNavigate()
-  // Read once: the fragment is stripped from the address bar below
-  const [link] = useState(() => readLink(location.hash))
+  const link = useEmailLink()
   const { values, errors, handleChange, validate } = useFormFields({
     password: '', confirmPassword: '', acceptTerms: false
   })
@@ -79,14 +55,6 @@ export default function CompleteRegistrationPage() {
   const [problem, setProblem] = useState<LinkProblem | null>(link.token ? null : 'missing')
   const [submitting, setSubmitting] = useState(false)
   const problemMessage = useRef<HTMLParagraphElement>(null)
-
-  // Off the address bar and out of history, so the token is not left where
-  // the next person at this browser could find it. The state stays: where
-  // GuestRoute sends the user once signed in.
-  useEffect(() => {
-    const state: unknown = location.state
-    if (location.hash) void navigate({ pathname: location.pathname }, { replace: true, state })
-  }, [location.hash, location.pathname, location.state, navigate])
 
   // The form, and the button that had focus, go away: focus what replaced it
   useEffect(() => {

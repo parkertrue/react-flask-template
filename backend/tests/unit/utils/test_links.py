@@ -7,7 +7,10 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from itsdangerous import TimestampSigner
 
-from app.utils.links import LinkExpired, LinkInvalid, app_link, make_link_token, read_link_token
+from itsdangerous import URLSafeTimedSerializer
+
+from app.utils.links import (
+    LinkClaims, LinkExpired, LinkInvalid, app_link, make_link_token, read_link_token)
 
 DAY = timedelta(days=1)
 
@@ -15,7 +18,25 @@ DAY = timedelta(days=1)
 def test_a_token_names_its_address(app):
     token = make_link_token('registration', 'someone@example.com')
 
-    assert read_link_token('registration', token, DAY) == 'someone@example.com'
+    assert read_link_token('registration', token, DAY) == LinkClaims('someone@example.com', '')
+
+
+def test_a_token_carries_its_state(app):
+    token = make_link_token('password-reset', 'someone@example.com', 'f00d')
+
+    assert read_link_token('password-reset', token, DAY) == LinkClaims('someone@example.com', 'f00d')
+
+
+@pytest.mark.parametrize('payload', [
+    'someone@example.com', ['someone@example.com'], ['someone@example.com', 'f00d', 'x'],
+    ['someone@example.com', 1], [1, 'f00d'], {'email': 'someone@example.com'},
+], ids=['an address alone', 'no state', 'too much', 'a state not text', 'an address not text', 'an object'])
+def test_a_signed_payload_of_another_shape_is_invalid(app, payload):
+    """Signed with this app's key and salt, so only a bug could mint one"""
+    token = URLSafeTimedSerializer(app.config['JWT_SECRET_KEY'], salt='link:registration').dumps(payload)
+
+    with pytest.raises(LinkInvalid):
+        read_link_token('registration', token, DAY)
 
 
 def test_a_token_is_refused_for_another_purpose(app):
@@ -44,7 +65,7 @@ def minted_ago(age):
 def test_a_token_works_until_its_max_age(app):
     token = minted_ago(DAY - timedelta(seconds=5))
 
-    assert read_link_token('registration', token, DAY) == 'someone@example.com'
+    assert read_link_token('registration', token, DAY).email == 'someone@example.com'
 
 
 def test_a_token_expires_after_its_max_age(app):

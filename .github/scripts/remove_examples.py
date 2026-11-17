@@ -60,6 +60,7 @@ EDITS = {
         ("    ['/login', 'Notes page'],\n", "    ['/login', 'Account page'],\n"),
         ("    ['/signup', 'Notes page'],\n", "    ['/signup', 'Account page'],\n"),
         ("    ['/signup/complete', 'Notes page'],\n", "    ['/signup/complete', 'Account page'],\n"),
+        ("    ['/password-reset', 'Notes page'],\n", "    ['/password-reset', 'Account page'],\n"),
     ],
     'frontend/src/auth/GuestRoute.tsx': [
         ("export const AFTER_LOGIN_PATH = '/notes'", "export const AFTER_LOGIN_PATH = '/account'"),

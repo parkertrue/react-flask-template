@@ -31,7 +31,7 @@ async function fill(user: UserEvent, { email = 'user@example.com', password = 'a
 }
 
 describe('LoginPage', () => {
-  it('shows the form, with a way to sign up', () => {
+  it('shows the form, with a way to sign up and one to reset the password', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
@@ -41,6 +41,7 @@ describe('LoginPage', () => {
     // Room for the longest password in emoji, two UTF-16 units each
     expect(field.password()).toHaveAttribute('maxlength', String(2 * 128))
     expect(screen.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/signup')
+    expect(screen.getByRole('link', { name: 'Forgot your password?' })).toHaveAttribute('href', '/password-reset')
     expect(document.title).toBe(`Log in | ${APP_NAME}`)
   })
 
@@ -59,6 +60,10 @@ describe('LoginPage', () => {
       'Your account has been deleted.'],
     ['an account deleted over an ended session', () => storage.endSession(), { accountDeleted: true },
       'Your account has been deleted.'],
+    ['a password just reset', () => {}, { passwordReset: true },
+      'Your password has been changed. Log in with the new one.'],
+    ['a password reset over an ended session', () => storage.endSession(), { passwordReset: true },
+      'Your password has been changed. Log in with the new one.'],
   ])('tells the user about %s', async (_, arrange, state, message) => {
     arrange()
     renderPage({ pathname: '/login', state })

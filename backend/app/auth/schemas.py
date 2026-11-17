@@ -23,7 +23,7 @@ PASSWORD_REFUSED_CATEGORY = 'Cc'
 # The shortest part of an address before the @ that a password may not hold:
 # a shorter one (jo@...) turns up in ordinary words
 GUESSABLE_LOCAL_PART_MIN_LENGTH = 4
-# Well above a sign-up link's token (about 100 characters), so only a body
+# Well above an emailed link's token (100-200 characters), so only a body
 # that is not one is refused for its length
 LINK_TOKEN_MAX_LENGTH = 1024
 
@@ -72,7 +72,7 @@ def is_guessable(password: str, email: str, app_name: str) -> bool:
     """Whether the password holds what anyone could guess it from (ASVS
     6.2.11): the account's address, the part of it before the @ when that
     is long enough to matter, or the app's name. Ignoring case, after NFKC.
-    Checked at sign-up, never at login, which accepts any password it holds.
+    Checked at sign-up and a reset, never at login, which accepts any password it holds.
     frontend/src/utils/validation.ts mirrors it."""
     local_part = email.partition('@')[0]
     words = [email, app_name]
@@ -88,12 +88,12 @@ def _check_password_characters(value: str) -> str:
     return value
 
 
-# Every password the app accepts, at registration, login and before a change
+# Every password the app accepts, at registration, a reset, login and before a change
 # only the owner may make. One set of rules, so a rule loosened in one place
 # is loosened in all of them, and no password registration refuses can be
 # tried anywhere. NIST SP 800-63B's: length alone, no rules on which kinds of
 # character it holds; spaces and every script and emoji welcome (passphrases).
-# Sign-up also refuses a guessable one (is_guessable) and a breached one
+# Sign-up and a reset also refuse a guessable one (is_guessable) and a breached one
 # (app/utils/breached.py).
 Password = Annotated[
     str,
@@ -123,6 +123,23 @@ class RegisterCompleteRequest(BaseModel):
     password: Password
     # The version of the terms the user saw and accepted
     terms_version: int = Field(strict=True)
+
+    model_config = ConfigDict(extra='forbid')
+
+
+class PasswordResetRequest(BaseModel):
+    """A password reset's first step: the account's address, to email a
+    link to"""
+    email: Email
+
+    model_config = ConfigDict(extra='forbid')
+
+
+class PasswordResetCompleteRequest(BaseModel):
+    """A password reset's second step, from the emailed link's page"""
+    # The link's token, which names the account
+    token: str = Field(max_length=LINK_TOKEN_MAX_LENGTH)
+    password: Password
 
     model_config = ConfigDict(extra='forbid')
 

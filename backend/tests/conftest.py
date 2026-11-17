@@ -3,11 +3,11 @@ import pytest
 import sqlite3
 from datetime import timedelta
 from flask_jwt_extended import create_access_token
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.engine import Engine
 
 from app import create_app, db as _db
-from app.auth.emails import REGISTRATION_LINK
+from app.auth.emails import PASSWORD_RESET_LINK, REGISTRATION_LINK
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import normalize_email
 from app.utils.jobs import close_jobs
@@ -22,6 +22,14 @@ def link_token(app, email):
     """The token of the sign-up link the worker would email to this address"""
     with app.app_context():
         return make_link_token(REGISTRATION_LINK, normalize_email(email))
+
+
+def reset_token(app, email):
+    """The token of the password reset link the worker would email to this
+    account now: it names the password the account has"""
+    with app.app_context():
+        user = _db.session.execute(select(User).where(User.email == email)).scalar_one()
+        return make_link_token(PASSWORD_RESET_LINK, email, user.password_state)
 
 
 def register(client, email, password='TestPassword123', terms_version=TERMS_VERSION, **kwargs):

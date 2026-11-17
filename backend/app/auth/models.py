@@ -1,4 +1,9 @@
+import base64
+import hashlib
+import hmac
 from datetime import datetime, timezone
+
+from flask import current_app
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import Model, db
@@ -56,3 +61,15 @@ class User(Model):
 
     def check_password(self, password: str) -> bool:
         return verify_password(self.password_hash, password)
+
+    @property
+    def password_state(self) -> str:
+        """Names the password the account has now, without revealing it: a
+        password reset link carries it, so the link stops working once the
+        password changes, by that reset or any other. Keyed with SECRET_KEY,
+        since the link's token can be read, and a hash's hash could be
+        cracked offline. Base64url, not hex: a token holding hex compresses,
+        and the link's page reads no address from a compressed one."""
+        secret = current_app.config['JWT_SECRET_KEY'].encode()
+        digest = hmac.new(secret, self.password_hash.encode(), hashlib.sha256).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()

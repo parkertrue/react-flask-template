@@ -51,3 +51,11 @@ export function dataExport(exported_at = '2026-03-14T23:59:30+00:00'): DataExpor
 export function tokens(access_token = 'access-token', refresh_csrf = 'refresh-csrf'): Tokens {
   return { access_token, refresh_csrf }
 }
+
+// An emailed link's token as the backend mints it: its payload, base64url
+// JSON naming the address and a state, then the time and the signature
+export function linkToken(email: string, state = '') {
+  const payload = btoa(JSON.stringify([email, state]))
+    .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+  return `${payload}.aTime.aSignature`
+}

@@ -11,20 +11,22 @@ from dramatiq import Worker
 from flask_jwt_extended import create_refresh_token, decode_token
 from itsdangerous import TimestampSigner, URLSafeTimedSerializer
 from redis import ConnectionError as RedisConnectionError
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.exc import OperationalError
 
 from app.auth import emails as auth_emails
 from app.auth import routes as auth_routes
 from app.auth.emails import (
-    REGISTRATION_LINK, REGISTRATION_LINK_HOURS, REGISTRATION_LINK_LIFETIME, send_registration_email)
+    PASSWORD_RESET_LINK, PASSWORD_RESET_LINK_HOURS, PASSWORD_RESET_LINK_LIFETIME,
+    REGISTRATION_LINK, REGISTRATION_LINK_HOURS, REGISTRATION_LINK_LIFETIME,
+    send_password_changed_email, send_password_reset_email, send_registration_email)
 from app.auth.models import TERMS_VERSION, User
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
 from app.utils.jobs import QUEUE_NAME, PermanentJobFailure
 from app.utils.links import make_link_token, read_link_token
-from app.utils.passwords import verify_password
+from app.utils.passwords import hash_password, verify_password
 from app.utils.redis_service import mark_redis_unreachable
-from tests.conftest import link_token, register
+from tests.conftest import link_token, register, reset_token
 
 
 class TestRequestRegistration:
@@ -127,7 +129,7 @@ class TestRegistrationEmail:
         # The token alone: it names the address, which the page reads from it
         assert set(fragment) == {'token'}
         assert read_link_token(
-            REGISTRATION_LINK, fragment['token'][0], REGISTRATION_LINK_LIFETIME) == 'new@example.com'
+            REGISTRATION_LINK, fragment['token'][0], REGISTRATION_LINK_LIFETIME) == ('new@example.com', '')
 
     def test_a_registered_address_is_told_so_and_gets_no_token(self, app, db, sample_user, outbox):
         send_registration_email('test@example.com')
@@ -331,10 +333,10 @@ class TestCompleteRegistration:
     @pytest.mark.parametrize('token', [
         'not-a-token',
         # Signed with another key
-        URLSafeTimedSerializer('another-key', salt=f'link:{REGISTRATION_LINK}').dumps('x@example.com'),
+        URLSafeTimedSerializer('another-key', salt=f'link:{REGISTRATION_LINK}').dumps(['x@example.com', '']),
         # Another purpose's token
         URLSafeTimedSerializer(
-            os.environ['SECRET_KEY'], salt='link:password-reset').dumps('x@example.com'),
+            os.environ['SECRET_KEY'], salt='link:password-reset').dumps(['x@example.com', '']),
     ], ids=['garbage', 'another key', 'another purpose'])
     def test_a_link_this_app_never_sent(self, client, db, token):
         response = self.complete(client, token)
@@ -1441,3 +1443,414 @@ class TestTokenUserId:
             token = create_refresh_token(identity=str(sample_user.id))
 
         assert self.user_id(app, token) is None
+
+
+class TestRequestPasswordReset:
+    """POST /api/auth/password-reset: only queues the email; the same answer
+    whether the address has an account or not"""
+
+    @pytest.mark.parametrize('email', ['new@example.com', 'test@example.com'],
+                             ids=['an address without an account', 'an account'])
+    def test_queues_the_email_and_answers_alike(self, client, db, sample_user, jobs, email):
+        response = client.post('/api/auth/password-reset', json={'email': email})
+
+        assert response.status_code == 202
+        assert response.get_json() == {'message': 'Check your inbox'}
+        assert jobs() == [('auth.send_password_reset_email', (email,))]
+
+    def test_queues_the_address_as_it_is_stored(self, client, db, jobs):
+        client.post('/api/auth/password-reset', json={'email': 'A@bücher.DE'})
+
+        assert jobs() == [('auth.send_password_reset_email', ('A@xn--bcher-kva.de',))]
+
+    def test_changes_nothing(self, client, db, sample_user, jobs):
+        """Until the link is used, the old password still works"""
+        old_hash = sample_user.password_hash
+
+        client.post('/api/auth/password-reset', json={'email': 'test@example.com'})
+
+        db.session.refresh(sample_user)
+        assert sample_user.password_hash == old_hash
+
+    @pytest.mark.parametrize('payload', [
+        {'email': 'not-an-email'},
+        {},
+        {'email': 'test@example.com', 'password': 'a valid passphrase'},
+    ], ids=['a bad address', 'no address', 'a password'])
+    def test_an_invalid_body_queues_nothing(self, client, db, jobs, payload):
+        response = client.post('/api/auth/password-reset', json=payload)
+
+        assert response.status_code == 422
+        assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
+        assert jobs() == []
+
+    def test_a_queue_that_is_down_is_a_503(self, app, client, db, monkeypatch):
+        def refuse(message, *, delay=None):
+            raise RedisConnectionError('Connection refused')
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+
+        response = client.post('/api/auth/password-reset', json={'email': 'test@example.com'})
+
+        assert response.status_code == 503
+        assert response.get_json()['error']['code'] == 'SERVICE_UNAVAILABLE'
+
+
+class TestPasswordResetEmails:
+    """The jobs the worker runs: the reset link, to an address with an
+    account alone, and the notice once the password has changed"""
+
+    @pytest.fixture(autouse=True)
+    def app_url(self, app, monkeypatch):
+        monkeypatch.setitem(app.config, 'APP_URL', 'https://app.test')
+
+    @pytest.fixture(autouse=True)
+    def app_name(self, app, monkeypatch):
+        monkeypatch.setitem(app.config, 'APP_NAME', 'Some App')
+
+    def link(self, message):
+        """The link to act on: an email's first, before the privacy notice's"""
+        links = [word for word in message.get_content().split() if word.startswith('https://')]
+        assert links[1:] == ['https://app.test/privacy']
+        return urlsplit(links[0])
+
+    def test_an_account_gets_a_link_to_reset_its_password(self, app, db, sample_user, outbox):
+        send_password_reset_email('test@example.com')
+
+        message, = outbox
+        link = self.link(message)
+        fragment = parse_qs(link.fragment)
+        assert (message['To'], message['Subject']) == ('test@example.com', 'Reset your Some App password')
+        assert (link.scheme, link.netloc, link.path, link.query) == (
+            'https', 'app.test', '/password-reset/complete', '')
+        assert set(fragment) == {'token'}
+        # The account's address, and the password it has now
+        assert read_link_token(
+            PASSWORD_RESET_LINK, fragment['token'][0], PASSWORD_RESET_LINK_LIFETIME) == (
+            'test@example.com', sample_user.password_state)
+
+    def test_the_link_s_token_is_not_compressed(self, app, db, sample_user, outbox):
+        """The page reads the address for password managers from the
+        token's payload, which it cannot from a compressed one ('.' first)"""
+        send_password_reset_email('test@example.com')
+
+        message, = outbox
+        token = parse_qs(self.link(message).fragment)['token'][0]
+        assert not token.startswith('.')
+
+    def test_an_address_without_an_account_gets_nothing(self, app, db, sample_user, outbox):
+        send_password_reset_email('new@example.com')
+
+        assert outbox == []
+
+    @pytest.mark.parametrize(('send', 'opening'), [
+        (send_password_reset_email,
+         'Someone, hopefully you, asked to reset the password of your Some App account.'),
+        (send_password_changed_email,
+         'The password of your Some App account was just reset with a link sent to this address, '
+         'and every device signed in to the account was logged out.'),
+    ], ids=['the link', 'the notice'])
+    def test_each_names_the_app_in_one_line_paragraphs_and_ends_with_the_privacy_notice(
+            self, app, db, sample_user, outbox, send, opening):
+        send('test@example.com')
+
+        message, = outbox
+        paragraphs = message.get_content().rstrip('\n').split('\n\n')
+        assert paragraphs[0] == opening
+        assert paragraphs[-1] == 'Who runs Some App, and what it keeps: https://app.test/privacy'
+        assert '\n' not in ''.join(paragraphs)
+
+    def test_the_link_s_lifetime_is_the_one_its_token_has(self):
+        assert PASSWORD_RESET_LINK_LIFETIME.total_seconds() == PASSWORD_RESET_LINK_HOURS * 3600
+
+    @pytest.mark.parametrize(('hours', 'said'), [(1, '1 hour'), (2, '2 hours')])
+    def test_says_how_long_the_link_works(self, app, db, sample_user, outbox, monkeypatch, hours, said):
+        """Read from the constant, so changing it changes the email"""
+        monkeypatch.setattr(auth_emails, 'PASSWORD_RESET_LINK_HOURS', hours)
+
+        send_password_reset_email('test@example.com')
+
+        message, = outbox
+        assert f'open this link within {said}:' in message.get_content()
+
+    def test_the_notice_links_to_a_new_reset(self, app, db, sample_user, outbox):
+        """For an owner who did not ask for it, and must take the account back"""
+        send_password_changed_email('test@example.com')
+
+        message, = outbox
+        assert (message['To'], message['Subject']) == (
+            'test@example.com', 'Your Some App password was changed')
+        assert self.link(message).geturl() == 'https://app.test/password-reset'
+
+    @pytest.mark.parametrize('send', [send_password_reset_email, send_password_changed_email],
+                             ids=['the link', 'the notice'])
+    @pytest.mark.parametrize('email', [
+        'victim@example.com, attacker@example.com',
+        'Victim <attacker@example.com>',
+        'victim@example.com\r\nBcc: attacker@example.com',
+        'Test@Example.COM',
+    ], ids=['a list', 'a display name', 'a line break', 'not normalized'])
+    def test_sends_nothing_to_what_the_form_would_refuse(self, app, db, sample_user, outbox, send, email):
+        with pytest.raises(PermanentJobFailure):
+            send(email)
+
+        assert outbox == []
+
+    def test_the_worker_runs_both_from_the_queue(self, app, client, db, sample_user, jobs, outbox):
+        """The jobs the routes queued are the ones that send"""
+        client.post('/api/auth/password-reset', json={'email': 'test@example.com'})
+        client.post('/api/auth/password-reset/complete', json={
+            'token': reset_token(app, 'test@example.com'), 'password': 'a valid passphrase'})
+        broker = app.extensions['jobs_broker']
+        worker = Worker(broker, worker_timeout=10)
+        worker.start()
+        broker.join(QUEUE_NAME, fail_fast=True)
+        worker.stop()
+
+        assert sorted(message['Subject'] for message in outbox) == [
+            'Reset your Some App password', 'Your Some App password was changed']
+
+
+class TestCompletePasswordReset:
+    """POST /api/auth/password-reset/complete: the link's token and a new
+    password; every session of the account ends"""
+
+    NEW_PASSWORD = 'a valid passphrase'
+
+    def complete(self, client, token, password=NEW_PASSWORD):
+        return client.post('/api/auth/password-reset/complete', json={
+            'token': token, 'password': password})
+
+    def token(self, client):
+        return reset_token(client.application, 'test@example.com')
+
+    @staticmethod
+    def login(client, password):
+        return client.post('/api/auth/login', json={'email': 'test@example.com', 'password': password})
+
+    def assert_unchanged(self, db, user):
+        db.session.refresh(user)
+        assert user.check_password('TestPassword123')
+
+    def test_sets_the_new_password(self, client, db, sample_user, fake_redis):
+        response = self.complete(client, self.token(client))
+
+        assert response.status_code == 200
+        assert response.get_json() == {'message': 'Password changed'}
+        assert self.login(client, 'TestPassword123').status_code == 401
+        assert self.login(client, self.NEW_PASSWORD).status_code == 200
+
+    def test_ends_every_session_and_signs_in_nowhere(self, app, client, db, sample_user, fake_redis):
+        """The user logs in with the new password, so a link alone never opens
+        a session; this browser's cookie goes with the others"""
+        for _ in range(2):
+            self.login(client, 'TestPassword123')
+        assert len(fake_redis.tokens) == 2
+
+        response = self.complete(client, self.token(client))
+
+        assert fake_redis.tokens == set()
+        assert client.get_cookie('__Secure-refresh_token', path='/api/auth') is None
+        assert 'access_token' not in response.get_json()
+
+    def test_queues_the_notice(self, client, db, sample_user, fake_redis, jobs):
+        self.complete(client, self.token(client))
+
+        assert jobs() == [('auth.send_password_changed_email', ('test@example.com',))]
+
+    def test_a_link_works_once(self, client, db, sample_user, fake_redis):
+        token = self.token(client)
+        self.complete(client, token)
+
+        response = self.complete(client, token, password='another valid passphrase')
+
+        assert response.status_code == 400
+        assert response.get_json()['error'] == {
+            'code': 'LINK_USED', 'message': 'This link has already been used'}
+        assert self.login(client, self.NEW_PASSWORD).status_code == 200
+
+    def test_a_link_stops_working_once_the_password_changes_otherwise(
+            self, client, db, sample_user, fake_redis):
+        """An older link, sent before another reset"""
+        token = self.token(client)
+        sample_user.set_password('changed some other way')
+        db.session.commit()
+
+        response = self.complete(client, token)
+
+        assert response.get_json()['error']['code'] == 'LINK_USED'
+
+    def test_of_two_racing_with_one_link_the_second_changes_nothing(
+            self, client, db, sample_user, fake_redis, jobs, monkeypatch):
+        """The other request's password lands between the check and the
+        write: this one must not replace it"""
+        def hash_while_another_reset_lands(password):
+            db.session.execute(update(User).values(password_hash=hash_password('the other request')))
+            db.session.commit()
+            return hash_password(password)
+        monkeypatch.setattr(auth_routes, 'hash_password', hash_while_another_reset_lands)
+
+        response = self.complete(client, self.token(client))
+
+        assert response.get_json()['error']['code'] == 'LINK_USED'
+        assert self.login(client, 'the other request').status_code == 200
+        assert jobs() == []
+
+    def test_an_expired_link(self, client, db, sample_user, fake_redis):
+        then = int(time.time() - (PASSWORD_RESET_LINK_LIFETIME + timedelta(seconds=5)).total_seconds())
+        with patch.object(TimestampSigner, 'get_timestamp', return_value=then):
+            token = self.token(client)
+
+        response = self.complete(client, token)
+
+        assert response.status_code == 400
+        assert response.get_json()['error'] == {'code': 'LINK_EXPIRED', 'message': 'This link has expired'}
+        self.assert_unchanged(db, sample_user)
+
+    def test_a_link_still_works_just_before_it_expires(self, client, db, sample_user, fake_redis):
+        then = int(time.time() - (PASSWORD_RESET_LINK_LIFETIME - timedelta(seconds=5)).total_seconds())
+        with patch.object(TimestampSigner, 'get_timestamp', return_value=then):
+            token = self.token(client)
+
+        assert self.complete(client, token).status_code == 200
+
+    def test_a_sign_up_link_resets_nothing(self, client, db, sample_user, fake_redis):
+        """Another purpose's token, for the same address"""
+        response = self.complete(client, link_token(client.application, 'test@example.com'))
+
+        assert response.get_json()['error']['code'] == 'LINK_INVALID'
+        self.assert_unchanged(db, sample_user)
+
+    @pytest.mark.parametrize('token', ['not-a-token', ''], ids=['garbage', 'empty'])
+    def test_a_link_this_app_never_sent(self, client, db, sample_user, fake_redis, token):
+        response = self.complete(client, token)
+
+        assert response.status_code == 400
+        assert response.get_json()['error'] == {'code': 'LINK_INVALID', 'message': 'This link is not valid'}
+
+    def test_a_token_naming_what_the_form_would_refuse(self, client, db, sample_user, fake_redis):
+        with client.application.app_context():
+            token = make_link_token(PASSWORD_RESET_LINK, 'Test@Example.COM', sample_user.password_state)
+
+        response = self.complete(client, token)
+
+        assert response.get_json()['error']['code'] == 'LINK_INVALID'
+        self.assert_unchanged(db, sample_user)
+
+    def test_a_link_to_an_account_since_deleted(self, client, db, sample_user, fake_redis):
+        token = self.token(client)
+        db.session.delete(sample_user)
+        db.session.commit()
+
+        response = self.complete(client, token)
+
+        assert response.get_json()['error']['code'] == 'LINK_INVALID'
+
+    @pytest.mark.parametrize('password', ['the test@example.com passphrase', 'APP_NAME'])
+    def test_a_guessable_password_is_refused_and_the_link_still_works(
+            self, app, client, db, sample_user, fake_redis, monkeypatch, password):
+        """Checked before the breach check, which never sees it"""
+        checked = []
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: checked.append(password) or False)
+        token = self.token(client)
+
+        response = self.complete(client, token, password.replace('APP_NAME', f"I like {app.config['APP_NAME']}"))
+
+        assert response.status_code == 422
+        assert response.get_json()['error']['code'] == 'PASSWORD_GUESSABLE'
+        assert checked == []
+        self.assert_unchanged(db, sample_user)
+        assert self.complete(client, token).status_code == 200
+
+    def test_a_breached_password_is_refused_and_the_link_still_works(
+            self, client, db, sample_user, fake_redis, monkeypatch):
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: password == 'correct horse battery staple')
+        token = self.token(client)
+
+        response = self.complete(client, token, 'correct horse battery staple')
+
+        assert response.status_code == 422
+        assert response.get_json()['error'] == {
+            'code': 'PASSWORD_BREACHED',
+            'message': 'This password has appeared in a data breach. Choose another.'}
+        self.assert_unchanged(db, sample_user)
+        assert self.complete(client, token).status_code == 200
+
+    def test_without_redis_nothing_changes(self, client, db, sample_user, no_redis, jobs):
+        """Sessions that cannot be ended would outlive the reset: a 503, and
+        the link still works"""
+        token = self.token(client)
+
+        response = self.complete(client, token)
+
+        assert response.status_code == 503
+        assert response.get_json()['error']['code'] == 'SERVICE_UNAVAILABLE'
+        self.assert_unchanged(db, sample_user)
+        assert jobs() == []
+        assert self.complete(client, token).status_code == 503
+
+    def test_a_notice_that_cannot_be_queued_still_answers_changed(
+            self, app, client, db, sample_user, fake_redis, monkeypatch, logged):
+        """The password is changed and the link spent: a 503 would send the
+        user back to it"""
+        def refuse(message, *, delay=None):
+            raise RedisConnectionError('Connection refused')
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+
+        response = self.complete(client, self.token(client))
+
+        assert response.status_code == 200
+        assert self.login(client, self.NEW_PASSWORD).status_code == 200
+        assert 'Could not queue the password changed email' in [line['message'] for line in logged()]
+
+    @pytest.mark.parametrize('payload', [
+        {'password': NEW_PASSWORD},
+        {'token': 'x'},
+        {'token': 'x', 'password': 'too short'},
+        {'token': 'x', 'password': NEW_PASSWORD, 'email': 'test@example.com'},
+        {'token': 'x' * 1025, 'password': NEW_PASSWORD},
+    ], ids=['no token', 'no password', 'a short password', 'an address', 'a long token'])
+    def test_an_invalid_body(self, client, db, sample_user, fake_redis, payload):
+        response = client.post('/api/auth/password-reset/complete', json=payload)
+
+        assert response.status_code == 422
+        assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
+        self.assert_unchanged(db, sample_user)
+
+
+class TestPasswordResetEvents:
+    """The reset's events: no line carries the address, token or password"""
+
+    def assert_absent(self, logged, *secrets):
+        text = json.dumps(logged())
+        for secret in secrets:
+            assert secret not in text
+
+    def test_password_reset_requested(self, client, db, jobs, security_events, logged):
+        """Named by the per-account limit's digest, as sign-up's request is"""
+        client.post('/api/auth/password-reset', json={'email': 'Test@example.com'})
+
+        assert security_events() == [{
+            'message': 'password_reset_requested', 'ip': '127.0.0.1',
+            'account': auth_routes._email_digest('test@example.com')}]
+        self.assert_absent(logged, 'test@example.com', 'Test@example.com')
+
+    def test_password_reset(self, client, db, sample_user, fake_redis, jobs, security_events, logged):
+        client.post('/api/auth/login', json={'email': 'test@example.com', 'password': 'TestPassword123'})
+        token = reset_token(client.application, 'test@example.com')
+
+        client.post('/api/auth/password-reset/complete', json={
+            'token': token, 'password': 'a valid passphrase'})
+
+        assert security_events()[1:] == [
+            {'message': 'password_reset', 'ip': '127.0.0.1', 'user_id': sample_user.id, 'sessions': 1}]
+        self.assert_absent(logged, 'test@example.com', 'a valid passphrase', token)
+
+    def test_a_refused_link(self, client, db, sample_user, fake_redis, security_events, logged):
+        token = reset_token(client.application, 'test@example.com')
+        client.post('/api/auth/password-reset/complete', json={'token': token, 'password': 'a valid passphrase'})
+
+        client.post('/api/auth/password-reset/complete', json={'token': token, 'password': 'a valid passphrase'})
+
+        assert security_events()[-1] == {
+            'message': 'link_refused', 'ip': '127.0.0.1', 'purpose': 'password-reset', 'reason': 'used'}
+        self.assert_absent(logged, token)

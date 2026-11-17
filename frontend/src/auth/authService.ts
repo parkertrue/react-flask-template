@@ -1,7 +1,8 @@
 import { api } from '@/api/api'
 import type {
   AccountDeleteRequest, AccountResponse, DataExportResponse, LoginRequest,
-  RegisterCompleteRequest, RegisterCompleteResponse, RegisterRequest, TokensResponse,
+  PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
+  RegisterCompleteResponse, RegisterRequest, TokensResponse,
 } from '@/api/schemas'
 
 // The body of a successful login or refresh. No refresh_csrf when the
@@ -19,9 +20,11 @@ export type Account = AccountResponse
 // under its name
 export type DataExport = DataExportResponse
 
-// How long the emailed link works, mirroring REGISTRATION_LINK_HOURS in
-// backend/app/auth/emails.py (a test keeps them in step)
+// How long the emailed links work, mirroring REGISTRATION_LINK_HOURS and
+// PASSWORD_RESET_LINK_HOURS in backend/app/auth/emails.py (a test keeps them
+// in step)
 export const REGISTRATION_LINK_HOURS = 24
+export const PASSWORD_RESET_LINK_HOURS = 1
 
 // Sign-up's first step: emails the address a link to finish. Answered
 // alike whether the address has an account or not.
@@ -37,6 +40,19 @@ export async function completeRegistration(token: string, password: string, term
     '/auth/register/complete',
     { token, password, terms_version: termsVersion } satisfies RegisterCompleteRequest)
   return response.data
+}
+
+// A password reset's first step: emails the account a link to choose a new
+// password. Answered alike whether the address has an account or not.
+export async function requestPasswordReset(email: string) {
+  await api.post('/auth/password-reset', { email } satisfies PasswordResetRequest)
+}
+
+// A password reset's second step, with the emailed link's token. Ends every
+// session of the account, this browser's too; signs in nowhere.
+export async function completePasswordReset(token: string, password: string) {
+  await api.post(
+    '/auth/password-reset/complete', { token, password } satisfies PasswordResetCompleteRequest)
 }
 
 export async function loginUser(email: string, password: string) {

@@ -36,7 +36,10 @@ export default function PrivacyPage() {
         the address is yours. To keep you from choosing a password that has
         leaked elsewhere, we check it against Have I Been Pwned's list of
         breached passwords, sending only the first 5 characters of a hash of
-        it, from which neither you nor the password can be identified. [If the CCPA applies: the
+        it, from which neither you nor the password can be identified; we
+        check a new password chosen through a reset link the same way. When
+        you ask to reset your password, we email a link only if the address
+        has an account, and tell it once the password has changed. [If the CCPA applies: the
         categories of sources of this data.]
       </p>
 

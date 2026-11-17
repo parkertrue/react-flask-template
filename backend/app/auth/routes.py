@@ -3,10 +3,11 @@ import hmac
 from datetime import datetime, timezone
 
 from collections.abc import Callable
+from typing import Any, cast
 
 from flask import Blueprint, Response, abort, g, request, make_response, jsonify, current_app
 from flask.typing import ResponseReturnValue
-from sqlalchemy import select
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.exc import IntegrityError
 from flask_jwt_extended import (
     create_access_token,
@@ -26,18 +27,22 @@ from flask_limiter import RouteLimit
 from flask_limiter.util import get_remote_address
 
 from app import db, limiter
-from app.auth.emails import REGISTRATION_LINK, REGISTRATION_LINK_LIFETIME, send_registration_email
+from app.auth.emails import (
+    PASSWORD_RESET_LINK, PASSWORD_RESET_LINK_LIFETIME, REGISTRATION_LINK,
+    REGISTRATION_LINK_LIFETIME, send_password_changed_email, send_password_reset_email,
+    send_registration_email)
 from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import (
-    LoginRequest, RegisterCompleteRequest, RegisterCompleteResponse, RegisterRequest,
-    TokensResponse, is_guessable, is_normalized_email, normalize_email)
+    LoginRequest, PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
+    RegisterCompleteResponse, RegisterRequest, TokensResponse, is_guessable,
+    is_normalized_email, normalize_email)
 from app.utils.breached import is_breached
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
-from app.utils.jobs import job
-from app.utils.links import LinkExpired, LinkInvalid, read_link_token
+from app.utils.jobs import JobQueueUnavailable, job
+from app.utils.links import LinkClaims, LinkExpired, LinkInvalid, read_link_token
 from app.utils.log import security_event
-from app.utils.passwords import DUMMY_PASSWORD_HASH, verify_password
+from app.utils.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
 from app.utils.redis_service import get_redis_service
 from app.utils.schemas import MessageResponse
 
@@ -47,6 +52,8 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 # Sends sign-up's email from the worker, so the form's answer never waits on
 # the mail server, and takes as long for a registered address as a new one
 registration_email = job(auth_bp)(send_registration_email)
+password_reset_email = job(auth_bp)(send_password_reset_email)
+password_changed_email = job(auth_bp)(send_password_changed_email)
 
 
 def _email_digest(email: str) -> str:
@@ -96,6 +103,14 @@ def account_password_limit(
     """
     return limiter.shared_limit(
         '100 per hour', scope='account-password', key_func=key_func, deduct_when=deduct_when)
+
+
+# Emails to one address, whichever form asks for them: sign-up's and a
+# password reset's share 3 an hour and 6 a day, so no one can flood an inbox
+# through the app, alternating the two or not. The 429 tells nothing: it
+# comes as soon for an address with an account as for one without.
+emails_to_address_limit = limiter.shared_limit(
+    '3 per hour;6 per day', scope='emails-to-address', key_func=_request_email_key)
 
 
 def _login_email_and_ip_key() -> str:
@@ -212,10 +227,40 @@ def _terms_outdated() -> ErrorResponse:
     )
 
 
-def _link_refused(reason: str) -> ErrorResponse:
-    """Refuse a sign-up link, and log why: a run of them from one address is
-    someone probing the link's format or replaying stolen links"""
-    security_event('link_refused', purpose=REGISTRATION_LINK, reason=reason)
+def _read_link(purpose: str, token: str) -> LinkClaims | ErrorResponse:
+    """What an emailed link of this purpose names, or the answer refusing it"""
+    lifetime = (REGISTRATION_LINK_LIFETIME if purpose == REGISTRATION_LINK
+                else PASSWORD_RESET_LINK_LIFETIME)
+    try:
+        claims = read_link_token(purpose, token, lifetime)
+    except LinkExpired:
+        return _link_refused(purpose, 'expired')
+    except LinkInvalid:
+        return _link_refused(purpose, 'invalid')
+    # Signed by this app, but naming what the form would refuse
+    if not is_normalized_email(claims.email):
+        return _link_refused(purpose, 'invalid')
+    return claims
+
+
+def _password_guessable() -> ErrorResponse:
+    return error_response(
+        code='PASSWORD_GUESSABLE',
+        message="Choose a password that doesn't contain your email address or the app's name.",
+        status=422)
+
+
+def _password_breached() -> ErrorResponse:
+    return error_response(
+        code='PASSWORD_BREACHED',
+        message='This password has appeared in a data breach. Choose another.',
+        status=422)
+
+
+def _link_refused(purpose: str, reason: str) -> ErrorResponse:
+    """Refuse an emailed link, and log why: a run of them from one address
+    is someone probing the link's format or replaying stolen links"""
+    security_event('link_refused', purpose=purpose, reason=reason)
     if reason == 'registered':
         return _already_registered()
     if reason == 'expired':
@@ -227,11 +272,8 @@ def _link_refused(reason: str) -> ErrorResponse:
 
 
 @auth_bp.route('/register', methods=['POST'])
-# Per IP, and per address, so no one can use the app to flood an inbox: 3
-# emails an hour, 6 a day. The 429 tells nothing: it comes as soon for an
-# address with an account.
 @limiter.limit('10 per hour')
-@limiter.limit('3 per hour;6 per day', key_func=_request_email_key)
+@emails_to_address_limit
 def register() -> ResponseReturnValue:
     """Sign-up's first step: email the address a link to finish.
 
@@ -257,29 +299,21 @@ def complete_registration() -> ResponseReturnValue:
     if payload.terms_version != TERMS_VERSION:
         return _terms_outdated()
 
-    try:
-        email = read_link_token(REGISTRATION_LINK, payload.token, REGISTRATION_LINK_LIFETIME)
-    except LinkExpired:
-        return _link_refused('expired')
-    except LinkInvalid:
-        return _link_refused('invalid')
-    # Signed by this app, but naming what the sign-up form would refuse
-    if not is_normalized_email(email):
-        return _link_refused('invalid')
+    claims = _read_link(REGISTRATION_LINK, payload.token)
+    if not isinstance(claims, LinkClaims):
+        return claims
+    email = claims.email
 
     # A link used twice: the first made the account. A fast path that skips
     # hashing the password; the unique index on users.email is the real
     # check, below.
     stmt = select(User).where(User.email == email)
     if db.session.execute(stmt).scalar_one_or_none():
-        return _link_refused('registered')
+        return _link_refused(REGISTRATION_LINK, 'registered')
 
     # Before the link is spent, so the user can try another password with it
     if is_guessable(payload.password, email, current_app.config['APP_NAME']):
-        return error_response(
-            code='PASSWORD_GUESSABLE',
-            message="Choose a password that doesn't contain your email address or the app's name.",
-            status=422)
+        return _password_guessable()
 
     # A link works once, even after the account it made is deleted
     redis_service = get_redis_service()
@@ -288,7 +322,7 @@ def complete_registration() -> ResponseReturnValue:
     if claimed is None:
         return service_unavailable()
     if not claimed:
-        return _link_refused('used')
+        return _link_refused(REGISTRATION_LINK, 'used')
     assert redis_service is not None
 
     try:
@@ -298,10 +332,7 @@ def complete_registration() -> ResponseReturnValue:
         # Last, so a request refused anyway never reaches the third party
         if is_breached(payload.password):
             redis_service.release_link(payload.token)
-            return error_response(
-                code='PASSWORD_BREACHED',
-                message='This password has appeared in a data breach. Choose another.',
-                status=422)
+            return _password_breached()
 
         user = User(email=email, terms_version=payload.terms_version)
         user.set_password(payload.password)
@@ -311,7 +342,7 @@ def complete_registration() -> ResponseReturnValue:
         # Another request registered the same email since the check above
         # (a double submit, or a client retrying)
         db.session.rollback()
-        return _link_refused('registered')
+        return _link_refused(REGISTRATION_LINK, 'registered')
     except BaseException:
         # Not used after all (the database or the password hashing failed):
         # the link must still work
@@ -321,6 +352,92 @@ def complete_registration() -> ResponseReturnValue:
     security_event('registered', user_id=user.id)
     return _issue_tokens(
         user.id, auth_time=int(datetime.now(timezone.utc).timestamp()), email=email)
+
+
+@auth_bp.route('/password-reset', methods=['POST'])
+@limiter.limit('10 per hour')
+@emails_to_address_limit
+def request_password_reset() -> ResponseReturnValue:
+    """A password reset's first step: email the account a link to choose a
+    new password.
+
+    The same answer, as fast, whether the address has an account or not;
+    the worker emails only an address that has one (auth/emails.py).
+    """
+    payload = PasswordResetRequest.model_validate(request.get_json())
+    password_reset_email.send(payload.email)
+    security_event('password_reset_requested', account=_email_digest(payload.email))
+    return jsonify(MessageResponse(message='Check your inbox').model_dump()), 202
+
+
+@auth_bp.route('/password-reset/complete', methods=['POST'])
+@limiter.limit('10 per hour')
+def complete_password_reset() -> ResponseReturnValue:
+    """A password reset's second step: the emailed link's token, which proves
+    the address, and the new password. Ends every session of the account;
+    the user then logs in with the new password.
+
+    The link works while the password it was sent for is the account's (its
+    password_state), so once: the reset changes it.
+    """
+    payload = PasswordResetCompleteRequest.model_validate(request.get_json())
+
+    claims = _read_link(PASSWORD_RESET_LINK, payload.token)
+    if not isinstance(claims, LinkClaims):
+        return claims
+    user = db.session.execute(
+        select(User).where(User.email == claims.email)).scalar_one_or_none()
+    # The account was deleted since the link was sent
+    if user is None:
+        return _link_refused(PASSWORD_RESET_LINK, 'invalid')
+    if not hmac.compare_digest(user.password_state, claims.state):
+        return _link_refused(PASSWORD_RESET_LINK, 'used')
+
+    if is_guessable(payload.password, user.email, current_app.config['APP_NAME']):
+        return _password_guessable()
+
+    user_id, email, old_hash = user.id, user.email, user.password_hash
+    # Nothing to keep yet: end the read above, so no pooled database
+    # connection waits on a third party or on hashing
+    db.session.rollback()
+    # Last, so a request refused anyway never reaches the third party
+    if is_breached(payload.password):
+        return _password_breached()
+    # Before the sessions end, so the moment between that and the new
+    # password is short: a login with the old one there would outlive it
+    new_hash = hash_password(payload.password)
+
+    # First, as deleting the account does: a reset is how an owner locks
+    # out whoever has the password, so it changes nothing unless Redis can
+    # end their sessions
+    redis_service = get_redis_service()
+    sessions = redis_service.revoke_all_user_tokens(user_id) if redis_service else None
+    if sessions is None:
+        return service_unavailable()
+
+    # Only if the password is still the one the link was sent for: of two
+    # requests racing with one link, the second changes nothing
+    changed = cast('CursorResult[Any]', db.session.execute(
+        update(User)
+        .where(User.id == user_id, User.password_hash == old_hash)
+        .values(password_hash=new_hash)))
+    db.session.commit()
+    if changed.rowcount == 0:
+        return _link_refused(PASSWORD_RESET_LINK, 'used')
+
+    security_event('password_reset', user_id=user_id, sessions=sessions)
+    try:
+        password_changed_email.send(email)
+    except JobQueueUnavailable:
+        # The password is changed: say so, rather than a 503 that would
+        # send the user back to a link that no longer works
+        current_app.logger.exception('Could not queue the password changed email')
+
+    response = make_response(
+        jsonify(MessageResponse(message='Password changed').model_dump()), 200)
+    # This browser's session ended with the others
+    unset_refresh_cookies(response)
+    return response
 
 
 @auth_bp.route('/login', methods=['POST'])
