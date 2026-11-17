@@ -56,10 +56,25 @@ sessions. Revoking on reuse would also log out a second tab that lost the
 rotation race. *Revisit when:* the app holds data that justifies logging users
 out on a false positive.
 
-**No per-IP quota on the whole API.** Only login, register, refresh and
-account deletion have Flask limits; users sharing an address (offices, carrier NAT) would lock each
+**No per-IP quota on the whole API.** Only login, sign-up's two steps,
+refresh, account deletion and the data export have Flask limits; users sharing an address (offices, carrier NAT) would lock each
 other out. nginx's per-IP `limit_req`/`limit_conn` on `/api` is the coarse
 backstop.
+
+**Sign-up proves the address first, and answers every address alike**
+(user, 2026-11-09). `POST /api/auth/register` takes an email alone, answers
+202 whatever the address, and queues one of two emails: a link to finish
+(24 hours, `utils/links.py`) or, for a registered address, a note saying so
+with a login link. No row exists until the link is used. The form therefore
+never tells a stranger which addresses have accounts, and a mistyped address
+leaves nothing behind. Each link works once, even after the account it made
+is deleted (its hash is kept in Redis for its lifetime); a link for an
+address that has an account since answers 409. The costs: sign-up takes two
+steps, and nobody can sign up while email is down or unconfigured (a local
+production run included) or while Redis is down, since finishing claims the
+link there. *Revisit when:* an app needs accounts without a verified email
+(an invitation flow, SSO), or the 24-hour window proves too short or too
+long.
 
 **Rate limits fall back to per-worker memory while Redis is down.** Limits get
 looser (per worker, reset on restart) instead of every limited route failing.

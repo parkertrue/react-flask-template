@@ -154,6 +154,8 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -subj "/C=US/ST=California/L=San Francisco/O=Dev/CN=localhost"
 ```
 
+Locally too, sign-up needs a real mail provider: production refuses Mailpit and the example's email values, and its worker stops without them ([Sending Email](docs/deployment.md#sending-email)). To try the app without one, use the dev or E2E stack, which deliver to Mailpit.
+
 ### Build and Start
 
 ```bash
