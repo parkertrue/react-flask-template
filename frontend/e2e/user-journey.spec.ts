@@ -13,23 +13,23 @@ test.describe('Critical User Journey', () => {
     testEmail = uniqueEmail('e2e-test')
   })
 
-  test('complete user journey: register → email → account → logout → login', async ({ page }) => {
+  test('complete user journey: sign up → email → account → logout → login', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { level: 1, name: `Welcome to ${APP_NAME}` })).toBeVisible()
 
-    // The home page's call to action leads to registration
+    // The home page's call to action leads to sign-up
     await page.getByRole('link', { name: /get started/i }).click()
-    await expect(page).toHaveURL(/\/register/)
+    await expect(page).toHaveURL(/\/signup/)
     await requestLink(page, testEmail)
     await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
 
     // The emailed link opens the page that finishes, its token kept out of
     // the address bar; finishing signs in
     await page.goto(await emailedLink(testEmail))
-    await expect(page).toHaveURL(/\/register\/complete$/)
+    await expect(page).toHaveURL(/\/signup\/complete$/)
     await expect(page.getByLabel('Email')).toHaveValue(testEmail)
     await fillRegistration(page)
-    await page.waitForURL(url => url.pathname !== '/register/complete', { timeout: 15000 })
+    await page.waitForURL(url => url.pathname !== '/signup/complete', { timeout: 15000 })
     await openAccount(page)
     await expect(page.getByRole('main').getByText(testEmail, { exact: true })).toBeVisible()
 
@@ -119,23 +119,23 @@ test.describe('Critical User Journey', () => {
     await register(page, existingEmail)
     await logout(page)
 
-    await page.goto('/register')
+    await page.goto('/signup')
     await requestLink(page, existingEmail)
 
     await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeVisible()
-    const message = await emailTo(existingEmail, 'You already have an account')
+    const message = await emailTo(existingEmail, `You already have a ${APP_NAME} account`)
     expect(message.Text).toContain('/login')
     expect(message.Text).not.toContain('token=')
   })
 
   test('a link used twice says the account is set up, and offers to log in', async ({ page }) => {
     const email = uniqueEmail('e2e-twice')
-    await page.goto('/register')
+    await page.goto('/signup')
     await requestLink(page, email)
     const link = await emailedLink(email)
     await page.goto(link)
     await fillRegistration(page)
-    await page.waitForURL(url => url.pathname !== '/register/complete')
+    await page.waitForURL(url => url.pathname !== '/signup/complete')
     await logout(page)
 
     await page.goto(link)
@@ -171,6 +171,6 @@ test.describe('Critical User Journey', () => {
     await fillRegistration(page)
 
     await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)
-    await expect(page.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
+    await expect(page.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/signup')
   })
 })

@@ -19,6 +19,10 @@ export type Account = AccountResponse
 // under its name
 export type DataExport = DataExportResponse
 
+// How long the emailed link works, mirroring REGISTRATION_LINK_HOURS in
+// backend/app/auth/emails.py (a test keeps them in step)
+export const REGISTRATION_LINK_HOURS = 24
+
 // Sign-up's first step: emails the address a link to finish. Answered
 // alike whether the address has an account or not.
 export async function requestRegistration(email: string) {

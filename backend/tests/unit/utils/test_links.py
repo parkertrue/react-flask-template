@@ -70,7 +70,7 @@ class TestAppLink:
 
     def test_params_go_in_the_fragment_encoded(self):
         """Where no server log sees them, and an address's + survives"""
-        link = urlsplit(app_link('/register/complete', email='a+b@example.com', token='t.k'))
+        link = urlsplit(app_link('/signup/complete', email='a+b@example.com', token='t.k'))
 
-        assert (link.path, link.query) == ('/register/complete', '')
+        assert (link.path, link.query) == ('/signup/complete', '')
         assert parse_qs(link.fragment) == {'email': ['a+b@example.com'], 'token': ['t.k']}

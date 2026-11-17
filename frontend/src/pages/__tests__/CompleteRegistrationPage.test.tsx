@@ -18,7 +18,7 @@ function linkToken(email: string) {
   return `${payload}.aTime.aSignature`
 }
 const TOKEN = linkToken('user@example.com')
-const LINK = `/register/complete#token=${TOKEN}`
+const LINK = `/signup/complete#token=${TOKEN}`
 
 // The backend's answer: the login, and the account's address
 function registered(email = 'user@example.com') {
@@ -28,7 +28,7 @@ function registered(email = 'user@example.com') {
 function renderPage(entry = LINK) {
   return renderRoutes([{
     element: <GuestRoute />,
-    children: [{ path: '/register/complete', element: <CompleteRegistrationPage /> }],
+    children: [{ path: '/signup/complete', element: <CompleteRegistrationPage /> }],
   },
   // Wherever signing in leads, a feature's page the test need not know
   { path: AFTER_LOGIN_PATH, element: <p>Signed in</p> },
@@ -73,11 +73,11 @@ describe('CompleteRegistrationPage', () => {
   it('takes the token off the address bar and out of history, keeping the state', async () => {
     const state = { from: { pathname: '/account' } }
     const { router } = renderRoutes([{
-      path: '/register/complete', element: <CompleteRegistrationPage />,
-    }], { pathname: '/register/complete', hash: LINK.slice(LINK.indexOf('#')), state })
+      path: '/signup/complete', element: <CompleteRegistrationPage />,
+    }], { pathname: '/signup/complete', hash: LINK.slice(LINK.indexOf('#')), state })
 
     await waitFor(() => expect(router.state.location.hash).toBe(''))
-    expect(router.state.location.pathname).toBe('/register/complete')
+    expect(router.state.location.pathname).toBe('/signup/complete')
     expect(router.state.historyAction).toBe('REPLACE')
     expect(router.state.location.state).toEqual(state)
     // The page still holds what it read
@@ -85,14 +85,14 @@ describe('CompleteRegistrationPage', () => {
   })
 
   it("shows the address the token names, never one the link adds", () => {
-    renderPage(`/register/complete#email=victim%40example.com&token=${linkToken('attacker@example.com')}`)
+    renderPage(`/signup/complete#email=victim%40example.com&token=${linkToken('attacker@example.com')}`)
 
     expect(emailField()).toHaveValue('attacker@example.com')
   })
 
   // Their payloads hold base64url's own characters, '_' and '-'
   it.each(['user?@example.com', 'user~@example.com'])('reads %s from its token', email => {
-    renderPage(`/register/complete#token=${linkToken(email)}`)
+    renderPage(`/signup/complete#token=${linkToken(email)}`)
 
     expect(emailField()).toHaveValue(email)
   })
@@ -101,7 +101,7 @@ describe('CompleteRegistrationPage', () => {
     ['compressed', '.eJyrVkpUslIqLU4tUqoFAB2bBHU.aTime.aSignature'],
     ['not a token', 'garbage'],
   ])('shows no address when the token is %s, but keeps the form', (_, token) => {
-    renderPage(`/register/complete#token=${token}`)
+    renderPage(`/signup/complete#token=${token}`)
 
     expect(screen.queryByLabelText('Email')).not.toBeInTheDocument()
     expect(field.password()).toBeInTheDocument()
@@ -121,10 +121,10 @@ describe('CompleteRegistrationPage', () => {
   })
 
   it('says what to do without a link, and offers to start again', () => {
-    renderPage('/register/complete')
+    renderPage('/signup/complete')
 
     expect(screen.getByText(/This page needs the link from your email/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
+    expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/signup')
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -161,7 +161,7 @@ describe('CompleteRegistrationPage', () => {
       ['a password holding the address', { password: 'mine is user@example.com' }, 'password',
         "doesn't contain your email address"],
       ['passwords that differ', { confirmPassword: 'Different123' }, 'confirmPassword', 'Passwords do not match'],
-      ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to register'],
+      ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to sign up'],
     ])('stops %s, explains, and focuses the first bad field', async (_, values, name, message) => {
       const { user } = renderPage()
       await fill(user, values)
@@ -180,7 +180,7 @@ describe('CompleteRegistrationPage', () => {
     it("makes the account with the link's token, signs in under the server's address and moves on", async () => {
       // Another address than the token's, only to show which one is kept
       vi.mocked(completeRegistration).mockResolvedValue(registered('account@example.com'))
-      const { user } = renderPage(`/register/complete#email=victim%40example.com&token=${TOKEN}`)
+      const { user } = renderPage(`/signup/complete#email=victim%40example.com&token=${TOKEN}`)
       await fill(user)
 
       await user.click(submitButton())
@@ -192,9 +192,9 @@ describe('CompleteRegistrationPage', () => {
     })
 
     it.each([
-      ['an expired link', 'LINK_EXPIRED', 'This link has expired.', 'Start again', '/register'],
-      ['a link this app never sent', 'LINK_INVALID', 'This link is not valid.', 'Start again', '/register'],
-      ['a link used for an account since deleted', 'LINK_USED', 'This link has already been used.', 'Start again', '/register'],
+      ['an expired link', 'LINK_EXPIRED', 'This link has expired.', 'Start again', '/signup'],
+      ['a link this app never sent', 'LINK_INVALID', 'This link is not valid.', 'Start again', '/signup'],
+      ['a link used for an account since deleted', 'LINK_USED', 'This link has already been used.', 'Start again', '/signup'],
       ['a link already used', 'EMAIL_ALREADY_REGISTERED', 'This account is already set up.', 'Log in', '/login'],
     ] as const)('replaces the form for %s, focuses why, and offers what next', async (_, code, message, action, href) => {
       vi.mocked(completeRegistration).mockRejectedValue(httpError(400, errorBody(code, 'x')))

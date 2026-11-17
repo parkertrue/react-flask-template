@@ -35,7 +35,7 @@ describe('Authentication Flow Integration Tests', () => {
         body = await request.json()
         return HttpResponse.json({ message: 'Check your inbox' }, { status: 202 })
       }))
-      const { user } = renderRoutes(routes, '/register')
+      const { user } = renderRoutes(routes, '/signup')
 
       await user.type(screen.getByLabelText(/^Email/), 'test@example.com')
       await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -54,7 +54,7 @@ describe('Authentication Flow Integration Tests', () => {
       // this shared test needs no example feature page after signing in
       const from: FromState = { from: { pathname: '/account', search: '', hash: '', state: null, key: 'k' } }
       const { user } = renderRoutes(routes, {
-        pathname: '/register/complete', hash: '#token=a-token', state: from })
+        pathname: '/signup/complete', hash: '#token=a-token', state: from })
 
       await finishRegistration(user)
 
@@ -69,12 +69,12 @@ describe('Authentication Flow Integration Tests', () => {
         http.post('/api/auth/register/complete', () => HttpResponse.json(
           errorBody('LINK_EXPIRED', 'This link has expired'), { status: 400 }))
       )
-      const { user } = renderRoutes(routes, '/register/complete#token=a-token')
+      const { user } = renderRoutes(routes, '/signup/complete#token=a-token')
 
       await finishRegistration(user)
 
       expect(await screen.findByRole('alert')).toHaveTextContent('This link has expired')
-      expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
+      expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/signup')
     })
   })
 

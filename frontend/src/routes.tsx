@@ -35,9 +35,9 @@ export const routes: RouteObject[] = [
             element: <GuestRoute />,
             children: [
               { path: 'login', element: <LoginPage /> },
-              { path: 'register', element: <RegisterPage /> },
+              { path: 'signup', element: <RegisterPage /> },
               // The emailed link's page
-              { path: 'register/complete', element: <CompleteRegistrationPage /> },
+              { path: 'signup/complete', element: <CompleteRegistrationPage /> },
             ],
           },
           {

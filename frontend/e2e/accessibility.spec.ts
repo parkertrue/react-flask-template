@@ -11,9 +11,9 @@ import { APP_NAME } from '../src/appInfo'
 const VISITOR_PAGES: [string, string, string, number][] = [
   ['/', APP_NAME, `Welcome to ${APP_NAME}`, 8],
   ['/login', `Log in | ${APP_NAME}`, 'Log in', 10],
-  ['/register', `Register | ${APP_NAME}`, 'Register', 10],
+  ['/signup', `Sign up | ${APP_NAME}`, 'Sign up', 10],
   // Without the emailed link: what to do instead
-  ['/register/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
+  ['/signup/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
   ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice', 9],
   ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service', 8],
   ['/contact', `Contact | ${APP_NAME}`, 'Contact', 10],
@@ -53,7 +53,7 @@ test.describe('Accessibility', () => {
     }
 
     test('form errors are announced and pass', async ({ page }) => {
-      await page.goto('/register')
+      await page.goto('/signup')
       await page.getByRole('button', { name: 'Continue' }).click()
 
       await expect(page.getByLabel('Email')).toBeFocused()
@@ -111,7 +111,7 @@ test.describe('Accessibility', () => {
 
     test('asking for a link, busy and then failed, has no violations', async ({ page }) => {
       const release = await holdRequests(page, 'POST', '**/api/auth/register', serviceUnavailable)
-      await page.goto('/register')
+      await page.goto('/signup')
       await requestLink(page, uniqueEmail('e2e-a11y-busy'))
 
       await expect(page.getByRole('button', { name: 'Sending link...' })).toBeFocused()
@@ -123,7 +123,7 @@ test.describe('Accessibility', () => {
     })
 
     test('the check-your-inbox step has no violations, reflows, shows focus and has large enough targets', async ({ page }) => {
-      await page.goto('/register')
+      await page.goto('/signup')
       // Long, with nowhere to break, as an address can be: it must wrap
       await requestLink(page, uniqueEmail('e2e-a11y-inbox-of-a-rather-long-address'))
 

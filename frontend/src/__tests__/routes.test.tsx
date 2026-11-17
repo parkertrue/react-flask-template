@@ -32,8 +32,8 @@ describe('routes', () => {
   it.each([
     ['/', 'Home page'],
     ['/login', 'Login page'],
-    ['/register', 'Register page'],
-    ['/register/complete', 'Complete registration page'],
+    ['/signup', 'Register page'],
+    ['/signup/complete', 'Complete registration page'],
     ['/privacy', 'Privacy page'],
     ['/terms', 'Terms page'],
     ['/contact', 'Contact page'],
@@ -55,8 +55,8 @@ describe('routes', () => {
     ['/contact', 'Contact page'],
     // A signed-in user has no use for these
     ['/login', 'Notes page'],
-    ['/register', 'Notes page'],
-    ['/register/complete', 'Notes page'],
+    ['/signup', 'Notes page'],
+    ['/signup/complete', 'Notes page'],
   ])('show a signed-in user at %s the %s', (path, expected) => {
     signIn()
     renderRoutes(routes, path)

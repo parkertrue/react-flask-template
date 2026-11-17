@@ -49,7 +49,7 @@ export async function emailTo(address: string, subject: string) {
 }
 
 /** The link in the one email to an address with this subject */
-export async function emailedLink(address: string, subject = 'Finish signing up') {
+export async function emailedLink(address: string, subject = `Finish signing up for ${APP_NAME}`) {
   return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
 }
 
@@ -58,9 +58,9 @@ export async function emailedLink(address: string, subject = 'Finish signing up'
  * token's payload names someone@example.com, which the page shows, and the
  * backend refuses it as invalid
  */
-export const UNSIGNED_LINK = '/register/complete#token=InNvbWVvbmVAZXhhbXBsZS5jb20i.aTime.aSignature'
+export const UNSIGNED_LINK = '/signup/complete#token=InNvbWVvbmVAZXhhbXBsZS5jb20i.aTime.aSignature'
 
-/** Ask for a sign-up link on the register page, without waiting */
+/** Ask for a sign-up link on the sign-up page, without waiting */
 export async function requestLink(page: Page, email: string) {
   await page.getByLabel(/^email/i).fill(email)
   await page.getByRole('button', { name: /^continue$|sending link/i }).click()
@@ -103,12 +103,12 @@ export async function boxOf(locator: Locator) {
  * email, choose a password. Signed in, on the page signing up leads to.
  */
 export async function register(page: Page, email: string, password = TEST_PASSWORD) {
-  await page.goto('/register')
+  await page.goto('/signup')
   await requestLink(page, email)
   await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeVisible()
   await page.goto(await emailedLink(email))
   await fillRegistration(page, password)
-  await page.waitForURL(url => url.pathname !== '/register/complete', { timeout: 15000 })
+  await page.waitForURL(url => url.pathname !== '/signup/complete', { timeout: 15000 })
 }
 
 /** Log in from the login page and wait to be sent on from it */
