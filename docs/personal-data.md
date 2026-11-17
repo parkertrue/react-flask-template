@@ -19,6 +19,7 @@ Every app built from the template collects personal data from its first sign-up,
 | Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
 | Queued jobs' arguments, such as an email's recipient | Redis | Until the job runs; a day after its last try, for one that keeps failing |
 | A hash of each sign-up link used, no address | Redis | 24 hours, the link's lifetime |
+| Everything above that Redis held, deleted and expired values included | Redis's on-disk log (the bundled Redis, in production) | Until Redis compacts the log, after about 1 MB of writes; a managed Redis keeps it on its provider's terms |
 | Emails sent | Your mail provider | By the provider's retention |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
 | Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |

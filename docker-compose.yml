@@ -174,6 +174,12 @@ services:
       - "-@tdigest"
       - --appendonly
       - "yes"
+      # Rewrite the log from the live data once it passes 1 MB and has
+      # doubled, not at Redis's default 64 MB: until then it keeps every
+      # deleted and expired value, a job's recipient included
+      # (docs/personal-data.md). check_compose.py pins it.
+      - --auto-aof-rewrite-min-size
+      - 1mb
       - --maxmemory
       - 192mb
       - --maxmemory-policy
