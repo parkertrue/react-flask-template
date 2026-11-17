@@ -49,7 +49,7 @@ export async function emailTo(address: string, subject: string) {
 }
 
 /** The link in the one email to an address with this subject */
-export async function emailedLink(address: string, subject = 'Finish signing up') {
+export async function emailedLink(address: string, subject = `Finish signing up for ${APP_NAME}`) {
   return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
 }
 

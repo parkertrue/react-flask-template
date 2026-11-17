@@ -123,7 +123,7 @@ test.describe('Critical User Journey', () => {
     await requestLink(page, existingEmail)
 
     await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeVisible()
-    const message = await emailTo(existingEmail, 'You already have an account')
+    const message = await emailTo(existingEmail, `You already have a ${APP_NAME} account`)
     expect(message.Text).toContain('/login')
     expect(message.Text).not.toContain('token=')
   })
