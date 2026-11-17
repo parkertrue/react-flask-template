@@ -122,7 +122,7 @@
       "type": "object"
     },
     "MessageResponse": {
-      "description": "A reply that only says what happened: registered, logged out, ...",
+      "description": "A reply that only says what happened: a link sent, logged out, ...",
       "properties": {
         "message": {
           "type": "string"
