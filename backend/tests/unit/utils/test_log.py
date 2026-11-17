@@ -1,4 +1,5 @@
 import json
+import re
 import logging
 import logging.config
 import sys
@@ -117,3 +118,26 @@ def test_gunicorns_own_lines_are_json_lines(monkeypatch, capsys):
         ('gunicorn.error', 'CRITICAL', 'WORKER TIMEOUT (pid:9)'),
         ('app', 'WARNING', 'Database unavailable'),
     ]
+
+
+def logged_events():
+    """Every event name a security_event call in the app passes"""
+    sources = (BACKEND / 'app').rglob('*.py')
+    return sorted({name for source in sources
+                   for name in re.findall(r"security_event\(\s*'(\w+)'", source.read_text(encoding='utf-8'))})
+
+
+@pytest.mark.parametrize('doc', ['docs/deployment.md', 'CLAUDE.md'])
+def test_every_security_event_is_documented(doc):
+    """An operator reads the events' names there to search the log for
+    them; one left out goes unwatched"""
+    text = (BACKEND.parent / doc).read_text(encoding='utf-8')
+
+    missing = [name for name in logged_events() if f'`{name}`' not in text]
+
+    assert missing == []
+
+
+def test_the_app_logs_security_events():
+    """The search above finds the calls, so an empty list cannot pass it"""
+    assert 'login_failed' in logged_events()

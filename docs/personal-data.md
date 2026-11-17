@@ -22,7 +22,7 @@ Every app built from the template collects personal data from its first sign-up,
 | Everything above that Redis held, deleted and expired values included | Redis's on-disk log (the bundled Redis, in production) | Until Redis compacts the log, after about 1 MB of writes; a managed Redis keeps it on its provider's terms |
 | Emails sent | Your mail provider | By the provider's retention |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
-| Security events: IP, user id; a keyed hash of the typed email on a failed login | The backend's stdout, kept by Docker | The same |
+| Security events: IP, user id; a keyed hash of the typed email on a failed login or a sign-up request | The backend's stdout, kept by Docker | The same |
 | Access token, refresh CSRF value, email | The browser's `localStorage` | Until logout or the session ends |
 | Refresh token | Cookie `__Secure-refresh_token` (HttpOnly) | Up to 30 days |
 
@@ -46,4 +46,4 @@ No analytics and no third-party requests: the browser talks to your server alone
 **Duties that start with a feature:**
 - **Content other users can see** (sharing, profiles, comments, uploads): a way to report illegal content (EU Digital Services Act, Art. 16), and in the US a DMCA agent and a repeat-infringer policy.
 - **Children:** an audience under 13, or knowing that a user is, brings COPPA, and consent-based processing the GDPR's age of consent.
-- **Email** (verification, password reset, newsletters): CAN-SPAM, PECR and CASL.
+- **Email beyond sign-up** (newsletters, product announcements): CAN-SPAM, PECR and CASL, with consent and an unsubscribe link. Sign-up's email is transactional, which needs neither, but must name its sender truthfully (`EMAIL_FROM`).

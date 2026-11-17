@@ -52,15 +52,19 @@ export default function PrivacyPage() {
       <h2>How long we keep it</h2>
       <p>
         We keep your account and content until you delete them.
-        Security records are kept for [period, for example 6 months]. [State
-        how long backups keep deleted data.]
+        Security records are kept for [period, for example 6 months]. An
+        email we could not deliver keeps its address for a day after the last
+        try; [your mail provider] keeps the emails it sent by its own terms.
+        [State how long backups keep deleted data.]
       </p>
 
       <h2>Who else processes it</h2>
       <p>
-        [Name each provider that handles personal data for you, such as your
-        hosting provider or a log service, and the country it processes data
-        in, with the safeguard for any transfer outside the EU/UK.] We do not
+        [Name each provider that handles personal data for you: your mail
+        provider, which sends our emails to your address, and any other, such
+        as your hosting provider or a log service, with the country it
+        processes data in and the safeguard for any transfer outside the
+        EU/UK.] We do not
         sell your personal data or share it for advertising.
       </p>
 
