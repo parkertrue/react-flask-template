@@ -1528,6 +1528,15 @@ class TestPasswordResetEmails:
             PASSWORD_RESET_LINK, fragment['token'][0], PASSWORD_RESET_LINK_LIFETIME) == (
             'test@example.com', sample_user.password_state)
 
+    def test_the_link_s_token_is_not_compressed(self, app, db, sample_user, outbox):
+        """The page reads the address for password managers from the
+        token's payload, which it cannot from a compressed one ('.' first)"""
+        send_password_reset_email('test@example.com')
+
+        message, = outbox
+        token = parse_qs(self.link(message).fragment)['token'][0]
+        assert not token.startswith('.')
+
     def test_an_address_without_an_account_gets_nothing(self, app, db, sample_user, outbox):
         send_password_reset_email('new@example.com')
 

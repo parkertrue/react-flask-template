@@ -109,6 +109,9 @@ describe('CompletePasswordResetPage', () => {
       await user.click(submitButton())
 
       expect(await screen.findByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
+      // On the status line, once the page has rendered it, and on screen
+      await waitFor(() => expect(screen.getByRole('status'))
+        .toHaveTextContent('Your password has been changed. Log in with the new one.'))
       expect(screen.getAllByText('Your password has been changed. Log in with the new one.')).toHaveLength(2)
       expect(completePasswordReset).toHaveBeenCalledExactlyOnceWith(TOKEN, 'a valid passphrase')
       // Replaced: Back does not return to a link that no longer works

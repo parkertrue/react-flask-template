@@ -15,6 +15,8 @@ test.describe('Password reset', () => {
     // From the login page
     await page.goto('/login')
     await page.getByRole('link', { name: 'Forgot your password?' }).click()
+    // The login page has an Email field too: wait until it has gone
+    await expect(page.getByRole('heading', { level: 1, name: 'Reset your password' })).toBeVisible()
     await expect(page).toHaveURL(/\/password-reset$/)
     await requestReset(page, email)
     await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
