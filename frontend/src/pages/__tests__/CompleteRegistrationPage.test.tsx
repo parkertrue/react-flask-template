@@ -158,6 +158,8 @@ describe('CompleteRegistrationPage', () => {
     // One example per field: the rules themselves are covered in validation.test.ts
     it.each<[string, Values, keyof typeof field | 'acceptTerms', string]>([
       ['a short password', { password: 'too short' }, 'password', 'at least 15 characters'],
+      ['a password holding the address', { password: 'mine is user@example.com' }, 'password',
+        "doesn't contain your email address"],
       ['passwords that differ', { confirmPassword: 'Different123' }, 'confirmPassword', 'Passwords do not match'],
       ['terms not accepted', { acceptTerms: false }, 'acceptTerms', 'Accept the Terms and the Privacy notice to register'],
     ])('stops %s, explains, and focuses the first bad field', async (_, values, name, message) => {
@@ -208,10 +210,13 @@ describe('CompleteRegistrationPage', () => {
       expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
     })
 
-    // The field's own message, focused, like a failed submit's
-    it('ties a breached password to the Password field, and lets the user try another', async () => {
-      vi.mocked(completeRegistration).mockRejectedValue(httpError(422, errorBody(
-        'PASSWORD_BREACHED', 'This password has appeared in a data breach. Choose another.')))
+    // The field's own message, focused, like a failed submit's. A guessable
+    // one reaches the server when the page could not read the token's address.
+    it.each([
+      ['breached', 'PASSWORD_BREACHED', 'This password has appeared in a data breach. Choose another.'],
+      ['guessable', 'PASSWORD_GUESSABLE', "Choose a password that doesn't contain your email address or the app's name."],
+    ] as const)('ties a %s password to the Password field, and lets the user try another', async (_, code, message) => {
+      vi.mocked(completeRegistration).mockRejectedValue(httpError(422, errorBody(code, message)))
       const { user } = renderPage()
       await fill(user)
 
@@ -219,8 +224,7 @@ describe('CompleteRegistrationPage', () => {
 
       await waitFor(() => expect(field.password()).toHaveFocus())
       expect(field.password()).toHaveAttribute('aria-invalid', 'true')
-      expect(field.password()).toHaveAccessibleDescription(expect.stringContaining(
-        'This password has appeared in a data breach. Choose another.'))
+      expect(field.password()).toHaveAccessibleDescription(expect.stringContaining(message))
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(submitButton()).toHaveAttribute('aria-disabled', 'false')
     })

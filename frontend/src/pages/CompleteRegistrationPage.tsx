@@ -8,6 +8,7 @@ import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
 import { TERMS_VERSION } from '@/appInfo'
 import {
+  validateNotGuessable,
   validatePassword,
   validatePasswordMatch,
   PASSWORD_MIN_LENGTH,
@@ -104,7 +105,7 @@ export default function CompleteRegistrationPage() {
     const form = e.currentTarget
 
     const valid = validate(form, {
-      password: validatePassword(values.password),
+      password: validatePassword(values.password) ?? validateNotGuessable(values.password, link.email),
       confirmPassword: validatePasswordMatch(values.password, values.confirmPassword),
       acceptTerms: values.acceptTerms ? undefined : 'Accept the Terms and the Privacy notice to register',
     })
@@ -125,7 +126,9 @@ export default function CompleteRegistrationPage() {
       else if (code === 'LINK_USED') setProblem('used')
       else if (code === 'EMAIL_ALREADY_REGISTERED') setProblem('registered')
       // The field's own message, focused, like a failed submit's
-      else if (code === 'PASSWORD_BREACHED') validate(form, { password: getErrorMessage(err) })
+      else if (code === 'PASSWORD_BREACHED' || code === 'PASSWORD_GUESSABLE') {
+        validate(form, { password: getErrorMessage(err) })
+      }
       else setFormError(getErrorMessage(err))
     }
   }

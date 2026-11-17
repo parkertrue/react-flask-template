@@ -213,6 +213,15 @@ def test_one_address_can_log_in_to_many_accounts_without_limiting_others(
     assert login(client, '198.51.100.9', 'other@example.com').status_code == 401
 
 
+@pytest.fixture
+def clock(monkeypatch):
+    """The limiter's clock, moved by hand, so requests can be spread over
+    hours without waiting. Tokens keep the real clock."""
+    now = [time.time()]
+    monkeypatch.setattr('limits.storage.memory.time', SimpleNamespace(time=lambda: now[0]))
+    return now
+
+
 def request_link(client, ip, email):
     return client.post('/api/auth/register', json={'email': email},
                        headers={'X-Forwarded-For': ip})
@@ -246,6 +255,17 @@ class TestRegistrationLimits:
                     for i, email in enumerate(spellings)]
 
         assert statuses == [202, 202, 202, 429]
+
+    def test_a_seventh_link_to_one_address_in_a_day_is_rate_limited(self, limited_app, clock):
+        """Three an hour would let 72 a day reach a stranger's inbox"""
+        client = limited_app.test_client()
+        statuses = []
+        for hour in range(3):
+            statuses.append([request_link(client, f'203.0.113.{hour}{i}', 'inbox@example.com').status_code
+                             for i in range(3 if hour < 2 else 1)])
+            clock[0] += 61 * 60
+
+        assert statuses == [[202, 202, 202], [202, 202, 202], [429]]
 
     def test_the_address_limit_is_per_address(self, limited_app):
         client = limited_app.test_client()
@@ -348,14 +368,6 @@ class TestDeleteAccountLimit:
     """Deleting an account asks for the password, so it is limited like a
     login: per user, counting wrong passwords only, and hourly per account in
     the same budget as login's"""
-
-    @pytest.fixture
-    def clock(self, monkeypatch):
-        """The limiter's clock, moved by hand, so requests can be spread over
-        an hour without waiting. Tokens keep the real clock."""
-        now = [time.time()]
-        monkeypatch.setattr('limits.storage.memory.time', SimpleNamespace(time=lambda: now[0]))
-        return now
 
     @pytest.fixture
     def fast_hashing(self, monkeypatch):

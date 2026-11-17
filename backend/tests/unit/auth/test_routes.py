@@ -350,6 +350,46 @@ class TestCompleteRegistration:
         assert checked == ['correct horse battery staple']
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
+    @pytest.mark.parametrize('password', [
+        'my address: jordan@example.com',
+        'Jordan wrote this passphrase',
+        'APP_NAME',
+    ])
+    def test_a_guessable_password_is_refused(self, app, client, db, fake_redis, monkeypatch, password):
+        """Checked before the breach check, which never sees it"""
+        checked = []
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: checked.append(password) or False)
+        password = password.replace('APP_NAME', f"I like {app.config['APP_NAME']}")
+
+        response = register(client, 'jordan@example.com', password)
+
+        assert response.status_code == 422
+        assert response.get_json()['error'] == {
+            'code': 'PASSWORD_GUESSABLE',
+            'message': "Choose a password that doesn't contain your email address or the app's name."}
+        assert checked == []
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    def test_after_a_guessable_password_the_link_still_works(self, client, db, fake_redis):
+        token = link_token(client.application, 'jordan@example.com')
+        self.complete(client, token, password='jordan jordan jordan')
+
+        response = self.complete(client, token, password='a valid passphrase')
+
+        assert response.status_code == 200
+
+    def test_login_accepts_a_password_sign_up_would_now_refuse(self, client, db):
+        """The rule is sign-up's: an account made before it still logs in"""
+        user = User(email='jordan@example.com', terms_version=TERMS_VERSION)
+        user.set_password('jordan jordan jordan')
+        db.session.add(user)
+        db.session.commit()
+
+        response = client.post('/api/auth/login', json={
+            'email': 'jordan@example.com', 'password': 'jordan jordan jordan'})
+
+        assert response.status_code == 200
+
     def test_no_database_transaction_waits_on_the_check(self, client, db, fake_redis, monkeypatch):
         """The check may take its whole deadline: a pooled connection held
         through it would be one fewer for every other request"""
