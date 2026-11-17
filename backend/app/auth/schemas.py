@@ -20,6 +20,9 @@ PASSWORD_MAX_LENGTH = 128
 # a lone surrogate (half an emoji, which JSON can carry), which has no UTF-8
 # form to hash.
 PASSWORD_REFUSED_CATEGORY = 'Cc'
+# The shortest part of an address before the @ that a password may not hold:
+# a shorter one (jo@...) turns up in ordinary words
+GUESSABLE_LOCAL_PART_MIN_LENGTH = 4
 # Well above a sign-up link's token (about 100 characters), so only a body
 # that is not one is refused for its length
 LINK_TOKEN_MAX_LENGTH = 1024
@@ -65,6 +68,20 @@ def _normalize_password(value: object) -> object:
     return unicodedata.normalize('NFKC', value) if isinstance(value, str) else value
 
 
+def is_guessable(password: str, email: str, app_name: str) -> bool:
+    """Whether the password holds what anyone could guess it from (ASVS
+    6.2.11): the account's address, the part of it before the @ when that
+    is long enough to matter, or the app's name. Ignoring case, after NFKC.
+    Checked at sign-up, never at login, which accepts any password it holds.
+    frontend/src/utils/validation.ts mirrors it."""
+    local_part = email.partition('@')[0]
+    words = [email, app_name]
+    if len(local_part) >= GUESSABLE_LOCAL_PART_MIN_LENGTH:
+        words.append(local_part)
+    folded = unicodedata.normalize('NFKC', password).casefold()
+    return any(unicodedata.normalize('NFKC', word).casefold() in folded for word in words)
+
+
 def _check_password_characters(value: str) -> str:
     if any(unicodedata.category(c) == PASSWORD_REFUSED_CATEGORY for c in value):
         raise ValueError('Password must not contain control characters, such as a tab')
@@ -76,7 +93,8 @@ def _check_password_characters(value: str) -> str:
 # is loosened in all of them, and no password registration refuses can be
 # tried anywhere. NIST SP 800-63B's: length alone, no rules on which kinds of
 # character it holds; spaces and every script and emoji welcome (passphrases).
-# Sign-up also refuses a breached one (app/utils/breached.py).
+# Sign-up also refuses a guessable one (is_guessable) and a breached one
+# (app/utils/breached.py).
 Password = Annotated[
     str,
     # Before the validator, so pydantic counts characters (its message says

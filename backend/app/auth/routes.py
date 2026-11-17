@@ -31,7 +31,7 @@ from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import (
     LoginRequest, RegisterCompleteRequest, RegisterCompleteResponse, RegisterRequest,
-    TokensResponse, is_normalized_email, normalize_email)
+    TokensResponse, is_guessable, is_normalized_email, normalize_email)
 from app.utils.breached import is_breached
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.jobs import job
@@ -227,10 +227,11 @@ def _link_refused(reason: str) -> ErrorResponse:
 
 
 @auth_bp.route('/register', methods=['POST'])
-# Per IP, and per address, so no one can use the app to flood an inbox. The
-# 429 tells nothing: it comes as soon for an address with an account.
+# Per IP, and per address, so no one can use the app to flood an inbox: 3
+# emails an hour, 6 a day. The 429 tells nothing: it comes as soon for an
+# address with an account.
 @limiter.limit('10 per hour')
-@limiter.limit('3 per hour', key_func=_request_email_key)
+@limiter.limit('3 per hour;6 per day', key_func=_request_email_key)
 def register() -> ResponseReturnValue:
     """Sign-up's first step: email the address a link to finish.
 
@@ -272,6 +273,13 @@ def complete_registration() -> ResponseReturnValue:
     stmt = select(User).where(User.email == email)
     if db.session.execute(stmt).scalar_one_or_none():
         return _link_refused('registered')
+
+    # Before the link is spent, so the user can try another password with it
+    if is_guessable(payload.password, email, current_app.config['APP_NAME']):
+        return error_response(
+            code='PASSWORD_GUESSABLE',
+            message="Choose a password that doesn't contain your email address or the app's name.",
+            status=422)
 
     # A link works once, even after the account it made is deleted
     redis_service = get_redis_service()

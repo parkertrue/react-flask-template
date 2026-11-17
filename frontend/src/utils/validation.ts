@@ -1,3 +1,5 @@
+import { APP_NAME } from '@/appInfo'
+
 // Counted in characters (code points), as the backend counts them
 export const PASSWORD_MIN_LENGTH = 15
 export const PASSWORD_MAX_LENGTH = 128
@@ -48,6 +50,32 @@ export function validatePassword(password: string): string | undefined {
   }
 
   return undefined
+}
+
+// The shortest part of an address before the @ that a password may not
+// hold, as the backend counts it (is_guessable in backend/app/auth/schemas.py)
+export const GUESSABLE_LOCAL_PART_MIN_LENGTH = 4
+
+export const GUESSABLE_PASSWORD_MESSAGE =
+  "Choose a password that doesn't contain your email address or the app's name."
+
+/**
+ * Refuse, at sign-up only, a password holding the account's address, the
+ * part before its @ (when long enough to matter) or the app's name, ignoring
+ * case, after NFKC, as the backend does. Without the address (a link whose
+ * token the page can't read), only the name is checked; the backend still
+ * checks all three.
+ */
+export function validateNotGuessable(password: string, email: string | null): string | undefined {
+  const fold = (text: string) => text.normalize('NFKC').toLowerCase()
+  const words = [APP_NAME]
+  if (email) {
+    words.push(email)
+    const localPart = email.slice(0, email.indexOf('@'))
+    if (localPart.length >= GUESSABLE_LOCAL_PART_MIN_LENGTH) words.push(localPart)
+  }
+  const folded = fold(password)
+  return words.some(word => folded.includes(fold(word))) ? GUESSABLE_PASSWORD_MESSAGE : undefined
 }
 
 // RFC 5322's unquoted local part, in ASCII only: anything else before the @
