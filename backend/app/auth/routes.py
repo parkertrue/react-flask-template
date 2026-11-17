@@ -30,7 +30,8 @@ from app.auth.emails import REGISTRATION_LINK, REGISTRATION_LINK_LIFETIME, send_
 from app.auth.errors import token_revoked
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import (
-    LoginRequest, RegisterCompleteRequest, RegisterRequest, TokensResponse, normalize_email)
+    LoginRequest, RegisterCompleteRequest, RegisterCompleteResponse, RegisterRequest,
+    TokensResponse, is_guessable, is_normalized_email, normalize_email)
 from app.utils.breached import is_breached
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.jobs import job
@@ -134,8 +135,8 @@ def _refresh_user_id() -> str | None:
     return user_id
 
 
-def _issue_tokens(
-        user_id: int, auth_time: int, replaces: str | None = None) -> ResponseReturnValue:
+def _issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
+                  email: str | None = None) -> ResponseReturnValue:
     """Build a 200 response carrying a fresh access token and refresh cookie.
 
     `auth_time` is when the user logged in, carried through every rotation.
@@ -148,6 +149,9 @@ def _issue_tokens(
     The new refresh token's JTI is recorded in Redis, in place of the JTI in
     `replaces` when rotating; the blocklist loader treats any refresh token
     whose JTI is absent there as revoked.
+
+    `email`, given by sign-up, is answered beside the tokens, so the page
+    signs in under the account's address.
     """
     now = datetime.now(timezone.utc)
     session_ends = (datetime.fromtimestamp(auth_time, timezone.utc)
@@ -182,7 +186,8 @@ def _issue_tokens(
 
     # Only advertise a CSRF token when cookie CSRF protection is actually on;
     # IntegrationConfig turns it off for headless API tests.
-    tokens = TokensResponse(access_token=access_token)
+    tokens = (TokensResponse(access_token=access_token) if email is None
+              else RegisterCompleteResponse(access_token=access_token, email=email))
     if current_app.config['JWT_COOKIE_CSRF_PROTECT']:
         tokens.refresh_csrf = get_csrf_token(refresh_token)
 
@@ -207,18 +212,26 @@ def _terms_outdated() -> ErrorResponse:
     )
 
 
-def _link_error(error: LinkExpired | LinkInvalid) -> ErrorResponse:
-    if isinstance(error, LinkExpired):
+def _link_refused(reason: str) -> ErrorResponse:
+    """Refuse a sign-up link, and log why: a run of them from one address is
+    someone probing the link's format or replaying stolen links"""
+    security_event('link_refused', purpose=REGISTRATION_LINK, reason=reason)
+    if reason == 'registered':
+        return _already_registered()
+    if reason == 'expired':
+        return error_response(code='LINK_EXPIRED', message='This link has expired', status=400)
+    if reason == 'used':
         return error_response(
-            code='LINK_EXPIRED', message='This link has expired', status=400)
+            code='LINK_USED', message='This link has already been used', status=400)
     return error_response(code='LINK_INVALID', message='This link is not valid', status=400)
 
 
 @auth_bp.route('/register', methods=['POST'])
-# Per IP, and per address, so no one can use the app to flood an inbox. The
-# 429 tells nothing: it comes as soon for an address with an account.
+# Per IP, and per address, so no one can use the app to flood an inbox: 3
+# emails an hour, 6 a day. The 429 tells nothing: it comes as soon for an
+# address with an account.
 @limiter.limit('10 per hour')
-@limiter.limit('3 per hour', key_func=_request_email_key)
+@limiter.limit('3 per hour;6 per day', key_func=_request_email_key)
 def register() -> ResponseReturnValue:
     """Sign-up's first step: email the address a link to finish.
 
@@ -246,37 +259,68 @@ def complete_registration() -> ResponseReturnValue:
 
     try:
         email = read_link_token(REGISTRATION_LINK, payload.token, REGISTRATION_LINK_LIFETIME)
-    except (LinkExpired, LinkInvalid) as e:
-        return _link_error(e)
+    except LinkExpired:
+        return _link_refused('expired')
+    except LinkInvalid:
+        return _link_refused('invalid')
+    # Signed by this app, but naming what the sign-up form would refuse
+    if not is_normalized_email(email):
+        return _link_refused('invalid')
 
     # A link used twice: the first made the account. A fast path that skips
     # hashing the password; the unique index on users.email is the real
     # check, below.
     stmt = select(User).where(User.email == email)
     if db.session.execute(stmt).scalar_one_or_none():
-        return _already_registered()
+        return _link_refused('registered')
 
-    # Last, so a request refused anyway never reaches the third party
-    if is_breached(payload.password):
+    # Before the link is spent, so the user can try another password with it
+    if is_guessable(payload.password, email, current_app.config['APP_NAME']):
         return error_response(
-            code='PASSWORD_BREACHED',
-            message='This password has appeared in a data breach. Choose another.',
+            code='PASSWORD_GUESSABLE',
+            message="Choose a password that doesn't contain your email address or the app's name.",
             status=422)
 
-    user = User(email=email, terms_version=payload.terms_version)
-    user.set_password(payload.password)
+    # A link works once, even after the account it made is deleted
+    redis_service = get_redis_service()
+    claimed = redis_service.claim_link(
+        payload.token, int(REGISTRATION_LINK_LIFETIME.total_seconds())) if redis_service else None
+    if claimed is None:
+        return service_unavailable()
+    if not claimed:
+        return _link_refused('used')
+    assert redis_service is not None
 
-    db.session.add(user)
     try:
+        # Nothing to keep yet: end the read above, so no pooled database
+        # connection waits on a third party
+        db.session.rollback()
+        # Last, so a request refused anyway never reaches the third party
+        if is_breached(payload.password):
+            redis_service.release_link(payload.token)
+            return error_response(
+                code='PASSWORD_BREACHED',
+                message='This password has appeared in a data breach. Choose another.',
+                status=422)
+
+        user = User(email=email, terms_version=payload.terms_version)
+        user.set_password(payload.password)
+        db.session.add(user)
         db.session.commit()
     except IntegrityError:
         # Another request registered the same email since the check above
         # (a double submit, or a client retrying)
         db.session.rollback()
-        return _already_registered()
+        return _link_refused('registered')
+    except BaseException:
+        # Not used after all (the database or the password hashing failed):
+        # the link must still work
+        redis_service.release_link(payload.token)
+        raise
 
     security_event('registered', user_id=user.id)
-    return _issue_tokens(user.id, auth_time=int(datetime.now(timezone.utc).timestamp()))
+    return _issue_tokens(
+        user.id, auth_time=int(datetime.now(timezone.utc).timestamp()), email=email)
 
 
 @auth_bp.route('/login', methods=['POST'])

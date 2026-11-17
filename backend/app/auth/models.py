@@ -11,7 +11,7 @@ EMAIL_MAX_LENGTH = 128
 # The version of the terms of service a new user accepts. Raise it by one
 # whenever the terms change: registering with an older one is refused, and
 # each user's row records the version accepted and when.
-# frontend/src/legal.ts mirrors it.
+# frontend/src/appInfo.ts mirrors it.
 TERMS_VERSION = 1
 
 

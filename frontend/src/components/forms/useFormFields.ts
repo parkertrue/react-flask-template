@@ -2,11 +2,11 @@ import { useState, type ChangeEvent } from 'react'
 import { flushSync } from 'react-dom'
 
 // A message for each field that has one, keyed by field id
-export type FieldErrors<V> = Partial<Record<keyof V, string | undefined>>
+type FieldErrors<V> = Partial<Record<keyof V, string | undefined>>
 
 // Each field's value: its text, or whether a checkbox is ticked. Written
 // out, so { acceptTerms: false } holds a boolean, not the literal false.
-export type FieldValues<V> = { [K in keyof V]: V[K] extends boolean ? boolean : string }
+type FieldValues<V> = { [K in keyof V]: V[K] extends boolean ? boolean : string }
 
 // Values and validation messages for a form of FormFields, keyed by field id
 export function useFormFields<V extends Record<string, string | boolean>>(startingValues: V) {

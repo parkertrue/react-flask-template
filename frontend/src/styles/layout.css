@@ -32,11 +32,6 @@
   margin: 0 auto;
 }
 
-/* A text-link, padded to a 24px target */
-.footer-link {
-  padding: 0.25rem 0.5rem;
-}
-
 .footer-link.active {
   font-weight: 600;
 }

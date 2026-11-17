@@ -47,6 +47,12 @@
   accent-color: var(--color-primary);
 }
 
+/* Read-only (the link page's address, or any field while its form is
+   busy): muted like a busy button, so it doesn't look editable */
+.form-input[readonly] {
+  background-color: var(--color-surface-muted);
+}
+
 .form-input:focus {
   border-color: var(--color-primary);
 }

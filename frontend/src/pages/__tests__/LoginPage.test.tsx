@@ -8,7 +8,7 @@ import { storage } from '@/auth/storage'
 import { loginUser, type Tokens } from '@/auth/authService'
 import { errorBody, httpError, tokens } from '@/test/fixtures'
 import { renderRoutes } from '@/test/router'
-import { APP_NAME } from '@/appName'
+import { APP_NAME } from '@/appInfo'
 
 vi.mock('@/auth/authService')
 
@@ -31,7 +31,7 @@ async function fill(user: UserEvent, { email = 'user@example.com', password = 'a
 }
 
 describe('LoginPage', () => {
-  it('shows the form, with a way to register', () => {
+  it('shows the form, with a way to sign up', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Log in' })).toBeInTheDocument()
@@ -40,7 +40,7 @@ describe('LoginPage', () => {
     expect(field.password()).toHaveAttribute('autocomplete', 'current-password')
     // Room for the longest password in emoji, two UTF-16 units each
     expect(field.password()).toHaveAttribute('maxlength', String(2 * 128))
-    expect(screen.getByRole('link', { name: 'Register' })).toHaveAttribute('href', '/register')
+    expect(screen.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/signup')
     expect(document.title).toBe(`Log in | ${APP_NAME}`)
   })
 

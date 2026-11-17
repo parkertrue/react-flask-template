@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { backendConstant } from '@/test/backend'
+import { APP_NAME } from '@/appInfo'
 import {
   hasUnsupportedCharacters,
+  validateNotGuessable,
+  GUESSABLE_LOCAL_PART_MIN_LENGTH,
+  GUESSABLE_PASSWORD_MESSAGE,
   validatePassword,
   validateEmail,
   validatePasswordMatch,
@@ -162,6 +166,44 @@ describe('validatePasswordMatch', () => {
   })
 })
 
+describe('validateNotGuessable', () => {
+  const EMAIL = 'jordan@example.com'
+
+  it.each([
+    ['the address', 'my address is jordan@example.com'],
+    ['the address, in capitals', 'JORDAN@EXAMPLE.COM is my address'],
+    ['the part before the @', 'hello jordan, a long passphrase'],
+    ['it in full-width letters', 'Ｊｏｒｄａｎ in full-width letters'],
+    ["the app's name", `I like ${APP_NAME} a lot`],
+    ["the app's name, in capitals", `I like ${APP_NAME.toUpperCase()} a lot`],
+  ])('refuses a password holding %s', (_, password) => {
+    expect(validateNotGuessable(password, EMAIL)).toBe(GUESSABLE_PASSWORD_MESSAGE)
+  })
+
+  it.each([
+    ['none of them', 'a valid passphrase of words', EMAIL],
+    ['a part before the @ too short to matter', 'a joyful passphrase', 'joy@example.com'],
+  ])('accepts a password holding %s', (_, password, email) => {
+    expect(validateNotGuessable(password, email)).toBeUndefined()
+  })
+
+  it('refuses the whole address even when the part before the @ is short', () => {
+    expect(validateNotGuessable('write to joy@example.com', 'joy@example.com')).toBe(GUESSABLE_PASSWORD_MESSAGE)
+  })
+
+  it('refuses a part before the @ at the shortest length', () => {
+    const localPart = 'x'.repeat(GUESSABLE_LOCAL_PART_MIN_LENGTH)
+
+    expect(validateNotGuessable(`a ${localPart} passphrase`, `${localPart}@example.com`))
+      .toBe(GUESSABLE_PASSWORD_MESSAGE)
+  })
+
+  it("checks the app's name alone without an address", () => {
+    expect(validateNotGuessable('hello jordan, a long passphrase', null)).toBeUndefined()
+    expect(validateNotGuessable(`I like ${APP_NAME} a lot`, null)).toBe(GUESSABLE_PASSWORD_MESSAGE)
+  })
+})
+
 // The backend's limits are the real ones; these only spare the user a round
 // trip. Read from its source, so changing one side alone fails here.
 describe('limits match the backend', () => {
@@ -169,6 +211,7 @@ describe('limits match the backend', () => {
     ['PASSWORD_MIN_LENGTH', PASSWORD_MIN_LENGTH, 'auth/schemas.py'],
     ['PASSWORD_MAX_LENGTH', PASSWORD_MAX_LENGTH, 'auth/schemas.py'],
     ['EMAIL_MAX_LENGTH', EMAIL_MAX_LENGTH, 'auth/models.py'],
+    ['GUESSABLE_LOCAL_PART_MIN_LENGTH', GUESSABLE_LOCAL_PART_MIN_LENGTH, 'auth/schemas.py'],
   ])('%s', (name, value, file) => {
     expect(value).toBe(backendConstant(file, name))
   })

@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom'
 import PageTitle from '@/components/layout/PageTitle'
-import { OPERATOR, TERMS_VERSION } from '@/legal'
+import { OPERATOR, TERMS_VERSION } from '@/appInfo'
 import PlaceholderNotice from './PlaceholderNotice'
 
 // The template's outline of terms of service. Each bracketed passage is for
-// the app's developer to replace; raise TERMS_VERSION (src/legal.ts and
+// the app's developer to replace; raise TERMS_VERSION (src/appInfo.ts and
 // backend/app/auth/models.py) whenever the terms change.
 export default function TermsPage() {
   return (
@@ -16,13 +16,13 @@ export default function TermsPage() {
 
       <h2>The service</h2>
       <p>
-        {OPERATOR.name} provides this service. By registering, you agree to
+        {OPERATOR.name} provides this service. By signing up, you agree to
         these terms. How we handle your personal data is explained in
         the <Link to="/privacy" className="text-link">privacy notice</Link>.
       </p>
 
       <h2>Who may use it</h2>
-      <p>You must be at least [13, or the age your audience requires] to register.</p>
+      <p>You must be at least [13, or the age your audience requires] to sign up.</p>
 
       <h2>Acceptable use</h2>
       <p>

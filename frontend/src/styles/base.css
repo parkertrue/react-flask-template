@@ -31,6 +31,12 @@ h1:focus {
   overflow-wrap: anywhere;
 }
 
+/* A text-link outside a sentence (in a list, or alone in its paragraph),
+   padded to a 24px target (WCAG 2.5.8); one in a sentence is exempt */
+.padded-link {
+  padding: 0.25rem 0.5rem;
+}
+
 /* A page of text or a list, in one readable column */
 .page-column {
   width: 100%;

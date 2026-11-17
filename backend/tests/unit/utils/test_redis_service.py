@@ -1,3 +1,4 @@
+import hashlib
 import time
 
 import pytest
@@ -185,6 +186,51 @@ class TestTokenManagement:
         assert 'Could not revoke the sessions of user 1' in caplog.text
 
 
+class TestUsedLinks:
+    """An emailed link, once used, is kept as a hash of its token so it
+    works once (what the route does with the answers: tests/unit/auth)"""
+
+    TOKEN = 'a.link.token'
+    KEY = f'used_links:{hashlib.sha256(TOKEN.encode()).hexdigest()}'
+
+    @pytest.fixture
+    def service(self, app):
+        with patch('app.utils.redis_service.redis.Redis'):
+            return RedisService(URL, max_connections=5)
+
+    def test_claiming_sets_the_tokens_hash_once_for_its_lifetime(self, service):
+        service._client.set.return_value = True
+
+        assert service.claim_link(self.TOKEN, ttl_seconds=86400) is True
+        service._client.set.assert_called_once_with(self.KEY, 1, nx=True, ex=86400)
+
+    def test_a_link_claimed_before_is_refused(self, service):
+        """SET NX answers None when the key is there"""
+        service._client.set.return_value = None
+
+        assert service.claim_link(self.TOKEN, ttl_seconds=86400) is False
+
+    def test_a_failed_claim_is_not_a_refusal(self, service, caplog):
+        """None, not False: the link may be unused, Redis is not answering"""
+        service._client.set.side_effect = redis.RedisError('OOM')
+
+        assert service.claim_link(self.TOKEN, ttl_seconds=86400) is None
+        assert 'Could not mark a link used' in caplog.text
+        assert self.TOKEN not in caplog.text
+
+    def test_releasing_deletes_the_tokens_hash(self, service):
+        service.release_link(self.TOKEN)
+
+        service._client.delete.assert_called_once_with(self.KEY)
+
+    def test_a_failed_release_is_logged(self, service, caplog):
+        service._client.delete.side_effect = redis.RedisError('OOM')
+
+        service.release_link(self.TOKEN)
+
+        assert 'Could not release a used link' in caplog.text
+
+
 class TestSkipRedisAfterConnectionFailure:
     """After Redis proves unreachable, calls fail at once for a while instead
     of each spending seconds on the connection (and the name lookup)"""
@@ -207,6 +253,8 @@ class TestSkipRedisAfterConnectionFailure:
         'revoke_all_user_tokens': (lambda s: s.revoke_all_user_tokens(1), None),
         'store_refresh_token': (lambda s: s.store_refresh_token(1, 'jti', 60), None),
         'rotate_refresh_token': (lambda s: s.rotate_refresh_token(1, 'a', 'b', 60), None),
+        'claim_link': (lambda s: s.claim_link('token', 60), None),
+        'release_link': (lambda s: s.release_link('token'), None),
     }
 
     @staticmethod
@@ -215,11 +263,14 @@ class TestSkipRedisAfterConnectionFailure:
         service._client.zrem.side_effect = error
         service._client.pipeline.return_value.execute.side_effect = error
         service._record_token.side_effect = error
+        service._client.set.side_effect = error
+        service._client.delete.side_effect = error
 
     @staticmethod
     def redis_calls(service):
         return (service._client.zscore.call_count + service._client.zrem.call_count
-                + service._client.pipeline.call_count + service._record_token.call_count)
+                + service._client.pipeline.call_count + service._record_token.call_count
+                + service._client.set.call_count + service._client.delete.call_count)
 
     @pytest.mark.parametrize('call, failed', CALLS.values(), ids=CALLS.keys())
     @pytest.mark.parametrize('error', [redis.ConnectionError, redis.TimeoutError])

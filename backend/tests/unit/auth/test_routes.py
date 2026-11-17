@@ -12,14 +12,18 @@ from flask_jwt_extended import create_refresh_token, decode_token
 from itsdangerous import TimestampSigner, URLSafeTimedSerializer
 from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import select, func
+from sqlalchemy.exc import OperationalError
 
+from app.auth import emails as auth_emails
 from app.auth import routes as auth_routes
-from app.auth.emails import REGISTRATION_LINK, REGISTRATION_LINK_LIFETIME, send_registration_email
+from app.auth.emails import (
+    REGISTRATION_LINK, REGISTRATION_LINK_HOURS, REGISTRATION_LINK_LIFETIME, send_registration_email)
 from app.auth.models import TERMS_VERSION, User
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
-from app.utils.jobs import QUEUE_NAME
-from app.utils.links import read_link_token
+from app.utils.jobs import QUEUE_NAME, PermanentJobFailure
+from app.utils.links import make_link_token, read_link_token
 from app.utils.passwords import verify_password
+from app.utils.redis_service import mark_redis_unreachable
 from tests.conftest import link_token, register
 
 
@@ -79,6 +83,19 @@ class TestRequestRegistration:
         assert response.get_json()['error'] == {
             'code': 'SERVICE_UNAVAILABLE', 'message': SERVICE_UNAVAILABLE_MESSAGE}
 
+    def test_skips_the_queue_while_redis_is_unreachable(self, app, client, db, monkeypatch):
+        """Once a Redis call fails to connect, sign-ups answer at once rather
+        than each waiting out the outage again"""
+        enqueued = []
+        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue',
+                            lambda message, *, delay=None: enqueued.append(message))
+        mark_redis_unreachable(app)
+
+        response = client.post('/api/auth/register', json={'email': 'new@example.com'})
+
+        assert response.status_code == 503
+        assert enqueued == []
+
 
 class TestRegistrationEmail:
     """The job the worker runs: a link to finish signing up, or, for an
@@ -88,10 +105,15 @@ class TestRegistrationEmail:
     def app_url(self, app, monkeypatch):
         monkeypatch.setitem(app.config, 'APP_URL', 'https://app.test')
 
+    @pytest.fixture(autouse=True)
+    def app_name(self, app, monkeypatch):
+        monkeypatch.setitem(app.config, 'APP_NAME', 'Some App')
+
     def link(self, message):
-        """The one link in an email's body"""
-        link, = [word for word in message.get_content().split() if word.startswith('https://')]
-        return urlsplit(link)
+        """The link to act on: an email's first, before the privacy notice's"""
+        links = [word for word in message.get_content().split() if word.startswith('https://')]
+        assert links[1:] == ['https://app.test/privacy']
+        return urlsplit(links[0])
 
     def test_a_new_address_gets_a_link_to_finish(self, app, db, outbox):
         send_registration_email('new@example.com')
@@ -99,10 +121,11 @@ class TestRegistrationEmail:
         message, = outbox
         link = self.link(message)
         fragment = parse_qs(link.fragment)
-        assert (message['To'], message['Subject']) == ('new@example.com', 'Finish signing up')
+        assert (message['To'], message['Subject']) == ('new@example.com', 'Finish signing up for Some App')
         assert (link.scheme, link.netloc, link.path, link.query) == (
-            'https', 'app.test', '/register/complete', '')
-        assert fragment['email'] == ['new@example.com']
+            'https', 'app.test', '/signup/complete', '')
+        # The token alone: it names the address, which the page reads from it
+        assert set(fragment) == {'token'}
         assert read_link_token(
             REGISTRATION_LINK, fragment['token'][0], REGISTRATION_LINK_LIFETIME) == 'new@example.com'
 
@@ -110,8 +133,57 @@ class TestRegistrationEmail:
         send_registration_email('test@example.com')
 
         message, = outbox
-        assert (message['To'], message['Subject']) == ('test@example.com', 'You already have an account')
+        assert (message['To'], message['Subject']) == ('test@example.com', 'You already have a Some App account')
         assert self.link(message).geturl() == 'https://app.test/login'
+
+    # A new address, and one with an account (sample_user's)
+    @pytest.mark.parametrize('email', ['new@example.com', 'test@example.com'])
+    def test_each_names_the_app_and_ends_with_the_privacy_notice(
+            self, app, db, sample_user, outbox, email):
+        """The privacy notice says who runs the app and why this came"""
+        send_registration_email(email)
+
+        message, = outbox
+        paragraphs = message.get_content().rstrip('\n').split('\n\n')
+        assert 'sign up for Some App with this email address' in paragraphs[0]
+        assert paragraphs[-1] == 'Who runs Some App, and what it keeps: https://app.test/privacy'
+
+    @pytest.mark.parametrize('email', ['new@example.com', 'test@example.com'])
+    def test_a_paragraph_is_one_line_for_the_reader_s_app_to_wrap(
+            self, app, db, sample_user, outbox, email):
+        send_registration_email(email)
+
+        message, = outbox
+        lines = message.get_content().rstrip('\n').split('\n')
+        # Paragraphs alternate with blank lines, and none is split
+        assert lines[1::2] == [''] * (len(lines) // 2)
+        assert '' not in lines[::2]
+
+    def test_the_link_s_lifetime_is_the_one_its_token_has(self, app, db, outbox):
+        assert REGISTRATION_LINK_LIFETIME.total_seconds() == REGISTRATION_LINK_HOURS * 3600
+
+    def test_says_how_long_the_link_works(self, app, db, outbox, monkeypatch):
+        """Read from the constant, so changing it changes the email"""
+        monkeypatch.setattr(auth_emails, 'REGISTRATION_LINK_HOURS', 36)
+
+        send_registration_email('new@example.com')
+
+        message, = outbox
+        assert 'open this link within 36 hours:' in message.get_content()
+
+    @pytest.mark.parametrize('email', [
+        'victim@example.com, attacker@example.com',
+        'Victim <attacker@example.com>',
+        'victim@example.com\r\nBcc: attacker@example.com',
+        'Victim@Example.COM',
+    ], ids=['a list', 'a display name', 'a line break', 'not normalized'])
+    def test_sends_nothing_to_what_the_form_would_refuse(self, app, db, outbox, email):
+        """Only a write to the queue past the form can ask for these: the
+        job must not mail them, nor be retried"""
+        with pytest.raises(PermanentJobFailure):
+            send_registration_email(email)
+
+        assert outbox == []
 
     def test_the_worker_runs_it_from_the_queue(self, app, client, db, jobs, outbox):
         """The job the route queued is the one that sends: its name and
@@ -139,7 +211,9 @@ class TestCompleteRegistration:
 
         user = db.session.execute(select(User).where(User.email == 'new@example.com')).scalar_one()
         assert response.status_code == 200
-        assert set(response.get_json()) == {'access_token', 'refresh_csrf'}
+        assert set(response.get_json()) == {'access_token', 'refresh_csrf', 'email'}
+        # The account's address, from the token: the page signs in under it
+        assert response.get_json()['email'] == 'new@example.com'
         assert client.get_cookie('__Secure-refresh_token', path='/api/auth') is not None
         assert user.password_hash != 'PlainTextPass123'
         assert user.check_password('PlainTextPass123')
@@ -181,6 +255,53 @@ class TestCompleteRegistration:
         assert second.get_json()['error'] == {
             'code': 'EMAIL_ALREADY_REGISTERED', 'message': 'Email already registered'}
         assert db.session.scalar(select(func.count()).select_from(User)) == 1
+
+    def test_a_link_works_once_even_after_its_account_is_deleted(self, client, db, fake_redis):
+        """Whoever holds a copy of the email cannot recreate an account its
+        owner deleted"""
+        token = link_token(client.application, 'once@example.com')
+        access_token = self.complete(client, token).get_json()['access_token']
+        client.post('/api/account/delete', json={'password': 'a valid passphrase'},
+                    headers={'Authorization': f'Bearer {access_token}'})
+
+        again = self.complete(client, token, password='DifferentPass123')
+
+        assert again.status_code == 400
+        assert again.get_json()['error'] == {
+            'code': 'LINK_USED', 'message': 'This link has already been used'}
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    def test_a_used_link_is_kept_for_its_lifetime(self, client, db, fake_redis):
+        """A day, the link's own: after that it is refused as expired anyway"""
+        token = link_token(client.application, 'once@example.com')
+
+        self.complete(client, token)
+
+        assert fake_redis.used_links == {token: 24 * 60 * 60}
+
+    def test_redis_down_is_a_503_and_makes_nothing(self, client, db, no_redis):
+        """Without Redis, a link could not be kept from working twice"""
+        response = self.complete(client, link_token(client.application, 'new@example.com'))
+
+        assert response.status_code == 503
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    def test_a_link_works_again_if_the_account_was_not_made(
+            self, client, db, fake_redis, monkeypatch):
+        """The database failed after the link was claimed: the link must
+        still work once it is back"""
+        token = link_token(client.application, 'new@example.com')
+
+        def fail():
+            raise OperationalError('INSERT', {}, Exception('MySQL has gone away'))
+        with monkeypatch.context() as patched:
+            patched.setattr(db.session, 'commit', fail)
+            first = self.complete(client, token)
+        db.session.rollback()
+
+        assert first.status_code == 503
+        assert fake_redis.used_links == {}
+        assert self.complete(client, token).status_code == 200
 
     def minted_ago(self, client, email, age):
         """A sign-up link's token, as if emailed age ago"""
@@ -232,6 +353,22 @@ class TestCompleteRegistration:
 
         assert response.get_json()['error']['code'] == 'LINK_INVALID'
 
+    @pytest.mark.parametrize('email', [
+        'Victim <attacker@example.com>',
+        'victim@example.com, attacker@example.com',
+        'Victim@Example.COM',
+    ], ids=['a display name', 'a list', 'not normalized'])
+    def test_a_token_naming_what_the_form_would_refuse(self, client, db, fake_redis, email):
+        """Signed by this app, but only a write to the queue past the form
+        could have asked for it"""
+        with client.application.app_context():
+            token = make_link_token(REGISTRATION_LINK, email)
+
+        response = self.complete(client, token)
+
+        assert response.get_json()['error']['code'] == 'LINK_INVALID'
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
     def test_a_token_naming_no_address(self, client, db):
         with client.application.app_context():
             token = URLSafeTimedSerializer(
@@ -254,6 +391,67 @@ class TestCompleteRegistration:
             'message': 'This password has appeared in a data breach. Choose another.'}
         assert checked == ['correct horse battery staple']
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    @pytest.mark.parametrize('password', [
+        'my address: jordan@example.com',
+        'Jordan wrote this passphrase',
+        'APP_NAME',
+    ])
+    def test_a_guessable_password_is_refused(self, app, client, db, fake_redis, monkeypatch, password):
+        """Checked before the breach check, which never sees it"""
+        checked = []
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: checked.append(password) or False)
+        password = password.replace('APP_NAME', f"I like {app.config['APP_NAME']}")
+
+        response = register(client, 'jordan@example.com', password)
+
+        assert response.status_code == 422
+        assert response.get_json()['error'] == {
+            'code': 'PASSWORD_GUESSABLE',
+            'message': "Choose a password that doesn't contain your email address or the app's name."}
+        assert checked == []
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+
+    def test_after_a_guessable_password_the_link_still_works(self, client, db, fake_redis):
+        token = link_token(client.application, 'jordan@example.com')
+        self.complete(client, token, password='jordan jordan jordan')
+
+        response = self.complete(client, token, password='a valid passphrase')
+
+        assert response.status_code == 200
+
+    def test_login_accepts_a_password_sign_up_would_now_refuse(self, client, db):
+        """The rule is sign-up's: an account made before it still logs in"""
+        user = User(email='jordan@example.com', terms_version=TERMS_VERSION)
+        user.set_password('jordan jordan jordan')
+        db.session.add(user)
+        db.session.commit()
+
+        response = client.post('/api/auth/login', json={
+            'email': 'jordan@example.com', 'password': 'jordan jordan jordan'})
+
+        assert response.status_code == 200
+
+    def test_no_database_transaction_waits_on_the_check(self, client, db, fake_redis, monkeypatch):
+        """The check may take its whole deadline: a pooled connection held
+        through it would be one fewer for every other request"""
+        open_during_check = []
+        monkeypatch.setattr(auth_routes, 'is_breached',
+                            lambda password: open_during_check.append(db.session().in_transaction()))
+
+        register(client, 'new@example.com', 'a valid passphrase')
+
+        assert open_during_check == [False]
+
+    def test_after_a_breached_password_the_link_still_works(
+            self, client, db, fake_redis, monkeypatch):
+        token = link_token(client.application, 'new@example.com')
+        monkeypatch.setattr(auth_routes, 'is_breached', lambda password: password == 'password password')
+        self.complete(client, token, password='password password')
+
+        response = self.complete(client, token, password='a valid passphrase')
+
+        assert response.status_code == 200
 
     def test_a_request_refused_anyway_is_never_checked(self, client, db, fake_redis, monkeypatch):
         """No third-party call for a link used again"""
@@ -1026,6 +1224,40 @@ class TestSecurityEvents:
         assert security_events() == [
             {'message': 'registered', 'ip': '127.0.0.1', 'user_id': user_id}]
         self.assert_absent(logged, 'new@example.com', 'a valid passphrase', token)
+
+    @staticmethod
+    def expired_token(app):
+        then = int(time.time() - timedelta(days=2).total_seconds())
+        with patch.object(TimestampSigner, 'get_timestamp', return_value=then):
+            return link_token(app, 'late@example.com')
+
+    @pytest.mark.parametrize(('reason', 'token_for'), [
+        ('invalid', lambda app: 'not-a-token'),
+        ('expired', lambda app: TestSecurityEvents.expired_token(app)),
+        ('registered', lambda app: link_token(app, 'test@example.com')),
+    ], ids=['invalid', 'expired', 'registered'])
+    def test_a_refused_link(self, client, db, sample_user, fake_redis, security_events,
+                            logged, reason, token_for):
+        """A run of these from one address is someone probing the link"""
+        token = token_for(client.application)
+        client.post('/api/auth/register/complete', json={
+            'token': token, 'password': 'a valid passphrase', 'terms_version': TERMS_VERSION})
+
+        assert security_events() == [{'message': 'link_refused', 'ip': '127.0.0.1',
+                                      'purpose': 'registration', 'reason': reason}]
+        self.assert_absent(logged, token, 'test@example.com', 'a valid passphrase')
+
+    def test_a_link_used_after_its_account_was_deleted(
+            self, client, db, fake_redis, security_events, logged):
+        token = link_token(client.application, 'once@example.com')
+        fake_redis.used_links[token] = 60
+
+        client.post('/api/auth/register/complete', json={
+            'token': token, 'password': 'a valid passphrase', 'terms_version': TERMS_VERSION})
+
+        assert security_events() == [{'message': 'link_refused', 'ip': '127.0.0.1',
+                                      'purpose': 'registration', 'reason': 'used'}]
+        self.assert_absent(logged, token, 'once@example.com')
 
     def test_login(self, client, sample_user, fake_redis, security_events, logged):
         body = client.post('/api/auth/login', json=LOGIN_PAYLOAD).get_json()

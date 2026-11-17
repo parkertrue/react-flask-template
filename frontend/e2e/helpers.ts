@@ -3,9 +3,8 @@ import AxeBuilder from '@axe-core/playwright'
 import { createHmac, randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { APP_NAME } from '../src/appName'
+import { APP_NAME, TERMS_VERSION } from '../src/appInfo'
 import type { DataExportResponse } from '../src/api/schemas'
-import { TERMS_VERSION } from '../src/legal'
 import config from '../playwright.config'
 
 // What the helpers below leave on the page's window
@@ -50,11 +49,18 @@ export async function emailTo(address: string, subject: string) {
 }
 
 /** The link in the one email to an address with this subject */
-export async function emailedLink(address: string, subject = 'Finish signing up') {
+export async function emailedLink(address: string, subject = `Finish signing up for ${APP_NAME}`) {
   return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
 }
 
-/** Ask for a sign-up link on the register page, without waiting */
+/**
+ * A sign-up link no server signed, for pages that need not finish: its
+ * token's payload names someone@example.com, which the page shows, and the
+ * backend refuses it as invalid
+ */
+export const UNSIGNED_LINK = '/signup/complete#token=InNvbWVvbmVAZXhhbXBsZS5jb20i.aTime.aSignature'
+
+/** Ask for a sign-up link on the sign-up page, without waiting */
 export async function requestLink(page: Page, email: string) {
   await page.getByLabel(/^email/i).fill(email)
   await page.getByRole('button', { name: /^continue$|sending link/i }).click()
@@ -97,12 +103,12 @@ export async function boxOf(locator: Locator) {
  * email, choose a password. Signed in, on the page signing up leads to.
  */
 export async function register(page: Page, email: string, password = TEST_PASSWORD) {
-  await page.goto('/register')
+  await page.goto('/signup')
   await requestLink(page, email)
   await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeVisible()
   await page.goto(await emailedLink(email))
   await fillRegistration(page, password)
-  await page.waitForURL(url => url.pathname !== '/register/complete', { timeout: 15000 })
+  await page.waitForURL(url => url.pathname !== '/signup/complete', { timeout: 15000 })
 }
 
 /** Log in from the login page and wait to be sent on from it */
@@ -343,8 +349,13 @@ export async function expectTargetSize(page: Page) {
     ...document.querySelectorAll('a[href], button, input, textarea, select'),
   ]
     // A link in running text (a paragraph, an address, or a label such as
-    // the terms checkbox's) is exempt (SC 2.5.8's inline exception)
-    .filter(el => el.checkVisibility() && !el.closest('p, address, label'))
+    // the terms checkbox's) is exempt (SC 2.5.8's inline exception), but
+    // not one alone in its paragraph, which no sentence holds
+    .filter(el => {
+      const text = el.closest('p, address, label')
+      const inSentence = text !== null && text.textContent.trim() !== el.textContent.trim()
+      return el.checkVisibility() && !inSentence
+    })
     .map(el => ({ el, box: el.getBoundingClientRect() }))
     .filter(({ box }) => box.width < 24 || box.height < 24)
     .map(({ el, box }) => `${el.outerHTML.slice(0, 80)} is ${box.width}x${box.height}`))

@@ -3,7 +3,7 @@ import { OBJECT_URL_LIFETIME_MS, saveJsonFile, slugify } from '../download'
 
 describe('slugify', () => {
   it.each([
-    ['React + Flask Template', 'react-flask-template'],
+    ['Notes + Tasks App', 'notes-tasks-app'],
     ['  Notes!  ', 'notes'],
     ['Plan B 2', 'plan-b-2'],
   ])('turns %j into %j', (text, slug) => {

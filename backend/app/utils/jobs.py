@@ -4,8 +4,9 @@ A request that sends an email must not wait on a mail server, or fail with
 it. It queues a job instead (Job.send), which the worker (backend/worker.py)
 runs in an app context, retrying it with backoff when it fails.
 
-A feature declares its jobs from its blueprint (`@job(notes_bp)`), as it
-registers an export, so the core imports no feature. Messages are JSON and
+A feature declares its jobs from its blueprint, as it registers an export,
+so the core imports no feature: `@job(<blueprint>)` on the function, or
+`job(auth_bp)(send_registration_email)` (auth/routes.py). Messages are JSON and
 name a declared job: a message written to Redis can only run a job the code
 declares, with JSON arguments, never an arbitrary function.
 """
@@ -20,26 +21,31 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from types import FrameType
+from typing import TextIO
 
 from dramatiq import Actor, Broker, Message, Worker
+from dramatiq.broker import MessageProxy
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.brokers.stub import StubBroker
 from dramatiq.middleware import Retries, TimeLimit
 from flask import Blueprint, Flask, current_app
 from flask.blueprints import BlueprintSetupState
+from redis import ConnectionError as RedisConnectionError
 from redis import Redis, RedisError
+from redis import TimeoutError as RedisTimeoutError
 
 from app.utils.log import JsonFormatter
-from app.utils.redis_service import REDIS_CLIENT_OPTIONS
+from app.utils.redis_service import (
+    REDIS_CLIENT_OPTIONS, mark_redis_unreachable, redis_unreachable)
 
 # Every queue key starts with it: the Redis ACL in every compose file lets
 # the app's and the worker's users reach dramatiq:* (test_redis_acl.py)
 QUEUE_NAMESPACE = 'dramatiq'
 QUEUE_NAME = 'default'
 
-# A failed job is tried again after 15s, then twice as long each time up to
-# an hour: ten retries span about three hours, long enough to outlast a mail
-# provider's outage.
+# A failed job is tried again after 15-30s (Dramatiq adds jitter), then about
+# twice as long each time up to an hour: ten retries span about three hours,
+# long enough to outlast a mail provider's outage.
 MAX_RETRIES = 10
 MIN_BACKOFF = timedelta(seconds=15)
 MAX_BACKOFF = timedelta(hours=1)
@@ -90,9 +96,15 @@ class Job:
     def send(self, *args: str | int) -> None:
         """Queue the job with these (JSON) arguments"""
         actor: Actor[..., None] = current_app.extensions['jobs'][self.name]
+        # Redis failed to connect moments ago, here or in the token store:
+        # answer at once rather than wait out the outage again
+        if redis_unreachable(current_app):
+            raise JobQueueUnavailable()
         try:
             actor.send(*args)
         except RedisError as e:
+            if isinstance(e, (RedisConnectionError, RedisTimeoutError)):
+                mark_redis_unreachable(current_app)
             current_app.logger.exception('Could not queue job %s', self.name)
             raise JobQueueUnavailable() from e
 
@@ -167,13 +179,24 @@ def close_jobs(app: Flask) -> None:
 
 class _MessageIdOnly(logging.Filter):
     """Dramatiq logs a failed message with its arguments, which may hold an
-    email address: log its id instead"""
+    email address: log its id instead. Its worker logs the MessageProxy it
+    consumed, which is not a Message, so both are replaced."""
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
             record.args = tuple(
-                arg.message_id if isinstance(arg, Message) else arg for arg in record.args)
+                arg.message_id if isinstance(arg, (Message, MessageProxy)) else arg
+                for arg in record.args)
         return True
+
+
+def _worker_log_handler(stream: TextIO) -> logging.Handler:
+    """The handler the worker logs Dramatiq's lines through: JSON, with each
+    message named by its id alone"""
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    handler.addFilter(_MessageIdOnly())
+    return handler
 
 
 def run_worker(app: Flask) -> None:
@@ -181,11 +204,8 @@ def run_worker(app: Flask) -> None:
     finish (up to SHUTDOWN_TIMEOUT) and stop"""
     # On a handler, not the logger: a logger's filter skips its children's
     # records, and Dramatiq logs from dramatiq.worker.WorkerThread and the like
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter())
-    handler.addFilter(_MessageIdOnly())
     log = logging.getLogger('dramatiq')
-    log.addHandler(handler)
+    log.addHandler(_worker_log_handler(sys.stdout))
     log.setLevel(logging.INFO)
 
     broker = app.extensions['jobs_broker']

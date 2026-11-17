@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import HomePage from '../HomePage'
 import { renderRoutes, signIn } from '@/test/router'
-import { APP_NAME, APP_TAGLINE } from '@/appName'
+import { APP_NAME, APP_TAGLINE } from '@/appInfo'
 
 vi.mock('@/features/health/ApiStatus', () => ({ default: () => null }))
 
@@ -26,7 +26,7 @@ describe('HomePage', () => {
   it('offers a visitor registration and login', () => {
     renderPage()
 
-    expect(links()).toEqual({ 'Get started': '/register', 'Log in': '/login' })
+    expect(links()).toEqual({ 'Get started': '/signup', 'Log in': '/login' })
   })
 
   it('offers a signed-in user the way into the app instead', () => {

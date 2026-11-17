@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import type { UserEvent } from '@testing-library/user-event'
 import { routes } from '@/routes'
-import { TERMS_VERSION } from '@/legal'
+import { TERMS_VERSION } from '@/appInfo'
 import { storage } from '@/auth/storage'
 import type { FromState } from '@/auth/GuestRoute'
 import { account, errorBody, tokens } from '../fixtures'
@@ -35,7 +35,7 @@ describe('Authentication Flow Integration Tests', () => {
         body = await request.json()
         return HttpResponse.json({ message: 'Check your inbox' }, { status: 202 })
       }))
-      const { user } = renderRoutes(routes, '/register')
+      const { user } = renderRoutes(routes, '/signup')
 
       await user.type(screen.getByLabelText(/^Email/), 'test@example.com')
       await user.click(screen.getByRole('button', { name: 'Continue' }))
@@ -48,13 +48,13 @@ describe('Authentication Flow Integration Tests', () => {
       let body
       server.use(http.post('/api/auth/register/complete', async ({ request }) => {
         body = await request.json()
-        return HttpResponse.json(tokens('new-access', 'new-csrf'))
+        return HttpResponse.json({ ...tokens('new-access', 'new-csrf'), email: 'test@example.com' })
       }))
       // With the account page to return to (GuestRoute reads the state), so
       // this shared test needs no example feature page after signing in
       const from: FromState = { from: { pathname: '/account', search: '', hash: '', state: null, key: 'k' } }
       const { user } = renderRoutes(routes, {
-        pathname: '/register/complete', hash: '#email=test%40example.com&token=a-token', state: from })
+        pathname: '/signup/complete', hash: '#token=a-token', state: from })
 
       await finishRegistration(user)
 
@@ -69,12 +69,12 @@ describe('Authentication Flow Integration Tests', () => {
         http.post('/api/auth/register/complete', () => HttpResponse.json(
           errorBody('LINK_EXPIRED', 'This link has expired'), { status: 400 }))
       )
-      const { user } = renderRoutes(routes, '/register/complete#email=test%40example.com&token=a-token')
+      const { user } = renderRoutes(routes, '/signup/complete#token=a-token')
 
       await finishRegistration(user)
 
       expect(await screen.findByRole('alert')).toHaveTextContent('This link has expired')
-      expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/register')
+      expect(screen.getByRole('link', { name: 'Start again' })).toHaveAttribute('href', '/signup')
     })
   })
 

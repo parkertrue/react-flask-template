@@ -32,9 +32,11 @@ bulletproof. In priority order:
   gaps. Do not report them as findings. Report an entry only if its *Revisit
   when* condition has come true or the code no longer matches it.
 - **`OPEN-ISSUES.md`** (next to this file) is the running list of open
-  work. Check every finding against it. A finding it already lists is still
-  reported, since this run may show it is worse or bring new evidence: write
-  `(open: <issue>)` after its Finding text, and rate its severity yourself.
+  work. Check every finding against it and against `DECISIONS.md`. A finding
+  either already documents is never relisted. When this run shows something
+  material the entry lacks (it is worse, wider, or has new evidence), propose
+  an edit to that entry in the *Recording plan* instead, tagged
+  `(open: <issue>)` or `(decided: <entry>)`, and count it under excluded.
 - **Read files from disk.** A copy of CLAUDE.md or any other file already in
   your context may be older than the working tree. Read it again before
   relying on it.
@@ -59,7 +61,8 @@ Audits are **read-only** with respect to the repository:
   orchestrator runs them one after another), and each tears its stack down
   when done, volumes included.
   - The **test stack**: `docker-compose.test.yml`, project `app_test`, ports
-    3307, 6380, 8080, 8443. Tear down with
+    3307, 6380, 1026 and 8026 (Mailpit's SMTP and API), 8080, 8443. Tear
+    down with
     `docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e down -v`.
   - A **production-config stack** for checks that need production behavior
     (persistent volumes, restart policies): `docker-compose.yml` with
@@ -71,6 +74,39 @@ Audits are **read-only** with respect to the repository:
     the test stack uses `10.217.1`), plus a scratch override file that rebinds
     nginx to `127.0.0.1` (`ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]`),
     so nothing listens on the network. Never use the bare project name `app`.
+    Email and the breach check, as audit-recovery proved on 2026-11-09:
+    - **A mail sink the worker trusts.** Production refuses Mailpit's plain
+      `smtp://` and the example's mail values, and the worker stops without
+      valid ones. Make a throwaway CA and a leaf certificate for `mailsink`
+      in the scratch directory (the leaf needs `subjectAltName=DNS:mailsink`,
+      `keyUsage=critical,digitalSignature,keyEncipherment`,
+      `extendedKeyUsage=serverAuth`, `subjectKeyIdentifier=hash` and
+      `authorityKeyIdentifier=keyid,issuer`, since Python checks strictly;
+      `openssl verify -x509_strict` must pass; run `openssl` with
+      `MSYS_NO_PATHCONV=1` on Git Bash for its `-subj` paths). In the env
+      file set `EMAIL_URL=smtp+starttls://audit:<openssl rand -hex 32>@mailsink:1025`
+      and `EMAIL_FROM="Audit <no-reply@audit.invalid>"`. In the override:
+      the worker gets `environment: {SSL_CERT_FILE: /mailca/ca.pem}` and the
+      CA directory mounted read-only at `/mailca`; a `mailsink` service runs
+      the test stack's Mailpit image with `MP_SMTP_TLS_CERT`,
+      `MP_SMTP_TLS_KEY` (the leaf, mounted read-only at `/certs`),
+      `MP_SMTP_REQUIRE_STARTTLS=true` and `MP_SMTP_AUTH_ACCEPT_ANY=true`, on
+      `networks: [edge]`, its API on `127.0.0.1:8027:8025`, `restart: "no"`.
+      Mailpit forgets its messages when restarted: count by address.
+    - **No call to Pwned Passwords:** the override gives the backend
+      `environment: {PWNED_PASSWORDS_URL: ""}` (empty turns the check off).
+    - **Accounts** go through sign-up as a user's would: `POST
+      /api/auth/register {"email"}` (202), then the newest message to that
+      address from the sink's API (`GET /api/v1/search?query=to:"<addr>"`,
+      then `GET /api/v1/message/<ID>`, its `Text`), the `token` from the
+      link's fragment (`/signup/complete#token=...`), and `POST
+      /api/auth/register/complete {"token", "password", "terms_version"}`.
+      The password: 15 characters or more, holding neither the address nor
+      the app's name (`PASSWORD_GUESSABLE`). Sign-up allows 10 links an hour
+      per IP, 3 an hour and 6 a day per address, and 10 completions an hour
+      per IP: between batches, delete the `LIMITS:*regist*` keys as the
+      app's Redis user (SCAN, since it may not run KEYS); `*register*`
+      alone misses `auth.complete_registration`.
   - **Deploy smoke** (`python .github/scripts/smoke_deploy.py`,
     `/audit-infra`'s deploy layer only): its own clone and project
     `deploy_smoke`, subnet `10.217.8`, nginx on ports 80 and 443 of
@@ -200,7 +236,7 @@ report for the same check and date exists, overwrite it.
 Commit: <git rev-parse --short HEAD> (<branch>), working tree clean|dirty
 Scope: <what was covered; arguments passed, if any>
 Verdict: PASS | FINDINGS | BLOCKED   (BLOCKED if any blocker)
-Counts: blocker N, high N, medium N, low N, nit N
+Counts: blocker N, high N, medium N, low N, nit N; excluded N (already documented)
 Timings: start HH:MM, first container HH:MM, last teardown HH:MM, end HH:MM
 
 ## Findings
@@ -212,14 +248,17 @@ Timings: start HH:MM, first container HH:MM, last teardown HH:MM, end HH:MM
 ## Compared with last run
 Read the most recent earlier report for this check in `temp/audits/`; if
 there is none, write "First run." and nothing else here.
-New: IDs in neither the last report nor OPEN-ISSUES.md. Already open: IDs
-tagged `(open: ...)`. Resolved: the earlier findings that are now fixed.
-Recurring: IDs also in the last report (call out any reported three times or
-more).
+New: IDs not in the last report. Excluded: what this run saw that
+OPEN-ISSUES.md or DECISIONS.md already documents, one line each (the issue
+or entry, and whether this run adds anything material). Resolved: the
+earlier findings that are now fixed.
+Recurring: IDs also in the last report. A finding that was fixed and is
+back says so, and its proposed fix must remove the cause (a guard, a test, or
+a structural change such as one line per rule), not repeat the patch.
 
 ## Proposed PRs
-Every finding not tagged `(open: ...)` and not proposed for DECISIONS.md
-goes into exactly one PR, lows and nits included.
+Every finding not proposed for OPEN-ISSUES.md or DECISIONS.md goes into
+exactly one PR, lows and nits included.
 ### PR 1: <title>
 Fixes: <IDs>
 Changes: <file by file, from the Fix column>
@@ -238,6 +277,10 @@ the recommended one first, and what each changes. "None." if there are none.
 | INFRA-2 | low | OPEN-ISSUES.md: <existing issue it merges into>, or new issue under <group> |
 | INFRA-3 | nit | DECISIONS.md: new entry (below), or amends "<entry title>" |
 
+Edits to documented entries (excluded items with something material to
+add): one line each, `(open: <issue>)` or `(decided: <entry>)`, and the text
+to add. "None." if there are none.
+
 ## Proposed DECISIONS.md entries
 Findings that look deliberate: the entry you would add, for the user to accept or reject.
 
@@ -251,8 +294,9 @@ What you could not check, and why (no deployment, Docker unavailable, ...).
 **Proposed PRs:** group findings that touch the same files or would be
 fixed together, keep a risky change (auth, data, deploy) apart from
 routine ones, and order the PRs by severity, then by what depends on
-what. A finding tagged `(open: ...)` stays with its issue in OPEN-ISSUES.md and gets
-no PR, unless this run's evidence makes it more urgent; say why if so.
+what. An excluded item gets no PR, unless this run's evidence makes it
+urgent: then it is a finding again, and its line in *Compared with last run*
+says why.
 
 **Recording plan:** one row per finding, every ID in *Findings* exactly
 once; check the count matches the Counts line. A finding in a PR is
@@ -280,8 +324,16 @@ ID prefixes: `INFRA`, `TEST`, `SEC`, `REC`, `CODE`, `A11Y`, `DOCS`, `SCAF`,
 `LEGAL`.
 Order findings by severity. Give each one a precise `file:line`.
 
-When done, reply with **only**: the verdict, the counts, one line per
-proposed PR (title and the IDs it fixes), the IDs going to OPEN-ISSUES.md or
-DECISIONS.md, the *Decisions for you* in full, and the report path. End by
-asking the user to answer the decisions, so the findings can be recorded
-as the *Recording plan* says. The report holds the detail.
+When done, reply with **only** the following, in this order (the report
+holds the detail):
+1. The verdict, and an accounting: how many findings, by severity; how many
+   items were excluded as already documented, and which (issue or entry).
+2. Grouped by proposed PR: its title, then every finding it fixes, one line
+   each with its own ID (never a range, never folded into another's line),
+   then any decision that shapes that PR, in full, right there.
+3. The same for the findings going to OPEN-ISSUES.md and to DECISIONS.md,
+   each group with its decisions.
+4. The report path, and a request to answer the decisions so the findings
+   can be recorded as the *Recording plan* says.
+Check by script that every ID in the report appears in the reply exactly
+once.
