@@ -1,16 +1,23 @@
 """Deploy, fail and roll back with deploy.sh.
 
 CI's Deploy smoke job runs this. It copies the working tree into a fresh
-clone of a throwaway origin and commits a few versions to its main (a good
-one, a second good one, one whose nginx stops at start, one whose worker
-stops at start, one whose migration fails, one that does not build, one
-whose db does not start, one that changes db, one built on a base image no
-registry has, one that changes redis). Then it runs deploy.sh through each
-case, after a stopped worker and deploys cut off
-before and after the backend was replaced, against the locks of a live and
-a dead deploy, then --latest as a timer would, through commits pushed
-meanwhile, and checks what it left running, the images it kept, the
-checkout and .env.deploy. Every failed check is printed, then it exits 1.
+clone of a throwaway origin and commits versions to its main, one per line:
+- a good one, and a second good one;
+- one whose nginx stops at start;
+- one whose worker stops at start;
+- one whose migration fails;
+- one that does not build;
+- one whose db does not start;
+- one that changes db;
+- one built on a base image no registry has;
+- one that changes redis.
+Then it runs deploy.sh through each, and also:
+- over a stopped worker;
+- after deploys cut off before and after the backend was replaced;
+- against the locks of a live and a dead deploy;
+- with --latest as a timer would, through commits pushed meanwhile.
+It checks what each left running, the images it kept, the checkout and
+.env.deploy. Every failed check is printed, then it exits 1.
 Needs Docker, git, bash, curl, ps, and a certificate pair in nginx/certs/;
 ports 80 and 443 must be free.
 """

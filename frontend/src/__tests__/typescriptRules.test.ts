@@ -29,6 +29,8 @@ const CASES: [Project, string, string, number | null][] = [
   ['app', 'a case that falls through', 'export function f(x: number) { switch (x) { case 1: f(2)\n case 2: return } }', 7029],
   ['app', 'an override not marked', 'class A { m() {} }\nexport class B extends A { m() {} }', 4114],
   ['app', 'syntax with no JavaScript twin', 'export enum E { A }', 1294],
+  // A default since TypeScript 6, kept on: an import of nothing that exists
+  ['app', 'a side-effect import of a missing file', "import './nope'", 2882],
   ['app', 'a type imported as a value', "import { Account } from '@/auth/authService'\nexport const a: Account | null = null", 1484],
   // App code runs in the browser alone; tests and tooling run under Node
   ['app', 'a Node global', 'export const env = process.env', 2591],
