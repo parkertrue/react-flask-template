@@ -10,7 +10,11 @@ the backend image to drop every capability, the mail server's password to
 the worker alone, and its backend's wait for `migrate` to succeed, which a
 plain `docker compose up` (README, Build and Start) relies on; deploy.sh
 runs migrate itself. Its Redis must compact its on-disk log at 1 MB, which
-otherwise keeps deleted values, such as a job's recipient, until 64 MB. Production's and the test stack's worker must outlast
+otherwise keeps deleted values, such as a job's recipient, until 64 MB.
+Every secret it reads must be required (`:?`) wherever the backend, migrate
+and the worker use it, so a missing one stops compose rather than starting
+Redis on an empty password; read from the file itself, since `config`
+resolves the variables. Production's and the test stack's worker must outlast
 its wait for running jobs when stopped, and check the file it writes once
 ready, both read from backend/app/utils/jobs.py. Each file is read as
 `docker compose config` resolves it, anchors and merges applied.
@@ -39,6 +43,14 @@ READ_ONLY = ('backend', 'migrate', 'worker', 'nginx')
 BACKEND_IMAGE = ('backend', 'migrate', 'worker')
 # What only the worker, which sends email, may be given
 WORKER_ONLY = ('EMAIL_URL', 'EMAIL_PASSWORD')
+# The secrets production must refuse to run without. Outside the bundled db
+# and redis services, every use must be required (${NAME:?...}); their own
+# copies stay plain, since compose requires a :? even in a service whose
+# profile is off, which would make an external database or Redis set them.
+REQUIRED_SECRETS = (
+    'SECRET_KEY', 'DB_PASSWORD', 'DB_MIGRATION_PASSWORD', 'REDIS_PASSWORD',
+    'REDIS_WORKER_PASSWORD')
+BUNDLED = ('db', 'redis')
 # The size at which production's Redis compacts its on-disk log, as
 # docs/personal-data.md tells users
 AOF_REWRITE_MIN_SIZE = '1mb'
@@ -77,6 +89,28 @@ def flag_value(service, flag):
     """The value after flag in a service's command, or None"""
     command = service.get('command') or []
     return command[command.index(flag) + 1] if flag in command[:-1] else None
+
+
+def outside_bundled_services(text):
+    """The production file's lines, without the db and redis services'"""
+    kept, skipping = [], False
+    for line in text.splitlines():
+        service = re.fullmatch(r'  ([\w-]+):\s*', line)
+        if service or (line and not line.startswith(' ')):
+            skipping = bool(service) and service.group(1) in BUNDLED
+        if not skipping:
+            kept.append(line)
+    return '\n'.join(kept)
+
+
+def secret_problems(text):
+    used = outside_bundled_services(text)
+    for name in REQUIRED_SECRETS:
+        uses = re.findall(r'\$\{' + name + r'(:\?|\W)', used)
+        if not uses:
+            yield f'{name}: production uses it nowhere outside the db and redis services'
+        elif any(use != ':?' for use in uses):
+            yield f'{name}: production uses it without requiring it (${{{name}:?...}})'
 
 
 def init_mounts(db):
@@ -151,6 +185,7 @@ def problems(prod, test, dev):
     drain, ready = worker_settings()
     for stack, services in (('production', prod), ('test', test)):
         yield from worker_problems(stack, services['worker'], drain, ready)
+    yield from secret_problems((ROOT / 'docker-compose.yml').read_text(encoding='utf-8'))
     migrate = prod['backend'].get('depends_on', {}).get('migrate', {})
     if migrate.get('condition') != 'service_completed_successfully':
         yield 'backend: production does not wait for migrate to complete successfully'
@@ -166,6 +201,7 @@ def main():
         sys.exit(f'{len(found)} compose setting(s) differ')
     sys.stdout.write(f'{len(prod)} services, the Redis ACL and the db init scripts match, '
                      'ports are IPv4 only, the db keeps no binary log, Redis compacts its log at 1 MB, '
+                     'every secret is required, '
                      'the backend, migrate, worker and nginx are read-only, '
                      'the backend image drops every capability, '
                      'only the worker holds the mail password, '
