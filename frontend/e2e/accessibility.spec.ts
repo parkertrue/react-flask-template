@@ -136,6 +136,23 @@ test.describe('Accessibility', () => {
       await expectTargetSize(page)
     })
 
+    test('sending the link again, busy and then failed, has no violations', async ({ page }) => {
+      await page.goto('/signup')
+      await requestLink(page, uniqueEmail('e2e-a11y-again'))
+      await expect(page.getByRole('heading', { level: 1, name: 'Check your inbox' })).toBeFocused()
+      const release = await holdRequests(page, 'POST', '**/api/auth/register', serviceUnavailable)
+
+      await page.getByRole('button', { name: 'Send again' }).click()
+
+      await expect(page.getByRole('button', { name: 'Sending...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
+      await expectReflow(page)
+    })
+
     test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
       await page.goto(UNSIGNED_LINK)
 
@@ -161,15 +178,79 @@ test.describe('Accessibility', () => {
       await expectNoViolations(page)
     })
 
-    test('a refused link has no violations, and focuses why', async ({ page }) => {
+    test("the link's page, with every field refused, has no violations, and focuses the first", async ({ page }) => {
+      await page.goto(UNSIGNED_LINK)
+
+      await page.getByRole('button', { name: 'Create account' }).click()
+
+      const password = page.getByLabel('Password', { exact: true })
+      await expect(password).toBeFocused()
+      await expect(password).toHaveAttribute('aria-invalid', 'true')
+      await expectNoViolations(page)
+      await expectReflow(page)
+    })
+
+    test("a breached password is the field's own message, focused, with no violations", async ({ page }) => {
+      await page.route('**/api/auth/register/complete', route => route.fulfill({
+        status: 422,
+        json: { error: { code: 'PASSWORD_BREACHED', message: 'This password has appeared in a data breach. Choose another.' } },
+      }))
       await page.goto(UNSIGNED_LINK)
       await fillRegistration(page)
 
+      const password = page.getByLabel('Password', { exact: true })
+      await expect(password).toBeFocused()
+      await expect(password).toHaveAccessibleDescription(/appeared in a data breach/)
+      await expectNoViolations(page)
+    })
+
+    test('read-only fields look inactive, busy ones included', async ({ page }) => {
+      const release = await holdRequests(page, 'POST', '**/api/auth/register/complete', serviceUnavailable)
+      await page.goto(UNSIGNED_LINK)
+      const background = (label: string) => page.getByLabel(label, { exact: true })
+        .evaluate(el => getComputedStyle(el).backgroundColor)
+      const readOnly = await background('Email')
+      expect(await background('Password')).not.toBe(readOnly)
+
+      await fillRegistration(page)
+
+      await expect(page.getByRole('button', { name: 'Creating account...' })).toBeFocused()
+      expect(await background('Password')).toBe(readOnly)
+      release()
+      await expect(page.getByRole('alert')).toBeVisible()
+    })
+
+    test('a forged link has no violations, and focuses why', async ({ page }) => {
+      await page.goto(UNSIGNED_LINK)
+      await fillRegistration(page)
+
+      await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)
       await expect(page.getByRole('alert')).toBeFocused()
       await expectNoViolations(page)
       await expectReflow(page)
       await expectTargetSize(page)
     })
+
+    // What the backend answers for a link it signed but won't take
+    for (const [why, status, code, message] of [
+      ['an expired link', 400, 'LINK_EXPIRED', /This link has expired/],
+      ['a link used for an account since deleted', 400, 'LINK_USED', /already been used/],
+      ['a link that made its account already', 409, 'EMAIL_ALREADY_REGISTERED', /already set up/],
+    ] as const) {
+      test(`${why} has no violations, and focuses why`, async ({ page }) => {
+        await page.route('**/api/auth/register/complete', route => route.fulfill({
+          status, json: { error: { code, message: 'refused' } },
+        }))
+        await page.goto(UNSIGNED_LINK)
+        await fillRegistration(page)
+
+        await expect(page.getByRole('alert')).toHaveText(message)
+        await expect(page.getByRole('alert')).toBeFocused()
+        await expectNoViolations(page)
+        await expectReflow(page)
+        await expectTargetSize(page)
+      })
+    }
   })
 
   test.describe('a signed-in user', () => {

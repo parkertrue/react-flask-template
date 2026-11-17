@@ -153,7 +153,7 @@ export default function CompleteRegistrationPage() {
                 {shown.message}
               </p>
               <p className="auth-footer">
-                <Link to={shown.to} className="text-link">{shown.action}</Link>
+                <Link to={shown.to} className="text-link padded-link">{shown.action}</Link>
               </p>
             </>
           ) : (
