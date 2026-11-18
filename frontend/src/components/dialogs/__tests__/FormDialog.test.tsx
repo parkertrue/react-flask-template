@@ -60,6 +60,30 @@ describe('FormDialog', () => {
     expect(screen.getByLabelText('Code')).toHaveFocus()
   })
 
+  it('opens on its first field to type in, past a read-only one', async () => {
+    const user = userEvent.setup()
+    function WithAccount() {
+      const [asking, setAsking] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setAsking(true)}>Change</button>
+          {asking && (
+            <FormDialog title="Change it?" description="Read the account first." submitLabel="Save"
+              busy={false} onSubmit={() => {}} onCancel={() => setAsking(false)}>
+              <FormField id="account" label="Account" value="user@example.com" readOnly />
+              <FormField id="secret" label="Secret" value="" onChange={() => {}} />
+            </FormDialog>
+          )}
+        </>
+      )
+    }
+    render(<WithAccount />)
+
+    await user.click(screen.getByRole('button', { name: 'Change' }))
+
+    expect(screen.getByLabelText('Secret')).toHaveFocus()
+  })
+
   it('hands the submit to the page and stays open', async () => {
     const { user, onSubmit, onCancel } = await open()
     await user.type(screen.getByLabelText('Code'), '1234')

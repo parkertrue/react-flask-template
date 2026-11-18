@@ -98,14 +98,24 @@ def password_reset_message(link: str) -> tuple[str, str]:
         "If it wasn't you, ignore this email: your password has not changed.")
 
 
-def password_changed_message(link: str) -> tuple[str, str]:
+# How a password changed, as the email about it says it
+PASSWORD_RESET = 'reset'
+PASSWORD_CHANGE = 'change'
+
+
+def password_changed_message(link: str, how: str) -> tuple[str, str]:
     app_name = current_app.config['APP_NAME']
-    return f'Your {app_name} password was changed', email_body(
-        f'The password of your {app_name} account was just reset with a link sent to this '
-        'address, and every device signed in to the account was logged out.',
-        "If it wasn't you, someone else can read your email: secure your email account, "
-        'then reset your password here:',
-        link)
+    if how == PASSWORD_RESET:
+        what = (f'The password of your {app_name} account was just reset with a link sent to '
+                'this address, and every device signed in to the account was logged out.')
+        advice = ("If it wasn't you, someone else can read your email: secure your email "
+                  'account, then reset your password here:')
+    else:
+        what = (f'The password of your {app_name} account was just changed from a signed-in '
+                'session, and every other device signed in to the account was logged out.')
+        advice = ("If it wasn't you, someone else knows your password: reset it here, which "
+                  'logs out every device:')
+    return f'Your {app_name} password was changed', email_body(what, advice, link)
 
 
 def send_password_reset_email(email: str) -> None:
@@ -126,10 +136,12 @@ def send_password_reset_email(email: str) -> None:
     send_email(email, subject, body)
 
 
-def send_password_changed_email(email: str) -> None:
-    """Tell email its account's password was just reset (ASVS 6.3.7), so an
-    owner who did not ask for it learns at once"""
+def send_password_changed_email(email: str, how: str = PASSWORD_RESET) -> None:
+    """Tell email its account's password was just reset or changed (ASVS
+    6.3.7), so an owner who did not do it learns at once"""
     if not is_normalized_email(email):
         raise PermanentJobFailure('Not an address an account can have')
-    subject, body = password_changed_message(app_link('/password-reset'))
+    if how not in (PASSWORD_RESET, PASSWORD_CHANGE):
+        raise PermanentJobFailure('Not a way a password changes')
+    subject, body = password_changed_message(app_link('/password-reset'), how)
     send_email(email, subject, body)

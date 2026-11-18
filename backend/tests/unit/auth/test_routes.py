@@ -1655,6 +1655,25 @@ class TestPasswordResetEmails:
         message, = outbox
         assert f'open this link within {said}:' in message.get_content()
 
+    def test_the_notice_after_a_change_says_so(self, app, db, sample_user, outbox):
+        """Changed from a signed-in session, not through this inbox"""
+        send_password_changed_email('test@example.com', 'change')
+
+        message, = outbox
+        paragraphs = message.get_content().rstrip('\n').split('\n\n')
+        assert paragraphs[:2] == [
+            'The password of your Some App account was just changed from a signed-in session, '
+            'and every other device signed in to the account was logged out.',
+            "If it wasn't you, someone else knows your password: reset it here, which logs out "
+            'every device:']
+        assert self.link(message).geturl() == 'https://app.test/password-reset'
+
+    def test_the_notice_refuses_another_way(self, app, db, sample_user, outbox):
+        with pytest.raises(PermanentJobFailure):
+            send_password_changed_email('test@example.com', 'guessed')
+
+        assert outbox == []
+
     def test_the_notice_links_to_a_new_reset(self, app, db, sample_user, outbox):
         """For an owner who did not ask for it, and must take the account back"""
         send_password_changed_email('test@example.com')
@@ -1738,7 +1757,7 @@ class TestCompletePasswordReset:
     def test_queues_the_notice(self, client, db, sample_user, fake_redis, jobs):
         self.complete(client, self.token(client))
 
-        assert jobs() == [('auth.send_password_changed_email', ('test@example.com',))]
+        assert jobs() == [('auth.send_password_changed_email', ('test@example.com', 'reset'))]
 
     def test_a_link_works_once(self, client, db, sample_user, fake_redis):
         token = self.token(client)

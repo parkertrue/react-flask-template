@@ -734,11 +734,8 @@ A check mentions these only when its findings bear on one (for example, a
 docs check that finds the certificate steps wrong). They are not new
 findings.
 
-- **Account security beyond the basics:** no password change while signed
-  in, and no multi-factor login (ASVS 5.0 chapter 6, Authentication). A
-  change can build on what the password reset uses: `Password`,
-  `is_guessable`, `is_breached`, ending every session, and the "password
-  was changed" email.
+- **Account security beyond the basics:** no multi-factor login (ASVS 5.0
+  chapter 6, Authentication).
   No list of active sessions either (ASVS 7.5.2): a user can end every
   session with "Log out all devices" but cannot see them. It belongs on
   `AccountPage`.

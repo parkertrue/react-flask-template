@@ -8,10 +8,11 @@ import ProtectedRoute from '@/auth/ProtectedRoute'
 import { storage } from '@/auth/storage'
 import {
   getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData, requestEmailChange,
+  changePassword,
 } from '@/auth/authService'
 import { saveJsonFile, slugify } from '@/utils/download'
 import type { ErrorCode } from '@/api/errors'
-import { account, dataExport, errorBody, httpError } from '@/test/fixtures'
+import { account, dataExport, errorBody, httpError, tokens } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
 import { APP_NAME } from '@/appInfo'
 
@@ -64,6 +65,152 @@ describe('AccountPage', () => {
     vi.mocked(deleteAccount).mockResolvedValue()
     vi.mocked(exportAccountData).mockResolvedValue(dataExport())
     vi.mocked(requestEmailChange).mockResolvedValue()
+    vi.mocked(changePassword).mockResolvedValue(tokens('new-access', 'new-csrf'))
+  })
+
+  describe('changing the password', () => {
+    const dialog = () => screen.getByRole('dialog', { name: 'Change your password?' })
+    const inDialog = () => within(dialog())
+    const field = {
+      current: () => inDialog().getByLabelText('Current password'),
+      next: () => inDialog().getByLabelText('New password'),
+      confirm: () => inDialog().getByLabelText('Confirm new password'),
+    }
+    const saveButton = () => inDialog().getByRole('button', { name: /^(save password|saving\.\.\.)$/i })
+
+    interface Values {
+      current?: string
+      next?: string
+      confirm?: string
+    }
+
+    async function askToChange(user: UserEvent, values: Values = {}) {
+      const { current = 'my old passphrase', next = 'my brand new passphrase' } = values
+      const { confirm = next } = values
+      await user.click(screen.getByRole('button', { name: 'Change password' }))
+      if (current) await user.type(field.current(), current)
+      if (next) await user.type(field.next(), next)
+      if (confirm) await user.type(field.confirm(), confirm)
+    }
+
+    it("asks in a dialog, with the account's name for password managers, starting on the current password", async () => {
+      const { user } = renderPage()
+
+      await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+      expect(dialog()).toHaveAccessibleDescription('Every other device signed in to this account will be logged out.')
+      expect(inDialog().getByLabelText('Email')).toHaveValue('user@example.com')
+      expect(inDialog().getByLabelText('Email')).toHaveAttribute('autocomplete', 'username')
+      expect(field.current()).toHaveFocus()
+      expect(field.current()).toHaveAttribute('autocomplete', 'current-password')
+      expect(field.next()).toHaveAttribute('autocomplete', 'new-password')
+      expect(field.next()).toHaveAccessibleDescription('At least 15 characters. A few words make a good one.')
+      expect(changePassword).not.toHaveBeenCalled()
+    })
+
+    it('changes it, keeps this browser signed in with the new login, and says so', async () => {
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(saveButton())
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(changePassword).toHaveBeenCalledExactlyOnceWith('my old passphrase', 'my brand new passphrase')
+      expect(storage.getAccessToken()).toBe('new-access')
+      expect(storage.getEmail()).toBe('user@example.com')
+      expect(screen.getByText('Your password was changed. Every other device was logged out.'))
+        .toHaveAttribute('role', 'status')
+    })
+
+    it.each<[string, Values, keyof typeof field, string]>([
+      ['an empty current password', { current: '' }, 'current', 'Password is required'],
+      ['a short new password', { next: 'too short' }, 'next', 'at least 15 characters'],
+      ['a new password holding the address', { next: 'mine is user@example.com' }, 'next',
+        "doesn't contain your email address"],
+      ['the same password', { next: 'my old passphrase' }, 'next', 'Choose a password different from your current one.'],
+      ['new passwords that differ', { confirm: 'a different passphrase' }, 'confirm', 'Passwords do not match'],
+    ])('refuses %s without sending it', async (_, values, name, message) => {
+      const { user } = renderPage()
+      await askToChange(user, values)
+
+      await user.click(saveButton())
+
+      expect(field[name]()).toHaveAttribute('aria-invalid', 'true')
+      expect(field[name]()).toHaveAccessibleDescription(expect.stringContaining(message))
+      expect(field[name]()).toHaveFocus()
+      expect(changePassword).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a wrong current password', 403, 'WRONG_PASSWORD', 'The password is incorrect', 'current'],
+      ['an unchanged password', 422, 'PASSWORD_UNCHANGED', 'Choose a password different from your current one.', 'next'],
+      ['a guessable password', 422, 'PASSWORD_GUESSABLE', "Choose a password that doesn't contain your email address", 'next'],
+      ['a breached password', 422, 'PASSWORD_BREACHED', 'This password has appeared in a data breach', 'next'],
+    ] as const)('marks the field for %s, keeping the dialog and the session', async (_, status, code, message, name) => {
+      vi.mocked(changePassword).mockRejectedValue(failure(status, code, message))
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(saveButton())
+
+      await waitFor(() => expect(field[name]()).toHaveFocus())
+      expect(field[name]()).toHaveAccessibleDescription(expect.stringContaining(message))
+      expect(saveButton()).toHaveAttribute('aria-disabled', 'false')
+      expect(storage.getAccessToken()).toBe('access-token')
+    })
+
+    // ProtectedRoute keeps a visitor away; were the page shown without a
+    // session, there would be no account to log back in as
+    it('sends nothing without a session', async () => {
+      const { user } = renderRoutes([{ path: '/account', element: <AccountPage /> }], '/account')
+      await user.click(screen.getByRole('button', { name: 'Change password' }))
+      expect(inDialog().getByLabelText('Email')).toHaveValue('')
+      await user.type(field.current(), 'my old passphrase')
+      await user.type(field.next(), 'my brand new passphrase')
+      await user.type(field.confirm(), 'my brand new passphrase')
+
+      await user.click(saveButton())
+
+      expect(changePassword).not.toHaveBeenCalled()
+    })
+
+    it('says why in the dialog when the server cannot change it', async () => {
+      vi.mocked(changePassword).mockRejectedValue(failure(503, 'SERVICE_UNAVAILABLE', 'Service temporarily unavailable'))
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(saveButton())
+
+      expect(await inDialog().findByRole('alert')).toHaveTextContent('Service temporarily unavailable')
+    })
+
+    it('changes nothing when the user cancels, and asks afresh next time', async () => {
+      const { user } = renderPage()
+      await askToChange(user)
+      await user.click(inDialog().getByRole('button', { name: 'Cancel' }))
+
+      await user.click(screen.getByRole('button', { name: 'Change password' }))
+
+      expect(field.current()).toHaveValue('')
+      expect(changePassword).not.toHaveBeenCalled()
+    })
+
+    it('marks the dialog busy and ignores repeat submits while saving', async () => {
+      const { promise, resolve: finish } = Promise.withResolvers<ReturnType<typeof tokens>>()
+      vi.mocked(changePassword).mockReturnValue(promise)
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(saveButton())
+      await user.click(saveButton())
+
+      expect(saveButton()).toHaveTextContent('Saving...')
+      for (const input of Object.values(field)) {
+        expect(input()).toHaveAttribute('readonly')
+      }
+      expect(changePassword).toHaveBeenCalledTimes(1)
+      await act(async () => finish(tokens('new-access', 'new-csrf')))
+    })
   })
 
   describe('the account moved elsewhere', () => {

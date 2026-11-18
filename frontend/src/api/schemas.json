@@ -287,6 +287,28 @@
       "title": "NotesPageResponse",
       "type": "object"
     },
+    "PasswordChangeRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/account/password: the account's password, typed again, and\nthe one to replace it",
+      "properties": {
+        "current_password": {
+          "maxLength": 128,
+          "minLength": 15,
+          "type": "string"
+        },
+        "new_password": {
+          "maxLength": 128,
+          "minLength": 15,
+          "type": "string"
+        }
+      },
+      "required": [
+        "current_password",
+        "new_password"
+      ],
+      "title": "PasswordChangeRequest",
+      "type": "object"
+    },
     "PasswordResetCompleteRequest": {
       "additionalProperties": false,
       "description": "A password reset's second step, from the emailed link's page",

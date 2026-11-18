@@ -3,7 +3,7 @@ import {
   requestRegistration, completeRegistration, loginUser, logoutUser, logoutAllDevices,
   clearAuthCookies, deleteAccount, getAccount, exportAccountData, REGISTRATION_LINK_HOURS,
   requestPasswordReset, completePasswordReset, PASSWORD_RESET_LINK_HOURS,
-  requestEmailChange, completeEmailChange, undoEmailChange, EMAIL_CHANGE_LINK_HOURS,
+  requestEmailChange, completeEmailChange, undoEmailChange, EMAIL_CHANGE_LINK_HOURS, changePassword,
 } from '../authService'
 import { api } from '@/api/api'
 import { backendConstant } from '@/test/backend'
@@ -39,6 +39,8 @@ describe('authService', () => {
     ['requestEmailChange', () => requestEmailChange('b@example.com', 'a valid passphrase'),
       '/account/email', { email: 'b@example.com', password: 'a valid passphrase' }],
     ['completeEmailChange', () => completeEmailChange('a-token'), '/account/email/complete', { token: 'a-token' }],
+    ['changePassword', () => changePassword('the old passphrase', 'the new passphrase'), '/account/password',
+      { current_password: 'the old passphrase', new_password: 'the new passphrase' }],
     ['undoEmailChange', () => undoEmailChange('a-token'), '/account/email/undo', { token: 'a-token' }],
     ['logoutUser', () => logoutUser(), '/auth/logout', undefined],
     ['logoutAllDevices', () => logoutAllDevices(), '/auth/logout-all', undefined],
@@ -67,6 +69,7 @@ describe('authService', () => {
   it.each([
     ['loginUser', () => loginUser('a@example.com', 'a valid passphrase')],
     ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1)],
+    ['changePassword', () => changePassword('the old passphrase', 'the new passphrase')],
   ])('%s returns the tokens the backend issued', async (_, call) => {
     vi.mocked(api.post).mockResolvedValue({ data: tokens('access', 'csrf') })
 
@@ -81,6 +84,7 @@ describe('authService', () => {
     ['requestEmailChange', () => requestEmailChange('b@example.com', 'a valid passphrase')],
     ['completeEmailChange', () => completeEmailChange('a-token')],
     ['undoEmailChange', () => undoEmailChange('a-token')],
+    ['changePassword', () => changePassword('the old passphrase', 'the new passphrase')],
     ['loginUser', () => loginUser('a@example.com', 'a valid passphrase')],
     ['logoutUser', () => logoutUser()],
     ['logoutAllDevices', () => logoutAllDevices()],

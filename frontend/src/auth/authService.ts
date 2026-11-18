@@ -1,7 +1,7 @@
 import { api } from '@/api/api'
 import type {
   AccountDeleteRequest, AccountResponse, DataExportResponse, EmailChangeRequest,
-  EmailChangedResponse, EmailLinkRequest, LoginRequest,
+  EmailChangedResponse, EmailLinkRequest, LoginRequest, PasswordChangeRequest,
   PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
   RegisterCompleteResponse, RegisterRequest, TokensResponse,
 } from '@/api/schemas'
@@ -97,6 +97,15 @@ export async function completeEmailChange(token: string) {
 export async function undoEmailChange(token: string) {
   const response = await api.post<EmailChangedResponse>(
     '/account/email/undo', { token } satisfies EmailLinkRequest)
+  return response.data
+}
+
+// Replaces the password, given the current one. Every device is logged
+// out, this one included: the answer is this device's new login.
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const response = await api.post<Tokens>('/account/password', {
+    current_password: currentPassword, new_password: newPassword,
+  } satisfies PasswordChangeRequest)
   return response.data
 }
 
