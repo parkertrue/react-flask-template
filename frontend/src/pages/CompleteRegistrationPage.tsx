@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react'
+import { useState, type ChangeEvent, type SubmitEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { useEmailLink } from '@/auth/emailLink'
+import LinkProblem from '@/auth/LinkProblem'
 import { completeRegistration } from '@/auth/authService'
 import { errorCode, getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
@@ -54,12 +55,6 @@ export default function CompleteRegistrationPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [problem, setProblem] = useState<LinkProblem | null>(link.token ? null : 'missing')
   const [submitting, setSubmitting] = useState(false)
-  const problemMessage = useRef<HTMLParagraphElement>(null)
-
-  // The form, and the button that had focus, go away: focus what replaced it
-  useEffect(() => {
-    if (problem && problem !== 'missing') problemMessage.current?.focus()
-  }, [problem])
 
   // readOnly doesn't stop a checkbox being ticked, so ignore it while busy
   const handleTermsChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -111,19 +106,7 @@ export default function CompleteRegistrationPage() {
           <h1 id="complete-heading">Finish signing up</h1>
 
           {shown ? (
-            <>
-              <p
-                ref={problemMessage}
-                tabIndex={-1}
-                className={problem === 'missing' ? 'info-message' : 'error-message'}
-                role={problem === 'missing' ? undefined : 'alert'}
-              >
-                {shown.message}
-              </p>
-              <p className="auth-footer">
-                <Link to={shown.to} className="text-link padded-link">{shown.action}</Link>
-              </p>
-            </>
+            <LinkProblem {...shown} missing={problem === 'missing'} />
           ) : (
             <form
               onSubmit={e => void handleSubmit(e)}

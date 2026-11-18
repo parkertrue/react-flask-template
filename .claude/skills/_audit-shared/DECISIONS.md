@@ -480,9 +480,11 @@ never for secrets; a link that carries no secret may use a query string.
   hides changes made on another device or in another tab; `Infinity` on the
   account query was weighed and dropped, since email and password changes
   are coming and an email change usually completes in the tab its
-  verification link opens. That feature should instead refetch the account
-  query on window focus (overriding the default per query; infinite lists
-  keep it off, entry above) or invalidate it when the change completes.
+  verification link opens. The account query instead refetches on window
+  focus (overriding the default for that query alone; infinite lists keep
+  it off, entry above), and the account page shows the address it answers,
+  the navbar's too (`updateEmail`, which keeps the cache: the account is
+  the same).
   Prefetching (the next notes page, a page's data on hover) spends a
   request whether or not it is used.
 - *HTTP.* Every API response is `no-store` (`app/__init__.py`): it carries
@@ -502,7 +504,7 @@ never for secrets; a link that carries no secret may use a query string.
   changes account, as `AuthProvider` does for the query cache.
 
 *Revisit when:* a feature lets data change outside the tab that shows it
-(email change: the account query), adds a public route, or adds a read
+(as an email change does the account query), adds a public route, or adds a read
 costly enough to show in `upstream_response_time`.
 
 **pytest-cov stays.** `coverage run -m pytest` plus `coverage report` could
@@ -732,8 +734,6 @@ A check mentions these only when its findings bear on one (for example, a
 docs check that finds the certificate steps wrong). They are not new
 findings.
 
-- **Email change** (GDPR Art. 16), which the privacy notice handles by
-  email meanwhile.
 - **Account security beyond the basics:** no password change while signed
   in, and no multi-factor login (ASVS 5.0 chapter 6, Authentication). A
   change can build on what the password reset uses: `Password`,

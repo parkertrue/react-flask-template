@@ -80,6 +80,18 @@ describe('AuthProvider', () => {
     expect(result.current.isAuthenticated).toBe(false)
   })
 
+  it.each([
+    ['signed out', () => {}, null],
+    ['already at that address', () => signIn('moved@example.com'), 'moved@example.com'],
+  ])('updateEmail changes nothing when %s', (_, arrange, stored) => {
+    arrange()
+    const { result } = renderAuth()
+
+    act(() => result.current.updateEmail('moved@example.com'))
+
+    expect(storage.getEmail()).toBe(stored)
+  })
+
   describe('the cache of server data', () => {
     const KEY = ['notes']
     // Another tab writes localStorage directly; this tab hears a storage event
@@ -108,6 +120,33 @@ describe('AuthProvider', () => {
       act(change)
 
       expect(client.getQueryData(KEY)).toBeUndefined()
+    })
+
+    // The cache and the session under one provider, as in the app
+    function renderSession() {
+      signIn('first@example.com')
+      const { result } = renderHook(() => ({ client: useQueryClient(), auth: useAuth() }), { wrapper })
+      result.current.client.setQueryData(KEY, 'notes of first@example.com')
+      return result
+    }
+
+    it('is kept when the account itself moves to another address', () => {
+      const result = renderSession()
+
+      act(() => result.current.auth.updateEmail('moved@example.com'))
+
+      expect(result.current.auth.email).toBe('moved@example.com')
+      expect(storage.getEmail()).toBe('moved@example.com')
+      expect(result.current.client.getQueryData(KEY)).toBe('notes of first@example.com')
+    })
+
+    it('is emptied as ever by the next change of account after a move', () => {
+      const result = renderSession()
+      act(() => result.current.auth.updateEmail('moved@example.com'))
+
+      act(() => storage.clearAuth())
+
+      expect(result.current.client.getQueryData(KEY)).toBeUndefined()
     })
 
     it.each([

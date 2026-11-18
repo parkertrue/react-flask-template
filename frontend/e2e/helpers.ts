@@ -63,6 +63,21 @@ export const UNSIGNED_LINK = `/signup/complete#token=${UNSIGNED_TOKEN}`
 /** A password reset link no server signed, for pages that need not finish */
 export const UNSIGNED_RESET_LINK = `/password-reset/complete#token=${UNSIGNED_TOKEN}`
 
+/** An email change's link to the new address, no server signed */
+export const UNSIGNED_CHANGE_LINK = `/account/email/complete#token=${UNSIGNED_TOKEN}`
+
+/** An email change's link to the old address, no server signed */
+export const UNSIGNED_UNDO_LINK = `/account/email/undo#token=${UNSIGNED_TOKEN}`
+
+/** Ask to move the account on the account page, without waiting; returns the dialog */
+export async function askToChangeEmail(page: Page, email: string, password = TEST_PASSWORD) {
+  await page.getByRole('button', { name: 'Change email' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Change your email?' })
+  await dialog.getByLabel('New email').fill(email)
+  await dialog.getByLabel('Password').fill(password)
+  return dialog
+}
+
 /** The subject of a password reset's email */
 export const RESET_SUBJECT = `Reset your ${APP_NAME} password`
 

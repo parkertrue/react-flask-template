@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from app.auth.models import TERMS_VERSION
 from tests.conftest import link_token
-from tests.integration.auth.mailpit import inbox
+from tests.integration.mailpit import inbox
 
 ADDRESS = 'integration-signup@example.com'
 

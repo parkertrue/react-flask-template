@@ -1,6 +1,7 @@
 import { api } from '@/api/api'
 import type {
-  AccountDeleteRequest, AccountResponse, DataExportResponse, LoginRequest,
+  AccountDeleteRequest, AccountResponse, DataExportResponse, EmailChangeRequest,
+  EmailChangedResponse, EmailLinkRequest, LoginRequest,
   PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
   RegisterCompleteResponse, RegisterRequest, TokensResponse,
 } from '@/api/schemas'
@@ -25,6 +26,8 @@ export type DataExport = DataExportResponse
 // in step)
 export const REGISTRATION_LINK_HOURS = 24
 export const PASSWORD_RESET_LINK_HOURS = 1
+// And EMAIL_CHANGE_LINK_HOURS in backend/app/account/emails.py
+export const EMAIL_CHANGE_LINK_HOURS = 24
 
 // Sign-up's first step: emails the address a link to finish. Answered
 // alike whether the address has an account or not.
@@ -74,6 +77,27 @@ export async function exportAccountData() {
 // the account
 export async function deleteAccount(password: string) {
   await api.post('/account/delete', { password } satisfies AccountDeleteRequest)
+}
+
+// An email change's first step: emails the new address a link that moves
+// the account there. Answered alike whether the address has an account.
+export async function requestEmailChange(email: string, password: string) {
+  await api.post('/account/email', { email, password } satisfies EmailChangeRequest)
+}
+
+// The link to the new address: moves the account there; the answer is its
+// address now
+export async function completeEmailChange(token: string) {
+  const response = await api.post<EmailChangedResponse>(
+    '/account/email/complete', { token } satisfies EmailLinkRequest)
+  return response.data
+}
+
+// The link to the old address: moves the account back and ends every session
+export async function undoEmailChange(token: string) {
+  const response = await api.post<EmailChangedResponse>(
+    '/account/email/undo', { token } satisfies EmailLinkRequest)
+  return response.data
 }
 
 export async function logoutUser() {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { createQueryClient } from '@/api/queryClient'
 import { storage } from './storage'
@@ -14,6 +14,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // The session owns the cache of server data
   const [queryClient] = useState(createQueryClient)
+  // Set while this tab renames the signed-in account (updateEmail), whose
+  // cached data stays its own
+  const renaming = useRef(false)
 
   // Empty the cache whenever the account changes: every way a session ends
   // (logout, a refused refresh, another tab) clears storage, and another
@@ -26,6 +29,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const current = storage.getEmail()
       if (current === account) return
       account = current
+      if (renaming.current) {
+        renaming.current = false
+        return
+      }
       queryClient.clear()
     })
   }, [queryClient])
@@ -37,12 +44,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storage.setAccessToken(accessToken)
   }
 
+  const updateEmail: AuthContextValue['updateEmail'] = newEmail => {
+    const current = storage.getEmail()
+    if (current === null || current === newEmail) return
+    renaming.current = true
+    storage.setEmail(newEmail)
+  }
+
   const value: AuthContextValue = {
     email,
     isAuthenticated: !!token,
     sessionEnded,
     login,
-    logout: storage.clearAuth
+    logout: storage.clearAuth,
+    updateEmail,
   }
 
   return (

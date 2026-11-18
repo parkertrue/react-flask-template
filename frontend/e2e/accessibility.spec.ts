@@ -3,7 +3,7 @@ import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, fillReset, holdRequests,
   memberSince, registerAndLogin, requestLink, requestReset, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
-  UNSIGNED_RESET_LINK,
+  UNSIGNED_RESET_LINK, UNSIGNED_CHANGE_LINK, UNSIGNED_UNDO_LINK, askToChangeEmail,
 } from './helpers'
 import { APP_NAME } from '../src/appInfo'
 
@@ -17,6 +17,8 @@ const VISITOR_PAGES: [string, string, string, number][] = [
   ['/signup/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
   ['/password-reset', `Reset your password | ${APP_NAME}`, 'Reset your password', 9],
   ['/password-reset/complete', `Choose a new password | ${APP_NAME}`, 'Choose a new password', 7],
+  ['/account/email/complete', `Confirm your new email | ${APP_NAME}`, 'Confirm your new email', 7],
+  ['/account/email/undo', `Undo an email change | ${APP_NAME}`, 'Undo an email change', 7],
   ['/privacy', `Privacy notice | ${APP_NAME}`, 'Privacy notice', 9],
   ['/terms', `Terms of service | ${APP_NAME}`, 'Terms of service', 8],
   ['/contact', `Contact | ${APP_NAME}`, 'Contact', 10],
@@ -343,6 +345,43 @@ test.describe('Accessibility', () => {
     })
   })
 
+  test.describe("an email change's link pages", () => {
+    for (const [name, link, heading, button] of [
+      ['the new address', UNSIGNED_CHANGE_LINK, 'Confirm your new email', 'Confirm new email'],
+      ['the old address', UNSIGNED_UNDO_LINK, 'Undo an email change', 'Move my account back'],
+    ] as const) {
+      test(`${name}'s page has no violations, reflows, shows focus and has large enough targets`, async ({ page }) => {
+        await page.goto(link)
+
+        await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible()
+        await expect(page.getByText('someone@example.com')).toBeVisible()
+        await expectNoViolations(page)
+        await expectReflow(page)
+        // The navbar's and footer's, and the button
+        await expectVisibleFocus(page, 7)
+        await expectTargetSize(page)
+      })
+
+      test(`${name}'s page, busy and then refused, has no violations, and focuses why`, async ({ page }) => {
+        const release = await holdRequests(page, 'POST', '**/api/account/email/*', serviceUnavailable)
+        await page.goto(link)
+        await page.getByRole('button', { name: button }).click()
+        await expect(page.getByRole('button', { name: /\.\.\.$/ })).toBeFocused()
+        await expectNoViolations(page)
+
+        release()
+        await expect(page.getByRole('alert')).toHaveText(/temporarily unavailable/)
+        await expectNoViolations(page)
+        await page.unrouteAll({ behavior: 'ignoreErrors' })
+        await page.getByRole('button', { name: button }).click()
+        await expect(page.getByRole('alert')).toHaveText(/This link is not valid/)
+        await expect(page.getByRole('alert')).toBeFocused()
+        await expectNoViolations(page)
+        await expectTargetSize(page)
+      })
+    }
+  })
+
   test.describe('a signed-in user', () => {
     test.beforeEach(async ({ page }) => {
       await registerAndLogin(page, 'e2e-a11y')
@@ -363,8 +402,29 @@ test.describe('Accessibility', () => {
       await expect(memberSince(page)).toBeVisible()
 
       await expectReflow(page)
-      await expectVisibleFocus(page, 10)
+      await expectVisibleFocus(page, 11)
       await expectTargetSize(page)
+    })
+
+    test('changing the email, asking, busy and then failed, has no violations', async ({ page }) => {
+      await page.goto('/account')
+      await expect(memberSince(page)).toBeVisible()
+
+      const dialog = await askToChangeEmail(page, uniqueEmail('e2e-a11y-moved'))
+      await expectNoViolations(page)
+      await expectReflow(page)
+      await expectTargetSize(page)
+      // The two fields and the two buttons
+      await expectVisibleFocus(page, 4)
+
+      const release = await holdRequests(page, 'POST', '**/api/account/email', serviceUnavailable)
+      await dialog.getByRole('button', { name: 'Send link' }).click()
+      await expect(dialog.getByRole('button', { name: 'Sending link...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(dialog.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
     })
 
     test('the account page, loading and then failed, has no violations', async ({ page }) => {

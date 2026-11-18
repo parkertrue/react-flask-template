@@ -7,7 +7,7 @@ import type { LoginState } from '../LoginPage'
 import ProtectedRoute from '@/auth/ProtectedRoute'
 import { storage } from '@/auth/storage'
 import {
-  getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData,
+  getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData, requestEmailChange,
 } from '@/auth/authService'
 import { saveJsonFile, slugify } from '@/utils/download'
 import type { ErrorCode } from '@/api/errors'
@@ -63,6 +63,145 @@ describe('AccountPage', () => {
     vi.mocked(clearAuthCookies).mockResolvedValue()
     vi.mocked(deleteAccount).mockResolvedValue()
     vi.mocked(exportAccountData).mockResolvedValue(dataExport())
+    vi.mocked(requestEmailChange).mockResolvedValue()
+  })
+
+  describe('the account moved elsewhere', () => {
+    it("shows the address the account has now, the navbar's too", async () => {
+      vi.mocked(getAccount).mockResolvedValue(account('moved@example.com', '2026-01-15T10:30:00+00:00'))
+
+      renderPage()
+
+      expect(await screen.findByText('moved@example.com')).toBeInTheDocument()
+      expect(storage.getEmail()).toBe('moved@example.com')
+      expect(storage.getAccessToken()).toBe('access-token')
+    })
+
+    it('asks again when the window regains focus', async () => {
+      renderPage()
+      await screen.findByText(/^Member since/)
+      vi.mocked(getAccount).mockResolvedValue(account('moved@example.com', '2026-01-15T10:30:00+00:00'))
+
+      act(() => {
+        window.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('focus'))
+      })
+
+      await waitFor(() => expect(storage.getEmail()).toBe('moved@example.com'))
+      expect(getAccount).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('changing the email', () => {
+    const dialog = () => screen.getByRole('dialog', { name: 'Change your email?' })
+    const inDialog = () => within(dialog())
+    const emailField = () => inDialog().getByLabelText('New email')
+    const passwordField = () => inDialog().getByLabelText('Password')
+    const sendButton = () => inDialog().getByRole('button', { name: /^(send link|sending link\.\.\.)$/i })
+    const changeButton = () => screen.getByRole('button', { name: 'Change email' })
+
+    async function askToChange(user: UserEvent, email = 'new@example.com', password = 'my valid passphrase') {
+      await user.click(changeButton())
+      if (email) await user.type(emailField(), email)
+      if (password) await user.type(passwordField(), password)
+    }
+
+    it('asks for the new address and the password in a dialog, sending nothing yet', async () => {
+      const { user } = renderPage()
+
+      await user.click(changeButton())
+
+      expect(dialog()).toHaveAccessibleDescription(/Nothing changes until you open the link/)
+      expect(emailField()).toHaveFocus()
+      expect(emailField()).toHaveAttribute('autocomplete', 'email')
+      expect(passwordField()).toHaveAttribute('autocomplete', 'current-password')
+      expect(requestEmailChange).not.toHaveBeenCalled()
+    })
+
+    it('sends the link, closes the dialog and says where it went', async () => {
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(sendButton())
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      expect(requestEmailChange).toHaveBeenCalledExactlyOnceWith('new@example.com', 'my valid passphrase')
+      expect(screen.getByText(
+        'We sent a link to new@example.com. Open it within 24 hours to move your account there.'))
+        .toHaveAttribute('role', 'status')
+      // Nothing has moved yet
+      expect(storage.getEmail()).toBe('user@example.com')
+    })
+
+    it.each([
+      ['an empty address', '', 'my valid passphrase', 'New email', 'Email is required'],
+      ['a malformed address', 'not-an-email', 'my valid passphrase', 'New email', 'Please enter a valid email address'],
+      ['an empty password', 'new@example.com', '', 'Password', 'Password is required'],
+    ])('refuses %s without sending it', async (_, email, password, label, message) => {
+      const { user } = renderPage()
+      await askToChange(user, email, password)
+
+      await user.click(sendButton())
+
+      const field = inDialog().getByLabelText(label)
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+      expect(field).toHaveAccessibleDescription(expect.stringContaining(message))
+      expect(field).toHaveFocus()
+      expect(requestEmailChange).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a wrong password', 403, 'WRONG_PASSWORD', 'The password is incorrect', 'Password'],
+      ['the current address', 422, 'EMAIL_UNCHANGED', 'This is already your email address', 'New email'],
+    ] as const)('marks the field for %s, keeping the dialog', async (_, status, code, message, label) => {
+      vi.mocked(requestEmailChange).mockRejectedValue(failure(status, code, message))
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(sendButton())
+
+      const field = inDialog().getByLabelText(label)
+      await waitFor(() => expect(field).toHaveFocus())
+      expect(field).toHaveAccessibleDescription(expect.stringContaining(message))
+      expect(sendButton()).toHaveAttribute('aria-disabled', 'false')
+    })
+
+    it('says why in the dialog when the server cannot send it', async () => {
+      vi.mocked(requestEmailChange).mockRejectedValue(failure(503, 'SERVICE_UNAVAILABLE', 'Service temporarily unavailable'))
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(sendButton())
+
+      expect(await inDialog().findByRole('alert')).toHaveTextContent('Service temporarily unavailable')
+    })
+
+    it('sends nothing when the user cancels, and asks afresh next time', async () => {
+      const { user } = renderPage()
+      await askToChange(user)
+      await user.click(inDialog().getByRole('button', { name: 'Cancel' }))
+
+      await user.click(changeButton())
+
+      expect(emailField()).toHaveValue('')
+      expect(requestEmailChange).not.toHaveBeenCalled()
+    })
+
+    it('marks the dialog busy and ignores repeat submits while sending', async () => {
+      const { promise, resolve: finish } = Promise.withResolvers<undefined>()
+      vi.mocked(requestEmailChange).mockReturnValue(promise)
+      const { user } = renderPage()
+      await askToChange(user)
+
+      await user.click(sendButton())
+      await user.click(sendButton())
+
+      expect(sendButton()).toHaveTextContent('Sending link...')
+      expect(emailField()).toHaveAttribute('readonly')
+      expect(passwordField()).toHaveAttribute('readonly')
+      expect(requestEmailChange).toHaveBeenCalledTimes(1)
+      await act(async () => finish(undefined))
+    })
   })
 
   it('shows who is signed in, then loads when they joined', async () => {

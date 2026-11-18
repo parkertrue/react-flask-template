@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from app.auth.schemas import Password
+from app.auth.schemas import LINK_TOKEN_MAX_LENGTH, Email, Password
 from app.utils.schemas import UtcDatetime
 
 
@@ -35,3 +35,25 @@ class AccountDeleteRequest(BaseModel):
     password: Password
 
     model_config = ConfigDict(extra='forbid')
+
+
+class EmailChangeRequest(BaseModel):
+    """POST /api/account/email: the address to move the account to, and the
+    account's password, typed again"""
+    email: Email
+    password: Password
+
+    model_config = ConfigDict(extra='forbid')
+
+
+class EmailLinkRequest(BaseModel):
+    """An email change's emailed link, posted by its page: the one that moves
+    the account to the new address, or the one that moves it back"""
+    token: str = Field(max_length=LINK_TOKEN_MAX_LENGTH)
+
+    model_config = ConfigDict(extra='forbid')
+
+
+class EmailChangedResponse(BaseModel):
+    """The account's address once a link has moved it"""
+    email: str

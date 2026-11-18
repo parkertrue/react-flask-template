@@ -3,6 +3,7 @@ import {
   requestRegistration, completeRegistration, loginUser, logoutUser, logoutAllDevices,
   clearAuthCookies, deleteAccount, getAccount, exportAccountData, REGISTRATION_LINK_HOURS,
   requestPasswordReset, completePasswordReset, PASSWORD_RESET_LINK_HOURS,
+  requestEmailChange, completeEmailChange, undoEmailChange, EMAIL_CHANGE_LINK_HOURS,
 } from '../authService'
 import { api } from '@/api/api'
 import { backendConstant } from '@/test/backend'
@@ -16,10 +17,11 @@ vi.mock('@/api/api')
 // The page that says how long the emailed link works says what the backend
 // mints it for
 it.each([
-  ['sign-up', REGISTRATION_LINK_HOURS, 'REGISTRATION_LINK_HOURS'],
-  ['password reset', PASSWORD_RESET_LINK_HOURS, 'PASSWORD_RESET_LINK_HOURS'],
-])('gives the %s link the lifetime the backend does', (_, hours, name) => {
-  expect(hours).toBe(backendConstant('auth/emails.py', name))
+  ['sign-up', REGISTRATION_LINK_HOURS, 'auth/emails.py', 'REGISTRATION_LINK_HOURS'],
+  ['password reset', PASSWORD_RESET_LINK_HOURS, 'auth/emails.py', 'PASSWORD_RESET_LINK_HOURS'],
+  ['email change', EMAIL_CHANGE_LINK_HOURS, 'account/emails.py', 'EMAIL_CHANGE_LINK_HOURS'],
+])('gives the %s link the lifetime the backend does', (_, hours, file, name) => {
+  expect(hours).toBe(backendConstant(file, name))
 })
 
 describe('authService', () => {
@@ -34,6 +36,10 @@ describe('authService', () => {
       '/auth/password-reset/complete', { token: 'a-token', password: 'a valid passphrase' }],
     ['loginUser', () => loginUser('a@example.com', 'a valid passphrase'),
       '/auth/login', { email: 'a@example.com', password: 'a valid passphrase' }],
+    ['requestEmailChange', () => requestEmailChange('b@example.com', 'a valid passphrase'),
+      '/account/email', { email: 'b@example.com', password: 'a valid passphrase' }],
+    ['completeEmailChange', () => completeEmailChange('a-token'), '/account/email/complete', { token: 'a-token' }],
+    ['undoEmailChange', () => undoEmailChange('a-token'), '/account/email/undo', { token: 'a-token' }],
     ['logoutUser', () => logoutUser(), '/auth/logout', undefined],
     ['logoutAllDevices', () => logoutAllDevices(), '/auth/logout-all', undefined],
     ['deleteAccount', () => deleteAccount('a valid passphrase'), '/account/delete', { password: 'a valid passphrase' }],
@@ -72,6 +78,9 @@ describe('authService', () => {
     ['completeRegistration', () => completeRegistration('a-token', 'a valid passphrase', 1)],
     ['requestPasswordReset', () => requestPasswordReset('a@example.com')],
     ['completePasswordReset', () => completePasswordReset('a-token', 'a valid passphrase')],
+    ['requestEmailChange', () => requestEmailChange('b@example.com', 'a valid passphrase')],
+    ['completeEmailChange', () => completeEmailChange('a-token')],
+    ['undoEmailChange', () => undoEmailChange('a-token')],
     ['loginUser', () => loginUser('a@example.com', 'a valid passphrase')],
     ['logoutUser', () => logoutUser()],
     ['logoutAllDevices', () => logoutAllDevices()],
@@ -85,6 +94,15 @@ describe('authService', () => {
       await expect(call()).rejects.toBe(error)
     }
   )
+
+  it.each([
+    ['completeEmailChange', completeEmailChange],
+    ['undoEmailChange', undoEmailChange],
+  ])("%s returns the account's address now", async (_, call) => {
+    vi.mocked(api.post).mockResolvedValue({ data: { email: 'b@example.com' } })
+
+    expect(await call('a-token')).toEqual({ email: 'b@example.com' })
+  })
 
   // Its callers are already ending the session, with nothing left to try
   it('clearAuthCookies swallows a failure', async () => {

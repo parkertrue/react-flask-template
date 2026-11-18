@@ -35,13 +35,15 @@ PASSWORD_RESET_LINK_HOURS = 1
 PASSWORD_RESET_LINK_LIFETIME = timedelta(hours=PASSWORD_RESET_LINK_HOURS)
 
 
-def _hours(count: int) -> str:
+def hours(count: int) -> str:
+    """A number of hours, as an email says it"""
     return f"{count} hour{'' if count == 1 else 's'}"
 
 
-def _body(*paragraphs: str) -> str:
+def email_body(*paragraphs: str) -> str:
     """A plain-text body: one line per paragraph, a blank line between them,
-    then where the privacy notice is"""
+    then where the privacy notice is. Every email the app sends is built
+    with it."""
     privacy = (f"Who runs {current_app.config['APP_NAME']}, and what it keeps: "
                f"{app_link('/privacy')}")
     return '\n\n'.join([*paragraphs, privacy]) + '\n'
@@ -49,17 +51,17 @@ def _body(*paragraphs: str) -> str:
 
 def registration_message(link: str) -> tuple[str, str]:
     app_name = current_app.config['APP_NAME']
-    return f'Finish signing up for {app_name}', _body(
+    return f'Finish signing up for {app_name}', email_body(
         f'Someone, hopefully you, asked to sign up for {app_name} with this email address.',
         'To choose a password and finish, open this link within '
-        f'{_hours(REGISTRATION_LINK_HOURS)}:',
+        f'{hours(REGISTRATION_LINK_HOURS)}:',
         link,
         "If it wasn't you, ignore this email: no account is created until the link is used.")
 
 
 def already_registered_message(link: str) -> tuple[str, str]:
     app_name = current_app.config['APP_NAME']
-    return f'You already have a {app_name} account', _body(
+    return f'You already have a {app_name} account', email_body(
         f'Someone, hopefully you, tried to sign up for {app_name} with this email address, '
         'but it already has an account. Log in here:',
         link,
@@ -88,17 +90,17 @@ def send_registration_email(email: str) -> None:
 
 def password_reset_message(link: str) -> tuple[str, str]:
     app_name = current_app.config['APP_NAME']
-    return f'Reset your {app_name} password', _body(
+    return f'Reset your {app_name} password', email_body(
         f'Someone, hopefully you, asked to reset the password of your {app_name} account.',
         'To choose a new password, open this link within '
-        f'{_hours(PASSWORD_RESET_LINK_HOURS)}:',
+        f'{hours(PASSWORD_RESET_LINK_HOURS)}:',
         link,
         "If it wasn't you, ignore this email: your password has not changed.")
 
 
 def password_changed_message(link: str) -> tuple[str, str]:
     app_name = current_app.config['APP_NAME']
-    return f'Your {app_name} password was changed', _body(
+    return f'Your {app_name} password was changed', email_body(
         f'The password of your {app_name} account was just reset with a link sent to this '
         'address, and every device signed in to the account was logged out.',
         "If it wasn't you, someone else can read your email: secure your email account, "

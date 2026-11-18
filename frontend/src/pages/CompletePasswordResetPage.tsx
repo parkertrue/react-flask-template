@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type SubmitEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, type SubmitEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { completePasswordReset } from '@/auth/authService'
 import { useEmailLink } from '@/auth/emailLink'
+import LinkProblem from '@/auth/LinkProblem'
 import { errorCode, getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
@@ -39,12 +40,6 @@ export default function CompletePasswordResetPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [problem, setProblem] = useState<LinkProblem | null>(link.token ? null : 'missing')
   const [submitting, setSubmitting] = useState(false)
-  const problemMessage = useRef<HTMLParagraphElement>(null)
-
-  // The form, and the button that had focus, go away: focus what replaced it
-  useEffect(() => {
-    if (problem && problem !== 'missing') problemMessage.current?.focus()
-  }, [problem])
 
   const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -88,19 +83,12 @@ export default function CompletePasswordResetPage() {
           <h1 id="reset-heading">Choose a new password</h1>
 
           {problem ? (
-            <>
-              <p
-                ref={problemMessage}
-                tabIndex={-1}
-                className={problem === 'missing' ? 'info-message' : 'error-message'}
-                role={problem === 'missing' ? undefined : 'alert'}
-              >
-                {PROBLEMS[problem]}
-              </p>
-              <p className="auth-footer">
-                <Link to="/password-reset" className="text-link padded-link">Ask for a new link</Link>
-              </p>
-            </>
+            <LinkProblem
+              message={PROBLEMS[problem]}
+              to="/password-reset"
+              action="Ask for a new link"
+              missing={problem === 'missing'}
+            />
           ) : (
             <form
               onSubmit={e => void handleSubmit(e)}

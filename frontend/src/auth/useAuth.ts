@@ -8,6 +8,9 @@ export interface AuthContextValue {
   // csrf: the refresh token's CSRF value, when the backend sent one
   login: (accessToken: string, csrf: string | null | undefined, userEmail: string) => void
   logout: () => void
+  // The signed-in account's own address changed (an email change): shown
+  // at once, without emptying the cache, since the account is the same
+  updateEmail: (newEmail: string) => void
 }
 
 // Kept apart from AuthProvider: Vite's fast refresh only works on files that
