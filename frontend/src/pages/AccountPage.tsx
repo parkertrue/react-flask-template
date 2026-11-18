@@ -5,7 +5,7 @@ import { useAuth } from '@/auth/useAuth'
 import { useLogout } from '@/auth/useLogout'
 import {
   getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData,
-  requestEmailChange, EMAIL_CHANGE_LINK_HOURS,
+  requestEmailChange, changePassword, EMAIL_CHANGE_LINK_HOURS,
 } from '@/auth/authService'
 import { errorCode, errorResponse, getErrorMessage } from '@/api/errors'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
@@ -14,7 +14,10 @@ import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
 import { saveJsonFile, slugify } from '@/utils/download'
-import { validateEmail, validatePassword, EMAIL_MAX_LENGTH, PASSWORD_INPUT_MAX_LENGTH } from '@/utils/validation'
+import {
+  validateEmail, validateNotGuessable, validatePassword, validatePasswordMatch,
+  EMAIL_MAX_LENGTH, PASSWORD_INPUT_MAX_LENGTH, PASSWORD_MIN_LENGTH,
+} from '@/utils/validation'
 import { APP_NAME } from '@/appInfo'
 import type { LoginState } from './LoginPage'
 
@@ -22,7 +25,7 @@ import type { LoginState } from './LoginPage'
 const EXPORT_FILE_PREFIX = slugify(APP_NAME)
 
 export default function AccountPage() {
-  const { email, updateEmail } = useAuth()
+  const { email, login, updateEmail } = useAuth()
   const logOut = useLogout()
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
@@ -39,6 +42,11 @@ export default function AccountPage() {
   const [emailError, setEmailError] = useState<string | null>(null)
   // Where the link went, on the persistent status line
   const [emailStatus, setEmailStatus] = useState('')
+  const passwordChange = useFormFields({ 'current-password': '', 'new-password': '', 'confirm-new-password': '' })
+  const [askingPassword, setAskingPassword] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordStatus, setPasswordStatus] = useState('')
   const loadError = accountError && getErrorMessage(accountError)
   const deletion = useFormFields({ 'delete-password': '' })
   const [askingDelete, setAskingDelete] = useState(false)
@@ -93,6 +101,50 @@ export default function AccountPage() {
     setAskingEmail(false)
     setEmailStatus(
       `We sent a link to ${values['new-email']}. Open it within ${EMAIL_CHANGE_LINK_HOURS} hours to move your account there.`)
+  }
+
+  // Each time afresh: no passwords or message from an earlier try
+  const askToChangePassword = () => {
+    passwordChange.reset()
+    setPasswordError(null)
+    setAskingPassword(true)
+  }
+
+  const handlePasswordChange = async (e: SubmitEvent<HTMLFormElement>) => {
+    const form = e.currentTarget
+    const { values } = passwordChange
+    const current = values['current-password']
+    const next = values['new-password']
+    const valid = passwordChange.validate(form, {
+      'current-password': validatePassword(current),
+      'new-password': validatePassword(next) ?? validateNotGuessable(next, email ?? '')
+        ?? (next === current ? 'Choose a password different from your current one.' : undefined),
+      'confirm-new-password': validatePasswordMatch(next, values['confirm-new-password']),
+    })
+    if (!valid || !email) return
+    setPasswordError(null)
+    setPasswordStatus('')
+    setChangingPassword(true)
+    try {
+      const tokens = await changePassword(current, next)
+      // Every device was logged out, this one too: this is its new login
+      login(tokens.access_token, tokens.refresh_csrf, email)
+    } catch (err) {
+      // Nothing changed: the dialog stays for another try
+      setChangingPassword(false)
+      const code = errorCode(err)
+      if (code === 'WRONG_PASSWORD') {
+        passwordChange.validate(form, { 'current-password': getErrorMessage(err) })
+      } else if (code === 'PASSWORD_UNCHANGED' || code === 'PASSWORD_GUESSABLE' || code === 'PASSWORD_BREACHED') {
+        passwordChange.validate(form, { 'new-password': getErrorMessage(err) })
+      } else {
+        setPasswordError(getErrorMessage(err))
+      }
+      return
+    }
+    setChangingPassword(false)
+    setAskingPassword(false)
+    setPasswordStatus('Your password was changed. Every other device was logged out.')
   }
 
   // Not while a request is in flight: its button is busy
@@ -239,6 +291,73 @@ export default function AccountPage() {
               maxLength={PASSWORD_INPUT_MAX_LENGTH}
             />
             {emailError && <div className="error-message" role="alert">{emailError}</div>}
+          </FormDialog>
+        )}
+      </section>
+
+      <section aria-labelledby="password-heading">
+        <h2 id="password-heading">Password</h2>
+        <p>Change the password you log in with. Every other device will be logged out.</p>
+        <button type="button" onClick={askToChangePassword} className="btn btn-secondary">
+          Change password
+        </button>
+        <p role="status">{passwordStatus}</p>
+        {askingPassword && (
+          <FormDialog
+            title="Change your password?"
+            description="Every other device signed in to this account will be logged out."
+            submitLabel={changingPassword ? 'Saving...' : 'Save password'}
+            busy={changingPassword}
+            onSubmit={e => void handlePasswordChange(e)}
+            onCancel={() => setAskingPassword(false)}
+          >
+            {/* The account's name, for password managers to update */}
+            <FormField
+              id="password-username"
+              label="Email"
+              type="email"
+              autoComplete="username"
+              value={email ?? ''}
+              readOnly
+            />
+            <FormField
+              id="current-password"
+              label="Current password"
+              type="password"
+              autoComplete="current-password"
+              value={passwordChange.values['current-password']}
+              onChange={passwordChange.handleChange}
+              error={passwordChange.errors['current-password']}
+              readOnly={changingPassword}
+              required
+              maxLength={PASSWORD_INPUT_MAX_LENGTH}
+            />
+            <FormField
+              id="new-password"
+              label="New password"
+              type="password"
+              autoComplete="new-password"
+              value={passwordChange.values['new-password']}
+              onChange={passwordChange.handleChange}
+              error={passwordChange.errors['new-password']}
+              hint={`At least ${PASSWORD_MIN_LENGTH} characters. A few words make a good one.`}
+              readOnly={changingPassword}
+              required
+              maxLength={PASSWORD_INPUT_MAX_LENGTH}
+            />
+            <FormField
+              id="confirm-new-password"
+              label="Confirm new password"
+              type="password"
+              autoComplete="new-password"
+              value={passwordChange.values['confirm-new-password']}
+              onChange={passwordChange.handleChange}
+              error={passwordChange.errors['confirm-new-password']}
+              readOnly={changingPassword}
+              required
+              maxLength={PASSWORD_INPUT_MAX_LENGTH}
+            />
+            {passwordError && <div className="error-message" role="alert">{passwordError}</div>}
           </FormDialog>
         )}
       </section>

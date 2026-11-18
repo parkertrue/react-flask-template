@@ -3,7 +3,7 @@ import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, fillReset, holdRequests,
   memberSince, registerAndLogin, requestLink, requestReset, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
-  UNSIGNED_RESET_LINK, UNSIGNED_CHANGE_LINK, UNSIGNED_UNDO_LINK, askToChangeEmail,
+  UNSIGNED_RESET_LINK, UNSIGNED_CHANGE_LINK, UNSIGNED_UNDO_LINK, askToChangeEmail, askToChangePassword,
 } from './helpers'
 import { APP_NAME } from '../src/appInfo'
 
@@ -402,8 +402,29 @@ test.describe('Accessibility', () => {
       await expect(memberSince(page)).toBeVisible()
 
       await expectReflow(page)
-      await expectVisibleFocus(page, 11)
+      await expectVisibleFocus(page, 12)
       await expectTargetSize(page)
+    })
+
+    test('changing the password, asking, busy and then failed, has no violations', async ({ page }) => {
+      await page.goto('/account')
+      await expect(memberSince(page)).toBeVisible()
+
+      const dialog = await askToChangePassword(page, 'a brand new test passphrase')
+      await expectNoViolations(page)
+      await expectReflow(page)
+      await expectTargetSize(page)
+      // The read-only email, the three passwords and the two buttons
+      await expectVisibleFocus(page, 6)
+
+      const release = await holdRequests(page, 'POST', '**/api/account/password', serviceUnavailable)
+      await dialog.getByRole('button', { name: 'Save password' }).click()
+      await expect(dialog.getByRole('button', { name: 'Saving...' })).toBeFocused()
+      await expectNoViolations(page)
+
+      release()
+      await expect(dialog.getByRole('alert')).toHaveText(/temporarily unavailable/)
+      await expectNoViolations(page)
     })
 
     test('changing the email, asking, busy and then failed, has no violations', async ({ page }) => {

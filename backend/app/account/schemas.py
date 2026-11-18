@@ -57,3 +57,12 @@ class EmailLinkRequest(BaseModel):
 class EmailChangedResponse(BaseModel):
     """The account's address once a link has moved it"""
     email: str
+
+
+class PasswordChangeRequest(BaseModel):
+    """POST /api/account/password: the account's password, typed again, and
+    the one to replace it"""
+    current_password: Password
+    new_password: Password
+
+    model_config = ConfigDict(extra='forbid')

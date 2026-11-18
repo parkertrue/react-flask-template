@@ -1,10 +1,11 @@
 import hmac
 from datetime import datetime, timezone
+from typing import Any, cast
 
 from flask import Blueprint, Response, current_app, jsonify, make_response, request
 from flask.typing import ResponseReturnValue
 from flask_jwt_extended import current_user, jwt_required, unset_refresh_cookies
-from sqlalchemy import delete, select
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app import db, limiter
@@ -13,11 +14,16 @@ from app.account.emails import (
     change_state, send_email_change_email, send_email_changed_email, state_account, undo_state)
 from app.account.schemas import (
     AccountDeleteRequest, AccountExport, AccountResponse, DataExportResponse, EmailChangeRequest,
-    EmailChangedResponse, EmailLinkRequest,
+    EmailChangedResponse, EmailLinkRequest, PasswordChangeRequest,
 )
 from app.auth.models import User
+from app.auth.emails import PASSWORD_CHANGE
 from app.auth.routes import (
-    account_key, account_password_limit, emails_to_address_limit, link_refused, read_email_link)
+    account_key, account_password_limit, emails_to_address_limit, issue_tokens, link_refused,
+    password_breached, password_changed_email, password_guessable, read_email_link)
+from app.auth.schemas import is_guessable
+from app.utils.breached import is_breached
+from app.utils.passwords import hash_password
 from app.utils.jobs import JobQueueUnavailable, job
 from app.utils.links import LinkClaims
 from app.utils.errors import error_response, service_unavailable
@@ -234,3 +240,74 @@ def undo_email_change() -> ResponseReturnValue:
         jsonify(EmailChangedResponse(email=claims.email).model_dump()), 200)
     unset_refresh_cookies(response)
     return response
+
+
+@account_bp.route('/password', methods=['POST'])
+# The token first, as deletion's: the limits below key on current_user
+@jwt_required()
+# Each new password may reach the breach check's third party
+@limiter.limit('10 per hour', key_func=lambda: f'password-change:user:{current_user.id}')
+@limiter.limit(
+    '5 per minute',
+    key_func=lambda: f'password-change-password:user:{current_user.id}',
+    deduct_when=_wrong_password)
+@account_password_limit(
+    key_func=lambda: account_key(current_user.email), deduct_when=_wrong_password)
+def change_password() -> ResponseReturnValue:
+    """Replace the signed-in account's password, given the current one.
+
+    Every token was issued under the old password (add_account_claims), so
+    every device is logged out, this one included: it gets a new login in
+    the answer, as login gives one. The account is emailed (ASVS 6.3.7).
+    """
+    payload = PasswordChangeRequest.model_validate(request.get_json())
+    if not current_user.check_password(payload.current_password):
+        security_event('wrong_password', user_id=current_user.id)
+        return error_response(code='WRONG_PASSWORD', message='The password is incorrect', status=403)
+    # Both NFKC-normalized by Password, so any spelling of the same one
+    if payload.new_password == payload.current_password:
+        return error_response(
+            code='PASSWORD_UNCHANGED',
+            message='Choose a password different from your current one.',
+            status=422)
+    if is_guessable(payload.new_password, current_user.email, current_app.config['APP_NAME']):
+        return password_guessable()
+
+    user_id, email, old_hash = current_user.id, current_user.email, current_user.password_hash
+    # Nothing to keep yet: end the read, so no pooled database connection
+    # waits on a third party or on hashing
+    db.session.rollback()
+    # Last, so a request refused anyway never reaches the third party
+    if is_breached(payload.new_password):
+        return password_breached()
+    # Before the sessions end, so the moment between that and the new
+    # password is short
+    new_hash = hash_password(payload.new_password)
+
+    # As a reset: changing nothing unless Redis can end the other sessions.
+    # Their access tokens stop at once anyway (add_account_claims); this
+    # ends their refresh tokens too.
+    redis_service = get_redis_service()
+    sessions = redis_service.revoke_all_user_tokens(user_id) if redis_service else None
+    if sessions is None:
+        return service_unavailable()
+
+    # Only if the password is still the one checked above: of two changes
+    # racing, the second changes nothing
+    changed = cast('CursorResult[Any]', db.session.execute(
+        update(User)
+        .where(User.id == user_id, User.password_hash == old_hash)
+        .values(password_hash=new_hash)))
+    db.session.commit()
+    if changed.rowcount == 0:
+        return error_response(code='WRONG_PASSWORD', message='The password is incorrect', status=403)
+
+    security_event('password_changed', user_id=user_id, sessions=sessions)
+    try:
+        password_changed_email.send(email, PASSWORD_CHANGE)
+    except JobQueueUnavailable:
+        # The password has changed: answer the new login regardless
+        current_app.logger.exception('Could not queue the password changed email')
+    # A fresh login: the password was just typed. Should Redis fail here,
+    # the answer is a 503 and this device logs in again, with the new one.
+    return issue_tokens(user_id, auth_time=int(datetime.now(timezone.utc).timestamp()))

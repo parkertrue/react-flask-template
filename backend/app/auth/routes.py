@@ -28,7 +28,7 @@ from flask_limiter.util import get_remote_address
 
 from app import db, limiter
 from app.auth.emails import (
-    PASSWORD_RESET_LINK, PASSWORD_RESET_LINK_LIFETIME, REGISTRATION_LINK,
+    PASSWORD_RESET, PASSWORD_RESET_LINK, PASSWORD_RESET_LINK_LIFETIME, REGISTRATION_LINK,
     REGISTRATION_LINK_LIFETIME, send_password_changed_email, send_password_reset_email,
     send_registration_email)
 from app.auth.errors import token_revoked
@@ -150,7 +150,7 @@ def _refresh_user_id() -> str | None:
     return user_id
 
 
-def _issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
+def issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
                   email: str | None = None) -> ResponseReturnValue:
     """Build a 200 response carrying a fresh access token and refresh cookie.
 
@@ -241,14 +241,14 @@ def read_email_link(purpose: str, token: str, lifetime: timedelta) -> LinkClaims
     return claims
 
 
-def _password_guessable() -> ErrorResponse:
+def password_guessable() -> ErrorResponse:
     return error_response(
         code='PASSWORD_GUESSABLE',
         message="Choose a password that doesn't contain your email address or the app's name.",
         status=422)
 
 
-def _password_breached() -> ErrorResponse:
+def password_breached() -> ErrorResponse:
     return error_response(
         code='PASSWORD_BREACHED',
         message='This password has appeared in a data breach. Choose another.',
@@ -311,7 +311,7 @@ def complete_registration() -> ResponseReturnValue:
 
     # Before the link is spent, so the user can try another password with it
     if is_guessable(payload.password, email, current_app.config['APP_NAME']):
-        return _password_guessable()
+        return password_guessable()
 
     # A link works once, even after the account it made is deleted
     redis_service = get_redis_service()
@@ -330,7 +330,7 @@ def complete_registration() -> ResponseReturnValue:
         # Last, so a request refused anyway never reaches the third party
         if is_breached(payload.password):
             redis_service.release_link(payload.token)
-            return _password_breached()
+            return password_breached()
 
         user = User(email=email, terms_version=payload.terms_version)
         user.set_password(payload.password)
@@ -348,7 +348,7 @@ def complete_registration() -> ResponseReturnValue:
         raise
 
     security_event('registered', user_id=user.id)
-    return _issue_tokens(
+    return issue_tokens(
         user.id, auth_time=int(datetime.now(timezone.utc).timestamp()), email=email)
 
 
@@ -392,7 +392,7 @@ def complete_password_reset() -> ResponseReturnValue:
         return link_refused(PASSWORD_RESET_LINK, 'used')
 
     if is_guessable(payload.password, user.email, current_app.config['APP_NAME']):
-        return _password_guessable()
+        return password_guessable()
 
     user_id, email, old_hash = user.id, user.email, user.password_hash
     # Nothing to keep yet: end the read above, so no pooled database
@@ -400,7 +400,7 @@ def complete_password_reset() -> ResponseReturnValue:
     db.session.rollback()
     # Last, so a request refused anyway never reaches the third party
     if is_breached(payload.password):
-        return _password_breached()
+        return password_breached()
     # Before the sessions end, so the moment between that and the new
     # password is short: a login with the old one there would outlive it
     new_hash = hash_password(payload.password)
@@ -425,7 +425,7 @@ def complete_password_reset() -> ResponseReturnValue:
 
     security_event('password_reset', user_id=user_id, sessions=sessions)
     try:
-        password_changed_email.send(email)
+        password_changed_email.send(email, PASSWORD_RESET)
     except JobQueueUnavailable:
         # The password is changed: say so, rather than a 503 that would
         # send the user back to a link that no longer works
@@ -470,7 +470,7 @@ def login() -> ResponseReturnValue:
     # The password was right, even if the token store then fails (logged
     # as its own error): a takeover shows here either way
     security_event('login_succeeded', user_id=user.id)
-    return _issue_tokens(user.id, auth_time=int(datetime.now(timezone.utc).timestamp()))
+    return issue_tokens(user.id, auth_time=int(datetime.now(timezone.utc).timestamp()))
 
 
 @auth_bp.route('/refresh', methods=['POST'])
@@ -485,7 +485,7 @@ def login() -> ResponseReturnValue:
 def refresh() -> ResponseReturnValue:
     """Rotate: issue a new token pair and revoke the refresh token just used"""
     claims = get_jwt()
-    return _issue_tokens(current_user.id, auth_time=claims['auth_time'], replaces=claims['jti'])
+    return issue_tokens(current_user.id, auth_time=claims['auth_time'], replaces=claims['jti'])
 
 
 @auth_bp.route('/logout', methods=['POST'])

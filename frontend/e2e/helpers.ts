@@ -78,6 +78,16 @@ export async function askToChangeEmail(page: Page, email: string, password = TES
   return dialog
 }
 
+/** Fill in the account page's password dialog, without submitting; returns the dialog */
+export async function askToChangePassword(page: Page, newPassword: string, current = TEST_PASSWORD) {
+  await page.getByRole('button', { name: 'Change password' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Change your password?' })
+  await dialog.getByLabel('Current password').fill(current)
+  await dialog.getByLabel('New password', { exact: true }).fill(newPassword)
+  await dialog.getByLabel('Confirm new password').fill(newPassword)
+  return dialog
+}
+
 /** The subject of a password reset's email */
 export const RESET_SUBJECT = `Reset your ${APP_NAME} password`
 

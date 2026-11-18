@@ -20,6 +20,7 @@ export interface ApiSchemas {
   NoteUpdateRequest: NoteUpdateRequest;
   NotesListQuery: NotesListQuery;
   NotesPageResponse: NotesPageResponse;
+  PasswordChangeRequest: PasswordChangeRequest;
   PasswordResetCompleteRequest: PasswordResetCompleteRequest;
   PasswordResetRequest: PasswordResetRequest;
   RegisterCompleteRequest: RegisterCompleteRequest;
@@ -127,6 +128,14 @@ export interface NotesListQuery {
 export interface NotesPageResponse {
   next_cursor: number | null;
   notes: NoteResponse[];
+}
+/**
+ * POST /api/account/password: the account's password, typed again, and
+ * the one to replace it
+ */
+export interface PasswordChangeRequest {
+  current_password: string;
+  new_password: string;
 }
 /**
  * A password reset's second step, from the emailed link's page

@@ -12,7 +12,7 @@ interface FormDialogProps {
 
 // A question that needs an answer typed in (a password) before something that
 // cannot be undone, on the browser's own modal <dialog>, like ConfirmDialog.
-// Render it only while asking: it opens on its first field as it mounts and
+// Render it only while asking: it opens on its first editable field as it mounts and
 // stays open, through a failed submit too, until the page stops rendering it.
 // onSubmit gets the form's submit event; Cancel and Escape call onCancel,
 // and do nothing while busy.
@@ -29,7 +29,9 @@ export default function FormDialog({ title, description, children, submitLabel, 
       openerRef.current = document.activeElement as HTMLElement | null
       dialog.showModal()
     }
-    dialog?.querySelector<HTMLElement>('input, textarea, select')?.focus()
+    // The first field to type in: a read-only one (an account's name, for
+    // password managers) is only there to read
+    dialog?.querySelector<HTMLElement>('input:not([readonly]), textarea:not([readonly]), select')?.focus()
     // Once the dialog is gone the page is no longer inert, so focus can go
     // back to the button that asked
     return () => openerRef.current?.focus()
