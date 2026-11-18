@@ -1,16 +1,25 @@
+import hmac
 from datetime import datetime, timezone
 
-from flask import Blueprint, Response, jsonify, make_response, request
+from flask import Blueprint, Response, current_app, jsonify, make_response, request
 from flask.typing import ResponseReturnValue
 from flask_jwt_extended import current_user, jwt_required, unset_refresh_cookies
-from sqlalchemy import delete
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
 from app import db, limiter
+from app.account.emails import (
+    EMAIL_CHANGE_LINK, EMAIL_CHANGE_LINK_LIFETIME, EMAIL_UNDO_LINK, EMAIL_UNDO_LINK_LIFETIME,
+    change_state, send_email_change_email, send_email_changed_email, state_account, undo_state)
 from app.account.schemas import (
-    AccountDeleteRequest, AccountExport, AccountResponse, DataExportResponse,
+    AccountDeleteRequest, AccountExport, AccountResponse, DataExportResponse, EmailChangeRequest,
+    EmailChangedResponse, EmailLinkRequest,
 )
 from app.auth.models import User
-from app.auth.routes import account_key, account_password_limit
+from app.auth.routes import (
+    account_key, account_password_limit, emails_to_address_limit, link_refused, read_email_link)
+from app.utils.jobs import JobQueueUnavailable, job
+from app.utils.links import LinkClaims
 from app.utils.errors import error_response, service_unavailable
 from app.utils.exports import export_user_data
 from app.utils.log import security_event
@@ -18,6 +27,10 @@ from app.utils.redis_service import get_redis_service
 from app.utils.schemas import MessageResponse
 
 account_bp = Blueprint('account', __name__, url_prefix='/api/account')
+
+# Sent from the worker, so a request never waits on the mail server
+email_change_email = job(account_bp)(send_email_change_email)
+email_changed_email = job(account_bp)(send_email_changed_email)
 
 
 @account_bp.route('', methods=['GET'])
@@ -99,5 +112,125 @@ def delete_account() -> ResponseReturnValue:
 
     security_event('account_deleted', user_id=user_id)
     response = make_response(jsonify(MessageResponse(message='Account deleted').model_dump()), 200)
+    unset_refresh_cookies(response)
+    return response
+
+
+def _email_taken() -> ResponseReturnValue:
+    return error_response(
+        code='EMAIL_ALREADY_REGISTERED', message='Email already registered', status=409)
+
+
+@account_bp.route('/email', methods=['POST'])
+# The token first, as deletion's: the limits below key on current_user
+@jwt_required()
+@limiter.limit('10 per hour', key_func=lambda: f'email-change:user:{current_user.id}')
+@limiter.limit(
+    '5 per minute',
+    key_func=lambda: f'email-change-password:user:{current_user.id}',
+    deduct_when=_wrong_password)
+@account_password_limit(
+    key_func=lambda: account_key(current_user.email), deduct_when=_wrong_password)
+# The new address's inbox, in the budget sign-up and a reset share
+@emails_to_address_limit
+def request_email_change() -> ResponseReturnValue:
+    """An email change's first step: email the new address a link that
+    moves the account there.
+
+    The password is asked for again: a session alone must not move the
+    account to another inbox, from which a reset would take it. The answer
+    is the same whether the new address has an account or not; the worker
+    tells its inbox which (account/emails.py).
+    """
+    payload = EmailChangeRequest.model_validate(request.get_json())
+    if not current_user.check_password(payload.password):
+        security_event('wrong_password', user_id=current_user.id)
+        return error_response(code='WRONG_PASSWORD', message='The password is incorrect', status=403)
+    # Case aside, as MySQL matches users.email: the same address
+    if payload.email.lower() == current_user.email.lower():
+        return error_response(
+            code='EMAIL_UNCHANGED', message='This is already your email address', status=422)
+
+    email_change_email.send(current_user.id, payload.email)
+    security_event('email_change_requested', user_id=current_user.id)
+    return jsonify(MessageResponse(message='Check your inbox').model_dump()), 202
+
+
+@account_bp.route('/email/complete', methods=['POST'])
+# No session: the link may be opened on another device
+@limiter.limit('10 per hour')
+def complete_email_change() -> ResponseReturnValue:
+    """An email change's second step: the link to the new address, which
+    proves it, moves the account there. Sessions stay: tokens name the
+    account by id. The old address is told, with a link back."""
+    payload = EmailLinkRequest.model_validate(request.get_json())
+    claims = read_email_link(EMAIL_CHANGE_LINK, payload.token, EMAIL_CHANGE_LINK_LIFETIME)
+    if not isinstance(claims, LinkClaims):
+        return claims
+    user = state_account(claims.state)
+    if user is None:
+        return link_refused(EMAIL_CHANGE_LINK, 'invalid')
+    # The address or the password changed since the link was sent (this
+    # link used already, or an owner taking the account back)
+    if not hmac.compare_digest(change_state(user), claims.state):
+        return link_refused(EMAIL_CHANGE_LINK, 'used')
+    if db.session.execute(select(User.id).where(User.email == claims.email)).first():
+        return _email_taken()
+
+    user_id, old_email = user.id, user.email
+    user.email = claims.email
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Someone signed up with the address since the check above
+        db.session.rollback()
+        return _email_taken()
+
+    security_event('email_changed', user_id=user_id)
+    try:
+        email_changed_email.send(user_id, old_email)
+    except JobQueueUnavailable:
+        # The address has changed: say so, rather than a 503 that would
+        # send the user back to a link that no longer works
+        current_app.logger.exception('Could not queue the email changed email')
+    return jsonify(EmailChangedResponse(email=claims.email).model_dump()), 200
+
+
+@account_bp.route('/email/undo', methods=['POST'])
+@limiter.limit('10 per hour')
+def undo_email_change() -> ResponseReturnValue:
+    """Move the account back to the address the link was sent to, and end
+    every session: its owner did not make the change. The owner then resets
+    the password, which reaches them at this address again."""
+    payload = EmailLinkRequest.model_validate(request.get_json())
+    claims = read_email_link(EMAIL_UNDO_LINK, payload.token, EMAIL_UNDO_LINK_LIFETIME)
+    if not isinstance(claims, LinkClaims):
+        return claims
+    user = state_account(claims.state)
+    if user is None or not hmac.compare_digest(undo_state(user), claims.state):
+        return link_refused(EMAIL_UNDO_LINK, 'invalid')
+    if user.email == claims.email:
+        return link_refused(EMAIL_UNDO_LINK, 'used')
+    if db.session.execute(select(User.id).where(User.email == claims.email)).first():
+        return _email_taken()
+
+    # First, as a reset does: whoever moved the account must lose it, so
+    # nothing changes unless Redis can end their sessions
+    user_id = user.id
+    redis_service = get_redis_service()
+    sessions = redis_service.revoke_all_user_tokens(user_id) if redis_service else None
+    if sessions is None:
+        return service_unavailable()
+
+    user.email = claims.email
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _email_taken()
+
+    security_event('email_change_undone', user_id=user_id, sessions=sessions)
+    response = make_response(
+        jsonify(EmailChangedResponse(email=claims.email).model_dump()), 200)
     unset_refresh_cookies(response)
     return response

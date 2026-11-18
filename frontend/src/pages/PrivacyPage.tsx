@@ -74,9 +74,11 @@ export default function PrivacyPage() {
       <h2>Your rights</h2>
       <p>
         On your Account page you can download a copy of your data, in a
-        machine-readable form you can take elsewhere (portability), and
-        delete your account and everything in it. You can also ask us for
-        what our logs hold about you; to correct your data; or to restrict
+        machine-readable form you can take elsewhere (portability), change
+        your email address (we email the new one a link to confirm it, and
+        tell the old one), and delete your account and everything in it. You
+        can also ask us for what our logs hold about you; to correct other
+        data; or to restrict
         or object to how we use it. Write to us
         at <a href={`mailto:${OPERATOR.email}`} className="text-link">{OPERATOR.email}</a> from the
         email address of your account. We answer within one month. [If the

@@ -1,5 +1,5 @@
-"""A worker that runs the queued jobs, for the auth feature's integration
-tests: what it sends arrives in Mailpit (mailpit.py)"""
+"""A worker that runs the queued jobs, for the integration tests of the
+email the app sends: what it sends arrives in Mailpit (mailpit.py)"""
 import os
 
 import pytest
@@ -8,7 +8,7 @@ from dramatiq import Worker
 from app import create_app
 from app.utils.jobs import QUEUE_NAME
 from tests.conftest import close_app
-from tests.integration.auth.mailpit import mailpit
+from tests.integration.mailpit import mailpit
 
 
 @pytest.fixture

@@ -7,6 +7,8 @@ import RegisterPage from '@/pages/RegisterPage'
 import CompleteRegistrationPage from '@/pages/CompleteRegistrationPage'
 import PasswordResetPage from '@/pages/PasswordResetPage'
 import CompletePasswordResetPage from '@/pages/CompletePasswordResetPage'
+import CompleteEmailChangePage from '@/pages/CompleteEmailChangePage'
+import UndoEmailChangePage from '@/pages/UndoEmailChangePage'
 import AccountPage from '@/pages/AccountPage'
 import PrivacyPage from '@/pages/PrivacyPage'
 import TermsPage from '@/pages/TermsPage'
@@ -36,6 +38,10 @@ export const routes: RouteObject[] = [
           // The emailed reset link's page: a signed-in user's link must not
           // be lost to GuestRoute's redirect
           { path: 'password-reset/complete', element: <CompletePasswordResetPage /> },
+          // An email change's links, which may be opened on a device signed
+          // in as anyone, or no one
+          { path: 'account/email/complete', element: <CompleteEmailChangePage /> },
+          { path: 'account/email/undo', element: <UndoEmailChangePage /> },
           {
             element: <GuestRoute />,
             children: [

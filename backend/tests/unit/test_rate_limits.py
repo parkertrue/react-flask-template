@@ -340,6 +340,49 @@ class TestPasswordResetLimits:
         assert statuses == [200] + [400] * 9 + [429]
 
 
+class TestEmailChangeLimits:
+    """Asking to move an account: per user, wrong passwords in the budget
+    login and deletion share, and the new inbox in sign-up's budget"""
+
+    @pytest.fixture
+    def signed_in(self, limited_app):
+        limited_app.extensions['redis_service'] = FakeRedisService()
+        with limited_app.app_context():
+            user = User(email='test@example.com')
+            user.set_password('TestPassword123')
+            db.session.add(user)
+            db.session.commit()
+            token = create_access_token(identity=str(user.id))
+        return limited_app.test_client(), {'Authorization': f'Bearer {token}'}
+
+    @staticmethod
+    def ask(client, headers, email, password='TestPassword123'):
+        return client.post('/api/account/email', headers=headers,
+                           json={'email': email, 'password': password}).status_code
+
+    def test_eleventh_in_an_hour_is_rate_limited(self, signed_in):
+        client, headers = signed_in
+
+        statuses = [self.ask(client, headers, f'new{i}@example.com') for i in range(11)]
+
+        assert statuses == [202] * 10 + [429]
+
+    def test_a_sixth_wrong_password_in_a_minute_is_rate_limited(self, signed_in):
+        client, headers = signed_in
+
+        statuses = [self.ask(client, headers, f'new{i}@example.com', 'a wrong passphrase')
+                    for i in range(6)]
+
+        assert statuses == [403] * 5 + [429]
+
+    def test_the_new_inbox_shares_sign_up_s_budget(self, signed_in):
+        client, headers = signed_in
+        for i in range(3):
+            request_link(client, f'203.0.113.{i}', 'inbox@example.com')
+
+        assert self.ask(client, headers, 'inbox@example.com') == 429
+
+
 class TestRefreshLimit:
     """Refresh is limited per user, so a shared address never trips it"""
 

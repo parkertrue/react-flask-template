@@ -8,6 +8,9 @@ export interface ApiSchemas {
   AccountExport: AccountExport;
   AccountResponse: AccountResponse;
   DataExportResponse: DataExportResponse;
+  EmailChangeRequest: EmailChangeRequest;
+  EmailChangedResponse: EmailChangedResponse;
+  EmailLinkRequest: EmailLinkRequest;
   HealthResponse: HealthResponse;
   JsonValue: JsonValue;
   LoginRequest: LoginRequest;
@@ -58,6 +61,27 @@ export interface DataExportResponse {
     }[];
   };
   exported_at: string;
+}
+/**
+ * POST /api/account/email: the address to move the account to, and the
+ * account's password, typed again
+ */
+export interface EmailChangeRequest {
+  email: string;
+  password: string;
+}
+/**
+ * The account's address once a link has moved it
+ */
+export interface EmailChangedResponse {
+  email: string;
+}
+/**
+ * An email change's emailed link, posted by its page: the one that moves
+ * the account to the new address, or the one that moves it back
+ */
+export interface EmailLinkRequest {
+  token: string;
 }
 /**
  * GET /api/health: "ok" whenever the backend answers

@@ -88,6 +88,54 @@
       "title": "DataExportResponse",
       "type": "object"
     },
+    "EmailChangeRequest": {
+      "additionalProperties": false,
+      "description": "POST /api/account/email: the address to move the account to, and the\naccount's password, typed again",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "maxLength": 128,
+          "minLength": 15,
+          "type": "string"
+        }
+      },
+      "required": [
+        "email",
+        "password"
+      ],
+      "title": "EmailChangeRequest",
+      "type": "object"
+    },
+    "EmailChangedResponse": {
+      "description": "The account's address once a link has moved it",
+      "properties": {
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "title": "EmailChangedResponse",
+      "type": "object"
+    },
+    "EmailLinkRequest": {
+      "additionalProperties": false,
+      "description": "An email change's emailed link, posted by its page: the one that moves\nthe account to the new address, or the one that moves it back",
+      "properties": {
+        "token": {
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "EmailLinkRequest",
+      "type": "object"
+    },
     "HealthResponse": {
       "description": "GET /api/health: \"ok\" whenever the backend answers",
       "properties": {

@@ -1,10 +1,11 @@
-import { useState, type SubmitEvent } from 'react'
+import { useEffect, useState, type SubmitEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/useAuth'
 import { useLogout } from '@/auth/useLogout'
 import {
   getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData,
+  requestEmailChange, EMAIL_CHANGE_LINK_HOURS,
 } from '@/auth/authService'
 import { errorCode, errorResponse, getErrorMessage } from '@/api/errors'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
@@ -13,7 +14,7 @@ import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
 import { saveJsonFile, slugify } from '@/utils/download'
-import { validatePassword, PASSWORD_INPUT_MAX_LENGTH } from '@/utils/validation'
+import { validateEmail, validatePassword, EMAIL_MAX_LENGTH, PASSWORD_INPUT_MAX_LENGTH } from '@/utils/validation'
 import { APP_NAME } from '@/appInfo'
 import type { LoginState } from './LoginPage'
 
@@ -21,13 +22,23 @@ import type { LoginState } from './LoginPage'
 const EXPORT_FILE_PREFIX = slugify(APP_NAME)
 
 export default function AccountPage() {
-  const { email } = useAuth()
+  const { email, updateEmail } = useAuth()
   const logOut = useLogout()
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [askingLogoutAll, setAskingLogoutAll] = useState(false)
-  const { data: account, error: accountError } = useQuery({ queryKey: ['account'], queryFn: getAccount })
+  // Refetched when the window regains focus: an email change completes in
+  // the tab its link opens, or on another device (DECISIONS.md, caching)
+  const { data: account, error: accountError } = useQuery({
+    queryKey: ['account'], queryFn: getAccount, refetchOnWindowFocus: true,
+  })
+  const emailChange = useFormFields({ 'new-email': '', 'email-password': '' })
+  const [askingEmail, setAskingEmail] = useState(false)
+  const [changingEmail, setChangingEmail] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  // Where the link went, on the persistent status line
+  const [emailStatus, setEmailStatus] = useState('')
   const loadError = accountError && getErrorMessage(accountError)
   const deletion = useFormFields({ 'delete-password': '' })
   const [askingDelete, setAskingDelete] = useState(false)
@@ -37,6 +48,52 @@ export default function AccountPage() {
   const [exportError, setExportError] = useState<string | null>(null)
   // Cleared when the next export starts, so the same words are read again
   const [exportStatus, setExportStatus] = useState('')
+
+  // The account's address changed elsewhere (its link opened in another
+  // tab or on another device): show the new one everywhere, the navbar too
+  const accountEmail = account?.email
+  useEffect(() => {
+    if (accountEmail) updateEmail(accountEmail)
+  }, [accountEmail, updateEmail])
+
+  // Each time afresh: no address, password or message from an earlier try
+  const askToChangeEmail = () => {
+    emailChange.reset()
+    setEmailError(null)
+    setAskingEmail(true)
+  }
+
+  const handleEmailChange = async (e: SubmitEvent<HTMLFormElement>) => {
+    const form = e.currentTarget
+    const { values } = emailChange
+    const valid = emailChange.validate(form, {
+      'new-email': validateEmail(values['new-email']),
+      'email-password': validatePassword(values['email-password']),
+    })
+    if (!valid) return
+    setEmailError(null)
+    setEmailStatus('')
+    setChangingEmail(true)
+    try {
+      await requestEmailChange(values['new-email'], values['email-password'])
+    } catch (err) {
+      // Nothing was sent: the dialog stays for another try
+      setChangingEmail(false)
+      const code = errorCode(err)
+      if (code === 'WRONG_PASSWORD') {
+        emailChange.validate(form, { 'email-password': getErrorMessage(err) })
+      } else if (code === 'EMAIL_UNCHANGED') {
+        emailChange.validate(form, { 'new-email': getErrorMessage(err) })
+      } else {
+        setEmailError(getErrorMessage(err))
+      }
+      return
+    }
+    setChangingEmail(false)
+    setAskingEmail(false)
+    setEmailStatus(
+      `We sent a link to ${values['new-email']}. Open it within ${EMAIL_CHANGE_LINK_HOURS} hours to move your account there.`)
+  }
 
   // Not while a request is in flight: its button is busy
   const askToLogoutAll = () => {
@@ -139,6 +196,52 @@ export default function AccountPage() {
         {!account && !loadError && 'Loading account details...'}
       </p>
       {loadError && <div className="error-message" role="alert">{loadError}</div>}
+
+      <section aria-labelledby="email-heading">
+        <h2 id="email-heading">Email</h2>
+        <p>Move this account to another email address. We'll email the new address a link to confirm it.</p>
+        <button type="button" onClick={askToChangeEmail} className="btn btn-secondary">
+          Change email
+        </button>
+        <p role="status">{emailStatus}</p>
+        {askingEmail && (
+          <FormDialog
+            title="Change your email?"
+            description="Nothing changes until you open the link we email the new address."
+            submitLabel={changingEmail ? 'Sending link...' : 'Send link'}
+            busy={changingEmail}
+            onSubmit={e => void handleEmailChange(e)}
+            onCancel={() => setAskingEmail(false)}
+          >
+            <FormField
+              id="new-email"
+              label="New email"
+              type="email"
+              autoComplete="email"
+              value={emailChange.values['new-email']}
+              onChange={emailChange.handleChange}
+              error={emailChange.errors['new-email']}
+              readOnly={changingEmail}
+              required
+              maxLength={EMAIL_MAX_LENGTH}
+            />
+            <FormField
+              id="email-password"
+              label="Password"
+              hint="Enter your password to confirm."
+              type="password"
+              autoComplete="current-password"
+              value={emailChange.values['email-password']}
+              onChange={emailChange.handleChange}
+              error={emailChange.errors['email-password']}
+              readOnly={changingEmail}
+              required
+              maxLength={PASSWORD_INPUT_MAX_LENGTH}
+            />
+            {emailError && <div className="error-message" role="alert">{emailError}</div>}
+          </FormDialog>
+        )}
+      </section>
 
       <section aria-labelledby="sessions-heading">
         <h2 id="sessions-heading">Sessions</h2>

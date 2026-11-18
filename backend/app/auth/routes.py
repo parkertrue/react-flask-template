@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from collections.abc import Callable
 from typing import Any, cast
@@ -227,19 +227,17 @@ def _terms_outdated() -> ErrorResponse:
     )
 
 
-def _read_link(purpose: str, token: str) -> LinkClaims | ErrorResponse:
+def read_email_link(purpose: str, token: str, lifetime: timedelta) -> LinkClaims | ErrorResponse:
     """What an emailed link of this purpose names, or the answer refusing it"""
-    lifetime = (REGISTRATION_LINK_LIFETIME if purpose == REGISTRATION_LINK
-                else PASSWORD_RESET_LINK_LIFETIME)
     try:
         claims = read_link_token(purpose, token, lifetime)
     except LinkExpired:
-        return _link_refused(purpose, 'expired')
+        return link_refused(purpose, 'expired')
     except LinkInvalid:
-        return _link_refused(purpose, 'invalid')
+        return link_refused(purpose, 'invalid')
     # Signed by this app, but naming what the form would refuse
     if not is_normalized_email(claims.email):
-        return _link_refused(purpose, 'invalid')
+        return link_refused(purpose, 'invalid')
     return claims
 
 
@@ -257,7 +255,7 @@ def _password_breached() -> ErrorResponse:
         status=422)
 
 
-def _link_refused(purpose: str, reason: str) -> ErrorResponse:
+def link_refused(purpose: str, reason: str) -> ErrorResponse:
     """Refuse an emailed link, and log why: a run of them from one address
     is someone probing the link's format or replaying stolen links"""
     security_event('link_refused', purpose=purpose, reason=reason)
@@ -299,7 +297,7 @@ def complete_registration() -> ResponseReturnValue:
     if payload.terms_version != TERMS_VERSION:
         return _terms_outdated()
 
-    claims = _read_link(REGISTRATION_LINK, payload.token)
+    claims = read_email_link(REGISTRATION_LINK, payload.token, REGISTRATION_LINK_LIFETIME)
     if not isinstance(claims, LinkClaims):
         return claims
     email = claims.email
@@ -309,7 +307,7 @@ def complete_registration() -> ResponseReturnValue:
     # check, below.
     stmt = select(User).where(User.email == email)
     if db.session.execute(stmt).scalar_one_or_none():
-        return _link_refused(REGISTRATION_LINK, 'registered')
+        return link_refused(REGISTRATION_LINK, 'registered')
 
     # Before the link is spent, so the user can try another password with it
     if is_guessable(payload.password, email, current_app.config['APP_NAME']):
@@ -322,7 +320,7 @@ def complete_registration() -> ResponseReturnValue:
     if claimed is None:
         return service_unavailable()
     if not claimed:
-        return _link_refused(REGISTRATION_LINK, 'used')
+        return link_refused(REGISTRATION_LINK, 'used')
     assert redis_service is not None
 
     try:
@@ -342,7 +340,7 @@ def complete_registration() -> ResponseReturnValue:
         # Another request registered the same email since the check above
         # (a double submit, or a client retrying)
         db.session.rollback()
-        return _link_refused(REGISTRATION_LINK, 'registered')
+        return link_refused(REGISTRATION_LINK, 'registered')
     except BaseException:
         # Not used after all (the database or the password hashing failed):
         # the link must still work
@@ -382,16 +380,16 @@ def complete_password_reset() -> ResponseReturnValue:
     """
     payload = PasswordResetCompleteRequest.model_validate(request.get_json())
 
-    claims = _read_link(PASSWORD_RESET_LINK, payload.token)
+    claims = read_email_link(PASSWORD_RESET_LINK, payload.token, PASSWORD_RESET_LINK_LIFETIME)
     if not isinstance(claims, LinkClaims):
         return claims
     user = db.session.execute(
         select(User).where(User.email == claims.email)).scalar_one_or_none()
     # The account was deleted since the link was sent
     if user is None:
-        return _link_refused(PASSWORD_RESET_LINK, 'invalid')
+        return link_refused(PASSWORD_RESET_LINK, 'invalid')
     if not hmac.compare_digest(user.password_state, claims.state):
-        return _link_refused(PASSWORD_RESET_LINK, 'used')
+        return link_refused(PASSWORD_RESET_LINK, 'used')
 
     if is_guessable(payload.password, user.email, current_app.config['APP_NAME']):
         return _password_guessable()
@@ -423,7 +421,7 @@ def complete_password_reset() -> ResponseReturnValue:
         .values(password_hash=new_hash)))
     db.session.commit()
     if changed.rowcount == 0:
-        return _link_refused(PASSWORD_RESET_LINK, 'used')
+        return link_refused(PASSWORD_RESET_LINK, 'used')
 
     security_event('password_reset', user_id=user_id, sessions=sessions)
     try:
