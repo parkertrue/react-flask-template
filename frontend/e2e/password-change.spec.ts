@@ -20,7 +20,10 @@ test.describe('Password change', () => {
     const dialog = await askToChangePassword(page, NEW_PASSWORD)
     await dialog.getByRole('button', { name: 'Save password' }).click()
     await expect(dialog).toBeHidden()
-    await expect(page.getByText('Your password was changed. Every other device was logged out.')).toBeVisible()
+    const done = page.getByText('Your password was changed. Every other device was logged out.')
+    await expect(done).toBeVisible()
+    // Set apart from the page's own text, so it is noticed
+    expect(await done.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
 
     // This device stays signed in, across a reload too
     await page.reload()

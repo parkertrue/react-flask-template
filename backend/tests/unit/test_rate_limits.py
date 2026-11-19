@@ -14,7 +14,7 @@ from app import db, limiter
 from app.auth.models import User
 from app.auth.routes import _request_email_key
 from app.utils.passwords import PasswordHashingBusy
-from tests.conftest import FakeRedisService, register, reset_token
+from tests.conftest import FakeRedisService, register, reset_token, session_token
 from tests.unit.test_app_factory import build_app
 
 LOGIN = {'email': 'nobody@example.com', 'password': 'WrongPassword123'}
@@ -349,7 +349,7 @@ def signed_in(limited_app):
         user.set_password('TestPassword123')
         db.session.add(user)
         db.session.commit()
-        token = create_access_token(identity=str(user.id))
+        token = session_token(user.id)
     return limited_app.test_client(), {'Authorization': f'Bearer {token}'}
 
 
@@ -504,7 +504,7 @@ class TestDeleteAccountLimit:
     def headers(self, app, email, ip='203.0.113.7'):
         with app.app_context():
             user_id = db.session.scalar(select(User.id).where(User.email == email))
-            token = create_access_token(identity=str(user_id))
+            token = session_token(user_id)
         return {'Authorization': f'Bearer {token}', 'X-Forwarded-For': ip}
 
     def delete(self, client, headers, password='WrongPassword123'):
@@ -639,7 +639,7 @@ class TestExportLimit:
     def headers(self, app, email, ip='203.0.113.7'):
         with app.app_context():
             user_id = db.session.scalar(select(User.id).where(User.email == email))
-            token = create_access_token(identity=str(user_id))
+            token = session_token(user_id)
         return {'Authorization': f'Bearer {token}', 'X-Forwarded-For': ip}
 
     def test_eleventh_export_in_an_hour_is_rate_limited(self, owner_app):

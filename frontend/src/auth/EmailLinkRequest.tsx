@@ -8,8 +8,8 @@ import { validateEmail, EMAIL_MAX_LENGTH } from '@/utils/validation'
 interface EmailLinkRequestProps {
   // The page's title and heading
   title: string
-  // The email field's hint: what the link is for
-  hint: string
+  // The email field's hint: what the link is for, if the page says
+  hint?: string
   // The submit button's label, and its label while sending
   submitLabel: string
   busyLabel: string

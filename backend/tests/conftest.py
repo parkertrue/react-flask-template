@@ -1,4 +1,5 @@
 import os
+import secrets
 import time
 import pytest
 import sqlite3
@@ -13,6 +14,7 @@ from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import normalize_email
 from app.utils.jobs import close_jobs
 from app.utils.links import make_link_token
+from app.utils.redis_service import get_redis_service
 
 # Every config requires SECRET_KEY, including the ones tests build directly.
 # Integration runs get theirs from .env.test, which this does not override.
@@ -23,6 +25,18 @@ def link_token(app, email):
     """The token of the sign-up link the worker would email to this address"""
     with app.app_context():
         return make_link_token(REGISTRATION_LINK, normalize_email(email))
+
+
+def session_token(user_id, **kwargs):
+    """An access token of a live session, as a login issues one: the session
+    is recorded in the app's token store, if it has one (without, the token
+    works as it does while Redis is down). Call in an app context."""
+    session_id = f'test-session-{secrets.token_hex(4)}'
+    redis_service = get_redis_service()
+    if redis_service is not None:
+        redis_service.store_refresh_token(
+            int(user_id), session_id, f'jti-{session_id}', 3600, device='Test device')
+    return create_access_token(identity=str(user_id), additional_claims={'sid': session_id}, **kwargs)
 
 
 def reset_token(app, email):
@@ -134,6 +148,9 @@ class FakeRedisService:
     def is_token_valid(self, user_id, session_id, jti):
         session = self.sessions.get((user_id, session_id))
         return session is not None and session['jti'] == jti
+
+    def is_session_live(self, user_id, session_id):
+        return (user_id, session_id) in self.sessions
 
     def revoke_token(self, user_id, session_id):
         self.sessions.pop((user_id, session_id), None)
@@ -300,16 +317,14 @@ def second_user(db):
 def auth_token(app, sample_user):
     """Generate a valid JWT token for the sample user."""
     with app.app_context():
-        token = create_access_token(identity=str(sample_user.id))
-        return token
+        return session_token(sample_user.id)
 
 
 @pytest.fixture
 def second_auth_token(app, second_user):
     """Generate a valid JWT token for the second user."""
     with app.app_context():
-        token = create_access_token(identity=str(second_user.id))
-        return token
+        return session_token(second_user.id)
 
 
 @pytest.fixture

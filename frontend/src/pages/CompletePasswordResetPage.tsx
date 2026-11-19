@@ -113,7 +113,7 @@ export default function CompletePasswordResetPage() {
                 value={values.password}
                 onChange={handleChange}
                 error={errors.password}
-                hint={`At least ${PASSWORD_MIN_LENGTH} characters. A few words make a good one.`}
+                hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
                 readOnly={submitting}
                 required
                 maxLength={PASSWORD_INPUT_MAX_LENGTH}

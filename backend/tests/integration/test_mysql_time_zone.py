@@ -1,7 +1,7 @@
 """Timestamps are UTC whatever MySQL's own time zone, which SQLite lacks."""
 from datetime import datetime, timedelta, timezone
 
-from flask_jwt_extended import create_access_token
+from tests.conftest import session_token
 from sqlalchemy import text
 
 
@@ -13,7 +13,7 @@ def test_connections_use_utc(integration_db):
 
 def test_timestamp_is_sent_as_utc(integration_client, integration_user):
     """MySQL fills created_at with its own clock; the response says it is UTC"""
-    token = create_access_token(identity=str(integration_user.id))
+    token = session_token(integration_user.id)
 
     response = integration_client.get(
         '/api/account', headers={'Authorization': f'Bearer {token}'})

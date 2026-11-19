@@ -172,6 +172,21 @@ class TestTokenManagement:
         assert 'Read failed' in caplog.text
 
     @pytest.mark.parametrize(('expires_in', 'live'), [(60, True), (-1, False), (None, False)],
+                             ids=['live', 'expired, not yet pruned', 'none'])
+    def test_is_session_live(self, service, expires_in, live):
+        service._client.zscore.return_value = None if expires_in is None else time.time() + expires_in
+
+        assert service.is_session_live(1, 'a-session') is live
+        service._client.zscore.assert_called_once_with(self.KEYS[0], 'a-session')
+
+    def test_is_session_live_error_is_not_an_end(self, service, caplog):
+        """None, not False: the caller lets the token through an outage"""
+        service._client.zscore.side_effect = redis.RedisError('Read failed')
+
+        assert service.is_session_live(1, 'a-session') is None
+        assert 'Could not check a session of user 1' in caplog.text
+
+    @pytest.mark.parametrize(('expires_in', 'live'), [(60, True), (-1, False), (None, False)],
                              ids=['live', 'expired', 'none'])
     def test_revoke_session_removes_it_from_both_keys(self, service, expires_in, live):
         pipe = service._client.pipeline.return_value
@@ -298,6 +313,7 @@ class TestSkipRedisAfterConnectionFailure:
         'is_token_valid': (lambda s: s.is_token_valid(1, 'sid', 'jti'), None),
         'revoke_token': (lambda s: s.revoke_token(1, 'sid'), None),
         'revoke_session': (lambda s: s.revoke_session(1, 'sid'), None),
+        'is_session_live': (lambda s: s.is_session_live(1, 'sid'), None),
         'revoke_all_user_tokens': (lambda s: s.revoke_all_user_tokens(1), None),
         'list_sessions': (lambda s: s.list_sessions(1), None),
         'store_refresh_token': (lambda s: s.store_refresh_token(1, 'sid', 'jti', 60, device='x'), None),
