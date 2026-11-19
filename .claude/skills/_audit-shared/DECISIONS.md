@@ -122,15 +122,22 @@ opinion that doesn't matter for a few static files. See the `nginx` job in
 ./run_dev.sh` turns it off for one run. Production forces it off in
 `ProductionConfig`.
 
-**Access tokens outlive logout by up to 15 minutes.** Logout and "Log out
-all devices" revoke refresh tokens only; an access token already issued works
-until it expires. Revoking those too would put a Redis lookup on every API
-request and make every request depend on Redis. A password reset does not
-wait: every token carries the password's state, which the user loader
-already compares on its database read, so a reset refuses every token
-issued before it at once.
-*Revisit when:* the app holds data where a 15-minute window after logout
-matters.
+**A logout ends access at the device's next request, except while Redis is
+down** (user, 2026-11-19). Every access token names its session (`sid`), and
+the user loader checks in Redis that the session is still live, one ZSCORE
+per signed-in request: logging out, logging a device out from the account
+page, and "Log out all devices" all end that device's access at its next
+request, as users of a sessions list expect (ASVS 5.0 chapter 7). A password
+change or reset also refuses every older token through its
+`password_state`, with no Redis at all. While Redis is unreachable the
+session check is skipped and access tokens work (fail open), so an outage
+leaves signed-in pages working; refresh and login still fail closed, so a
+session ended during an outage lasts at most until its 15-minute access
+token expires. The alternative, refusing every signed-in request while Redis
+is down, was weighed and dropped: it turns a Redis outage into an outage of
+the whole signed-in app.
+*Revisit when:* a session ended during a Redis outage must stop at once, or
+the per-request lookup shows in `upstream_response_time`.
 
 **No nginx healthcheck.** Compose uses healthchecks only to order startup and
 never restarts an unhealthy container, and nothing depends on nginx, so a

@@ -25,14 +25,13 @@ async function sendLink(address = 'user@example.com') {
 }
 
 describe('RegisterPage', () => {
-  it('asks for the email alone, says what it is for, and offers to log in', () => {
+  it('asks for the email alone, and offers to log in', () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Sign up' })).toBeInTheDocument()
     expect(email()).toHaveAttribute('autocomplete', 'email')
-    expect(email()).toHaveAccessibleDescription("We'll email you a link to choose a password.")
+    expect(email()).not.toHaveAccessibleDescription()
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Privacy notice' })).toHaveAttribute('href', '/privacy')
     expect(screen.getByRole('link', { name: 'Log in' })).toHaveAttribute('href', '/login')
     expect(document.title).toBe(`Sign up | ${APP_NAME}`)
   })

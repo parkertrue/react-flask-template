@@ -105,7 +105,7 @@ describe('AccountPage', () => {
       expect(field.current()).toHaveFocus()
       expect(field.current()).toHaveAttribute('autocomplete', 'current-password')
       expect(field.next()).toHaveAttribute('autocomplete', 'new-password')
-      expect(field.next()).toHaveAccessibleDescription('At least 15 characters. A few words make a good one.')
+      expect(field.next()).toHaveAccessibleDescription('At least 15 characters.')
       expect(changePassword).not.toHaveBeenCalled()
     })
 

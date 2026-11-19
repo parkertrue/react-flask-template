@@ -1,5 +1,6 @@
-"""A worker that runs the queued jobs, for the integration tests of the
-email the app sends: what it sends arrives in Mailpit (mailpit.py)"""
+"""What every integration test shares: Redis cleaned after each, and a
+worker that runs the queued jobs, for the tests of the email the app sends
+(what it sends arrives in Mailpit, mailpit.py)"""
 import os
 
 import pytest
@@ -31,3 +32,12 @@ def worker(integration_app, integration_db, integration_redis, monkeypatch):
     yield run
     close_app(worker_app)
     mailpit('/messages', method='DELETE')
+
+
+@pytest.fixture(autouse=True)
+def clean_redis(integration_redis):
+    """Every integration test leaves Redis as it found it, not just those
+    that ask for integration_redis: a session one leaves (a login, a
+    session_token) would land on the next test's user, since each fresh
+    database hands out the same ids"""
+    yield

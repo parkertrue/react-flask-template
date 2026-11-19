@@ -51,7 +51,7 @@ describe('CompletePasswordResetPage', () => {
     expect(emailField()).toHaveAttribute('readonly')
     expect(emailField()).toHaveAttribute('autocomplete', 'username')
     expect(field.password()).toHaveAttribute('autocomplete', 'new-password')
-    expect(field.password()).toHaveAccessibleDescription('At least 15 characters. A few words make a good one.')
+    expect(field.password()).toHaveAccessibleDescription('At least 15 characters.')
     expect(field.password()).toHaveAttribute('maxlength', String(2 * 128))
     expect(field.confirmPassword()).toHaveAttribute('autocomplete', 'new-password')
     expect(document.title).toBe(`Choose a new password | ${APP_NAME}`)

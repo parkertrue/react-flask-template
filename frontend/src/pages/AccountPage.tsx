@@ -257,7 +257,9 @@ export default function AccountPage() {
         <button type="button" onClick={askToChangeEmail} className="btn btn-secondary">
           Change email
         </button>
-        <p role="status">{emailStatus}</p>
+        {/* In the page from the start, so it is announced; boxed once it
+            says something, so it is seen */}
+        <p role="status" className={emailStatus ? 'success-message' : undefined}>{emailStatus}</p>
         {askingEmail && (
           <FormDialog
             title="Change your email?"
@@ -303,7 +305,7 @@ export default function AccountPage() {
         <button type="button" onClick={askToChangePassword} className="btn btn-secondary">
           Change password
         </button>
-        <p role="status">{passwordStatus}</p>
+        <p role="status" className={passwordStatus ? 'success-message' : undefined}>{passwordStatus}</p>
         {askingPassword && (
           <FormDialog
             title="Change your password?"
@@ -342,7 +344,7 @@ export default function AccountPage() {
               value={passwordChange.values['new-password']}
               onChange={passwordChange.handleChange}
               error={passwordChange.errors['new-password']}
-              hint={`At least ${PASSWORD_MIN_LENGTH} characters. A few words make a good one.`}
+              hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
               readOnly={changingPassword}
               required
               maxLength={PASSWORD_INPUT_MAX_LENGTH}

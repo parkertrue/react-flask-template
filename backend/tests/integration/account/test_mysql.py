@@ -1,6 +1,6 @@
 """Deleting an account on real MySQL and Redis: the user's row and every
 session go, under the app's own database and ACL users."""
-from flask_jwt_extended import create_access_token
+from tests.conftest import session_token
 from sqlalchemy import func, select
 
 from app.auth.models import User
@@ -20,7 +20,7 @@ def test_deletes_the_row_and_the_sessions(
 
     response = integration_client.post(
         '/api/account/delete', json={'password': PASSWORD},
-        headers={'Authorization': f'Bearer {create_access_token(identity=str(user_id))}'})
+        headers={'Authorization': f'Bearer {session_token(user_id)}'})
 
     assert response.status_code == 200
     assert client.exists(sessions, details) == 0

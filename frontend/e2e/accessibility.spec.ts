@@ -12,7 +12,7 @@ import { APP_NAME } from '../src/appInfo'
 const VISITOR_PAGES: [string, string, string, number][] = [
   ['/', APP_NAME, `Welcome to ${APP_NAME}`, 8],
   ['/login', `Log in | ${APP_NAME}`, 'Log in', 11],
-  ['/signup', `Sign up | ${APP_NAME}`, 'Sign up', 10],
+  ['/signup', `Sign up | ${APP_NAME}`, 'Sign up', 9],
   // Without the emailed link: what to do instead
   ['/signup/complete', `Finish signing up | ${APP_NAME}`, 'Finish signing up', 7],
   ['/password-reset', `Reset your password | ${APP_NAME}`, 'Reset your password', 9],

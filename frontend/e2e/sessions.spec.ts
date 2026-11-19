@@ -1,6 +1,6 @@
 import { test, expect, type Browser } from '@playwright/test'
 import {
-  expectNoViolations, expectReflow, expectTargetSize, expectVisibleFocus, expireAccessToken, login,
+  askToLogoutAll, expectNoViolations, expectReflow, expectTargetSize, expectVisibleFocus, login,
   memberSince, registerAndLogin,
 } from './helpers'
 
@@ -36,15 +36,31 @@ test.describe('Sessions', () => {
     await expect(page.getByRole('button', { name: 'Log out all devices' })).toBeFocused()
     await expect(page.getByText('Logged out Firefox on Windows.')).toBeAttached()
 
-    // That device's next refresh is refused; this one stays signed in
-    await other.page.goto('/account')
-    await expireAccessToken(other.page)
+    // That device is turned away at its next request; this one stays signed in
     await other.page.reload()
     await expect(other.page).toHaveURL(/\/login/)
     await expect(other.page.getByRole('status')).toHaveText('Your session has ended. Please log in again.')
     await other.context.close()
     await page.reload()
     await expect(memberSince(page)).toBeVisible()
+  })
+
+  test('"Log out all devices" turns every other device away at its next request', async ({ page, browser }) => {
+    const email = await registerAndLogin(page, 'e2e-sessions-all')
+    const other = await otherDevice(browser, email)
+    await other.page.goto('/account')
+    await expect(memberSince(other.page)).toBeVisible()
+
+    await page.goto('/account')
+    await expect(memberSince(page)).toBeVisible()
+    const dialog = await askToLogoutAll(page)
+    await dialog.getByRole('button', { name: 'Log out all devices' }).click()
+    await expect(page).toHaveURL(/\/$/)
+
+    await other.page.reload()
+    await expect(other.page).toHaveURL(/\/login/)
+    await expect(other.page.getByRole('status')).toHaveText('Your session has ended. Please log in again.')
+    await other.context.close()
   })
 
   test('the list, with another device in it, has no violations, reflows, shows focus and has large enough targets', async ({ page, browser }) => {

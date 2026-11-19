@@ -1,7 +1,7 @@
 """Notes on real MySQL: column limits and ON DELETE CASCADE, which SQLite
 ignores or only emulates, so unit tests cannot catch them."""
 import pytest
-from flask_jwt_extended import create_access_token
+from tests.conftest import session_token
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DataError
 
@@ -22,7 +22,7 @@ def test_database_rejects_an_overlong_note(integration_db, integration_user):
 def test_longest_note_survives_in_multibyte_characters(integration_client, integration_user):
     """The limit counts characters, not bytes: three-byte 日 fits like a letter"""
     content = '日' * NOTE_MAX_LENGTH
-    token = create_access_token(identity=str(integration_user.id))
+    token = session_token(integration_user.id)
     headers = {'Authorization': f'Bearer {token}'}
 
     created = integration_client.post('/api/notes', json={'content': content}, headers=headers)

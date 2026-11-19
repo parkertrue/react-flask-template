@@ -136,17 +136,9 @@ class TestListSessions:
 
         response = client.get('/api/account/sessions', headers=second_auth_headers)
 
-        assert response.get_json() == {'sessions': []}
-
-    def test_a_token_without_a_session_marks_none_current(self, app, client, sample_user, fake_redis):
-        """An access token minted before tokens named their session"""
-        Device(app)
-        with app.app_context():
-            token = create_access_token(identity=str(sample_user.id))
-
-        response = client.get('/api/account/sessions', headers={'Authorization': f'Bearer {token}'})
-
-        assert [session['current'] for session in response.get_json()['sessions']] == [False]
+        # Their own session alone
+        assert [(session['device'], session['current']) for session in response.get_json()['sessions']] == [
+            ('Test device', True)]
 
     def test_without_redis_is_a_503(self, app, client, sample_user, auth_headers, no_redis):
         response = client.get('/api/account/sessions', headers=auth_headers)
@@ -156,6 +148,63 @@ class TestListSessions:
 
     def test_requires_a_session(self, client):
         assert client.get('/api/account/sessions').status_code == 401
+
+
+class TestAccessEndsWithTheSession:
+    """An access token works only while its session is live: a device logged
+    out, from itself or another, loses access at its next request"""
+
+    @pytest.mark.parametrize('end', ['from another device', 'everywhere', 'by logging out'])
+    def test_an_ended_session_s_access_token_is_refused(self, app, sample_user, fake_redis, security_events, end):
+        here, there = Device(app), Device(app)
+        ends = {
+            'from another device': lambda: here.end(there.session_id),
+            'everywhere': lambda: here.client.post(
+                '/api/auth/logout-all', headers={'X-CSRF-REFRESH-TOKEN': here.csrf}),
+            'by logging out': lambda: there.client.post(
+                '/api/auth/logout', headers={'X-CSRF-REFRESH-TOKEN': there.csrf}),
+        }
+        ends[end]()
+
+        response = there.client.get('/api/account', headers=there.headers)
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+        assert security_events()[-1] == {
+            'message': 'token_invalid', 'ip': '127.0.0.1', 'reason': 'Session ended', 'user_id': sample_user.id}
+
+    def test_another_session_s_token_keeps_working(self, app, sample_user, fake_redis):
+        here, there = Device(app), Device(app)
+
+        here.end(there.session_id)
+
+        assert here.client.get('/api/account', headers=here.headers).status_code == 200
+
+    def test_a_token_naming_no_session_is_refused(self, app, client, sample_user, fake_redis):
+        """Minted before tokens named their session: its holder logs in again"""
+        with app.app_context():
+            token = create_access_token(identity=str(sample_user.id))
+
+        response = client.get('/api/account', headers={'Authorization': f'Bearer {token}'})
+
+        assert response.status_code == 401
+        assert response.get_json()['error']['code'] == 'AUTH_INVALID_TOKEN'
+
+    def test_while_redis_is_down_the_token_works(self, app, sample_user, fake_redis):
+        """Refresh and login need Redis anyway; signed-in pages keep working"""
+        there = Device(app)
+        app.extensions['redis_service'] = None
+
+        response = there.client.get('/api/account', headers=there.headers)
+
+        app.extensions['redis_service'] = fake_redis
+        assert response.status_code == 200
+
+    def test_while_redis_fails_the_token_works(self, app, sample_user, fake_redis, monkeypatch):
+        there = Device(app)
+        monkeypatch.setattr(fake_redis, 'is_session_live', lambda user_id, session_id: None)
+
+        assert there.client.get('/api/account', headers=there.headers).status_code == 200
 
 
 class TestEndSession:
@@ -200,7 +249,7 @@ class TestEndSession:
 
         assert response.status_code == 404
         assert response.get_json()['error']['code'] == 'NOT_FOUND'
-        assert len(fake_redis.sessions) == 1
+        assert (sample_user.id, theirs.session_id) in fake_redis.sessions
 
     def test_without_redis_nothing_ends(self, app, sample_user, fake_redis):
         here, there = Device(app), Device(app)

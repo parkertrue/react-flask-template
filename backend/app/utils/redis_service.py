@@ -280,6 +280,17 @@ class RedisService:
             self._failed(error, 'Could not check a refresh token for user %s', user_id)
             return None
 
+    def is_session_live(self, user_id: int, session_id: str) -> bool | None:
+        """Whether the session is live, for an access token naming it; None if
+        Redis failed, which the caller treats as live (app/__init__.py)"""
+        try:
+            self._check_reachable()
+            expires_at = self._client.zscore(_tokens_key(user_id), session_id)
+            return expires_at is not None and expires_at > time.time()
+        except redis.RedisError as error:
+            self._failed(error, 'Could not check a session of user %s', user_id)
+            return None
+
     def _end_session(self, user_id: int, session_id: str) -> bool:
         """End one session; whether it was live"""
         self._check_reachable()

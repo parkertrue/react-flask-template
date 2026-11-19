@@ -124,7 +124,7 @@ describe('CompleteRegistrationPage', () => {
   })
 
   describe('the password rule', () => {
-    const RULE = 'At least 15 characters. A few words make a good one.'
+    const RULE = 'At least 15 characters.'
 
     it('shows from the start, as the field\'s hint', () => {
       renderPage()

@@ -127,6 +127,13 @@ def create_app() -> Flask:
         whose id now names a different account, or that was issued under a
         password the account no longer has (add_account_claims). Routes read
         the user as flask_jwt_extended.current_user.
+
+        An access token must also name a live session (issue_tokens): logging
+        a device out, from it or from another, ends its access at its next
+        request rather than when its token expires. While Redis is down the
+        session cannot be checked, and the token works: refresh and login
+        still need Redis, so the outage ends no one's work, and a session
+        ended meanwhile lasts at most until its token expires (DECISIONS.md).
         """
         user = db.session.get(User, int(jwt_payload['sub']))
         if user is None or jwt_payload.get('user_created_at') != user.created_timestamp:
@@ -136,6 +143,18 @@ def create_app() -> Flask:
         if not isinstance(state, str) or not hmac.compare_digest(state, user.password_state):
             g.token_refused = 'Password changed'
             return None
+        session_id = jwt_payload.get('sid')
+        if not isinstance(session_id, str):
+            g.token_refused = 'Session ended'
+            return None
+        # Refresh tokens are checked against their session by the blocklist
+        # loader, more strictly: one must be its session's current token
+        if jwt_payload.get('type') == 'access':
+            redis_service = get_redis_service()
+            live = redis_service.is_session_live(user.id, session_id) if redis_service else None
+            if live is False:
+                g.token_refused = 'Session ended'
+                return None
         return user
 
     @jwt.user_lookup_error_loader
