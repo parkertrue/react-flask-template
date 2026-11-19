@@ -2,6 +2,8 @@ import json
 import threading
 import time
 
+from flask_jwt_extended import decode_token
+
 from app.utils.redis_service import MAX_SESSIONS_PER_USER
 
 
@@ -19,105 +21,119 @@ def _login(client):
     )
 
 
-def _jtis(redis_service, user_id):
-    """The user's stored refresh-token JTIs, soonest-expiring first"""
-    return redis_service.get_client().zrange(f'refresh_tokens:{user_id}', 0, -1)
+def _keys(user_id):
+    """The user's sorted set of sessions, and the hash of their details"""
+    return f'refresh_tokens:{{{user_id}}}', f'refresh_tokens:{{{user_id}}}:sessions'
+
+
+def _sessions(redis_service, user_id):
+    """The user's sessions as (id, current JTI), soonest-expiring first; a
+    session in one key and not the other is a bug, so both must agree"""
+    zset, details = _keys(user_id)
+    client = redis_service.get_client()
+    ids = client.zrange(zset, 0, -1)
+    stored = client.hgetall(details)
+    assert sorted(stored) == sorted(ids)
+    return [(session_id, json.loads(stored[session_id])['jti']) for session_id in ids]
+
+
+def _ids(redis_service, user_id):
+    return [session_id for session_id, _ in _sessions(redis_service, user_id)]
 
 
 class TestRedisTokenStorage:
-    """Test token storage in Redis"""
+    """Sessions in Redis, under the app's ACL user"""
 
-    def test_login_stores_refresh_token_in_redis(
-        self, integration_client, integration_user, integration_redis
-    ):
-        """Login should store the refresh token JTI in Redis"""
-        response = _login(integration_client)
+    def test_login_stores_a_session(self, integration_client, integration_user, integration_redis):
+        response = integration_client.post(
+            '/api/auth/login', json=LOGIN_PAYLOAD, headers={'User-Agent': 'curl/8.0'})
 
         assert response.status_code == 200
+        [(session_id, jti)] = _sessions(integration_redis, integration_user.id)
+        cookie = integration_client.get_cookie('__Secure-refresh_token', path='/api/auth').value
+        with integration_client.application.app_context():
+            claims = decode_token(cookie)
+        assert (session_id, jti) == (claims['sid'], claims['jti'])
+        [listed] = integration_redis.list_sessions(integration_user.id)
+        assert (listed['id'], listed['device']) == (session_id, 'curl')
 
-        cookies = response.headers.getlist('Set-Cookie')
-        refresh_cookie = next(
-            (c for c in cookies if '__Secure-refresh_token' in c), None)
-        assert refresh_cookie is not None
-
-        assert len(_jtis(integration_redis, integration_user.id)) == 1
-
-    def test_logout_revokes_token_in_redis(
-        self, integration_client, integration_user, integration_redis
-    ):
-        """Logout should remove the refresh token from Redis"""
+    def test_logout_ends_the_session(self, integration_client, integration_user, integration_redis):
         assert _login(integration_client).status_code == 200
-        assert len(_jtis(integration_redis, integration_user.id)) == 1
 
         integration_client.post('/api/auth/logout')
 
-        assert len(_jtis(integration_redis, integration_user.id)) == 0
+        assert _sessions(integration_redis, integration_user.id) == []
 
-    def test_logout_all_revokes_all_user_tokens(
-        self, integration_client, integration_user, integration_redis
-    ):
-        """Logout-all should remove every token for the user"""
-        # Simulate three separate devices
+    def test_logout_all_ends_every_session(self, integration_client, integration_user, integration_redis):
         for _ in range(3):
             _login(integration_client)
-
-        assert len(_jtis(integration_redis, integration_user.id)) == 3
+        assert len(_sessions(integration_redis, integration_user.id)) == 3
 
         integration_client.post('/api/auth/logout-all')
 
-        assert len(_jtis(integration_redis, integration_user.id)) == 0
+        assert _sessions(integration_redis, integration_user.id) == []
+
+    def test_one_session_ends_from_another_device(
+            self, integration_client, integration_user, integration_redis):
+        for _ in range(2):
+            _login(integration_client)
+        first, second = _ids(integration_redis, integration_user.id)
+
+        assert integration_redis.revoke_session(integration_user.id, first) is True
+        assert integration_redis.revoke_session(integration_user.id, first) is False
+        assert _ids(integration_redis, integration_user.id) == [second]
 
 
 class TestSessionBounds:
-    """A user's token set stays bounded however often they log in"""
+    """A user's sessions stay bounded however often they log in"""
 
     def test_logins_beyond_the_cap_evict_the_oldest_session(
         self, integration_client, integration_user, integration_redis
     ):
         _login(integration_client)
         _login(integration_client)
-        first_two = _jtis(integration_redis, integration_user.id)
+        first_two = _ids(integration_redis, integration_user.id)
 
         for _ in range(MAX_SESSIONS_PER_USER):
             _login(integration_client)
 
-        jtis = _jtis(integration_redis, integration_user.id)
-        assert len(jtis) == MAX_SESSIONS_PER_USER
-        assert not set(first_two) & set(jtis)
+        ids = _ids(integration_redis, integration_user.id)
+        assert len(ids) == MAX_SESSIONS_PER_USER
+        assert not set(first_two) & set(ids)
 
-    def test_expired_entries_are_pruned_on_the_next_login(
+    def test_expired_sessions_are_pruned_on_the_next_login(
         self, integration_client, integration_user, integration_redis
     ):
-        key = f'refresh_tokens:{integration_user.id}'
-        integration_redis.get_client().zadd(key, {'stale': time.time() - 1})
+        zset, details = _keys(integration_user.id)
+        integration_redis.get_client().zadd(zset, {'stale': time.time() - 1})
+        integration_redis.get_client().hset(details, 'stale', json.dumps({'jti': 'old'}))
 
         _login(integration_client)
 
-        assert 'stale' not in _jtis(integration_redis, integration_user.id)
+        assert 'stale' not in _ids(integration_redis, integration_user.id)
 
-    def test_key_expires_with_the_newest_token(
+    def test_keys_expire_with_the_newest_session(
         self, integration_client, integration_user, integration_redis
     ):
         _login(integration_client)
 
-        ttl = integration_redis.get_client().ttl(
-            f'refresh_tokens:{integration_user.id}')
-        # The script rounds the expiry up to a whole second
-        assert 6 * 24 * 3600 < ttl <= 7 * 24 * 3600 + 1
+        for key in _keys(integration_user.id):
+            # The script rounds the expiry up to a whole second
+            assert 6 * 24 * 3600 < integration_redis.get_client().ttl(key) <= 7 * 24 * 3600 + 1
 
-    def test_key_outlives_a_shorter_token_recorded_after_a_longer_one(
+    def test_keys_outlive_a_shorter_token_recorded_after_a_longer_one(
         self, integration_user, integration_redis
     ):
         """A session near its 30-day cap rotates to a token that expires
-        before another device's: the key must keep that device's session"""
+        before another device's: the keys must keep that device's session"""
         user_id = integration_user.id
-        integration_redis.store_refresh_token(user_id, 'fresh-device', 7 * 24 * 3600)
-        integration_redis.store_refresh_token(user_id, 'ending-session', 3600)
+        integration_redis.store_refresh_token(user_id, 'fresh-device', 'a', 7 * 24 * 3600, device='x')
+        integration_redis.store_refresh_token(user_id, 'ending-session', 'b', 3600, device='y')
 
-        integration_redis.rotate_refresh_token(user_id, 'ending-session', 'last-hour', 3600)
+        integration_redis.rotate_refresh_token(user_id, 'ending-session', 'b', 'last-hour', 3600)
 
-        ttl = integration_redis.get_client().ttl(f'refresh_tokens:{user_id}')
-        assert 7 * 24 * 3600 - 60 < ttl <= 7 * 24 * 3600 + 1
+        for key in _keys(user_id):
+            assert 7 * 24 * 3600 - 60 < integration_redis.get_client().ttl(key) <= 7 * 24 * 3600 + 1
 
     def test_logout_all_reports_live_sessions(
         self, integration_client, integration_user, integration_redis
@@ -131,21 +147,24 @@ class TestSessionBounds:
 
 
 class TestTokenRotation:
-    """Test refresh token rotation"""
+    """A refresh swaps the session's token, keeping the session"""
 
-    def test_refresh_revokes_old_token(
+    def test_refresh_replaces_the_session_s_token(
         self, integration_client, integration_user, integration_redis
     ):
-        """Refreshing should revoke the old token and issue exactly one new one"""
         assert _login(integration_client).status_code == 200
+        [(session_id, old_jti)] = _sessions(integration_redis, integration_user.id)
+        [before] = integration_redis.list_sessions(integration_user.id)
+        time.sleep(1.1)
 
-        [old_jti] = _jtis(integration_redis, integration_user.id)
+        assert integration_client.post('/api/auth/refresh').status_code == 200
 
-        refresh_response = integration_client.post('/api/auth/refresh')
-        assert refresh_response.status_code == 200
-
-        [new_jti] = _jtis(integration_redis, integration_user.id)
-        assert old_jti != new_jti
+        [(same_id, new_jti)] = _sessions(integration_redis, integration_user.id)
+        [after] = integration_redis.list_sessions(integration_user.id)
+        assert same_id == session_id
+        assert new_jti != old_jti
+        assert after['signed_in_at'] == before['signed_in_at']
+        assert after['last_active_at'] > before['last_active_at']
 
     def test_refresh_at_the_session_cap_keeps_other_sessions(
         self, integration_client, integration_user, integration_redis
@@ -153,15 +172,14 @@ class TestTokenRotation:
         """Rotation swaps one token for another; it must not evict a device"""
         for _ in range(MAX_SESSIONS_PER_USER):
             _login(integration_client)
-        before = _jtis(integration_redis, integration_user.id)
-        current = before[-1]  # the client's cookie holds the newest login
+        before = _sessions(integration_redis, integration_user.id)
 
         assert integration_client.post('/api/auth/refresh').status_code == 200
 
-        after = _jtis(integration_redis, integration_user.id)
-        assert len(after) == MAX_SESSIONS_PER_USER
-        assert current not in after
-        assert set(before) - {current} <= set(after)
+        after = _sessions(integration_redis, integration_user.id)
+        assert sorted(session_id for session_id, _ in after) == sorted(session_id for session_id, _ in before)
+        # Only the client's own session, the newest login, has a new token
+        assert len(set(after) - set(before)) == 1
 
 
 class TestRotationIsAtomic:
@@ -171,13 +189,13 @@ class TestRotationIsAtomic:
         self, integration_client, integration_user, integration_redis
     ):
         assert _login(integration_client).status_code == 200
-        [old] = _jtis(integration_redis, integration_user.id)
+        [(session_id, old)] = _sessions(integration_redis, integration_user.id)
 
-        first = integration_redis.rotate_refresh_token(integration_user.id, old, 'next-1', 60)
-        second = integration_redis.rotate_refresh_token(integration_user.id, old, 'next-2', 60)
+        first = integration_redis.rotate_refresh_token(integration_user.id, session_id, old, 'next-1', 60)
+        second = integration_redis.rotate_refresh_token(integration_user.id, session_id, old, 'next-2', 60)
 
         assert (first, second) == (True, False)
-        assert _jtis(integration_redis, integration_user.id) == ['next-1']
+        assert _sessions(integration_redis, integration_user.id) == [(session_id, 'next-1')]
 
     def test_concurrent_refreshes_yield_exactly_one_session(
         self, integration_app, integration_client, integration_user, integration_redis
@@ -202,7 +220,7 @@ class TestRotationIsAtomic:
             thread.join()
 
         assert sorted(statuses) == [200, 401]
-        assert len(_jtis(integration_redis, integration_user.id)) == 1
+        assert len(_sessions(integration_redis, integration_user.id)) == 1
 
 
 class TestBlocklistFailsClosed:
@@ -211,11 +229,10 @@ class TestBlocklistFailsClosed:
     def test_revoked_refresh_token_is_rejected(
         self, integration_client, integration_user, integration_redis
     ):
-        """A refresh token deleted from Redis must no longer be accepted"""
+        """A session deleted from Redis must no longer refresh"""
         assert _login(integration_client).status_code == 200
 
-        integration_redis.get_client().delete(
-            f'refresh_tokens:{integration_user.id}')
+        integration_redis.get_client().delete(*_keys(integration_user.id))
 
         response = integration_client.post('/api/auth/refresh')
         assert response.status_code == 401

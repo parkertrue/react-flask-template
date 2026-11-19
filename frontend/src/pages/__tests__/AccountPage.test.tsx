@@ -8,11 +8,11 @@ import ProtectedRoute from '@/auth/ProtectedRoute'
 import { storage } from '@/auth/storage'
 import {
   getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData, requestEmailChange,
-  changePassword,
+  changePassword, listSessions, endSession,
 } from '@/auth/authService'
 import { saveJsonFile, slugify } from '@/utils/download'
 import type { ErrorCode } from '@/api/errors'
-import { account, dataExport, errorBody, httpError, tokens } from '@/test/fixtures'
+import { account, dataExport, errorBody, httpError, sessions, tokens } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
 import { APP_NAME } from '@/appInfo'
 
@@ -66,6 +66,7 @@ describe('AccountPage', () => {
     vi.mocked(exportAccountData).mockResolvedValue(dataExport())
     vi.mocked(requestEmailChange).mockResolvedValue()
     vi.mocked(changePassword).mockResolvedValue(tokens('new-access', 'new-csrf'))
+    vi.mocked(listSessions).mockResolvedValue(sessions())
   })
 
   describe('changing the password', () => {
@@ -351,6 +352,16 @@ describe('AccountPage', () => {
     })
   })
 
+  it('lists the devices signed in, and moves focus to "Log out all devices" when the last other one goes', async () => {
+    vi.mocked(endSession).mockResolvedValue()
+    const { user } = renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Log out Firefox on Windows' }))
+
+    await waitFor(() => expect(logoutAll()).toHaveFocus())
+    expect(endSession).toHaveBeenCalledExactlyOnceWith('laptop')
+  })
+
   it('shows who is signed in, then loads when they joined', async () => {
     renderPage()
 
@@ -361,7 +372,7 @@ describe('AccountPage', () => {
 
     // Announced on the same live region that said it was loading
     await waitFor(() => expect(details()).toHaveTextContent(/^Member since /))
-    expect(screen.getByText(/2026/, { selector: 'time' }))
+    expect(within(details()).getByText(/2026/, { selector: 'time' }))
       .toHaveAttribute('dateTime', '2026-01-15T10:30:00+00:00')
     expect(getAccount).toHaveBeenCalledTimes(1)
   })

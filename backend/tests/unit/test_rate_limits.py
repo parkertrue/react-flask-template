@@ -426,9 +426,9 @@ class TestRefreshLimit:
             db.session.add(user)
             db.session.commit()
             token = create_refresh_token(
-                identity=str(user.id), additional_claims={'auth_time': int(time.time())})
+                identity=str(user.id), additional_claims={'auth_time': int(time.time()), 'sid': 'a-session'})
             app.extensions['redis_service'].store_refresh_token(
-                user.id, decode_token(token)['jti'], ttl_seconds=60)
+                user.id, 'a-session', decode_token(token)['jti'], ttl_seconds=60, device='A browser')
             return {
                 'Cookie': f'__Secure-refresh_token={token}',
                 'X-CSRF-REFRESH-TOKEN': get_csrf_token(token),

@@ -1,5 +1,7 @@
 import hashlib
+import json
 import time
+from typing import TypedDict
 
 import redis
 from redis.backoff import NoBackoff
@@ -93,8 +95,28 @@ MAX_SESSIONS_PER_USER = 10
 
 
 def _tokens_key(user_id: int) -> str:
-    """One sorted set per user: member = refresh-token JTI, score = expiry time"""
-    return f'refresh_tokens:{user_id}'
+    """One sorted set per user: member = session id, score = when it expires.
+
+    The braces are a hash tag: a clustered Redis keeps both of a user's keys
+    on one node, as the script below, which touches both, requires.
+    """
+    return f'refresh_tokens:{{{user_id}}}'
+
+
+def _sessions_key(user_id: int) -> str:
+    """One hash per user: field = session id, value = the session as JSON
+    (its current refresh token's JTI, its device, when it signed in and when
+    it was last active). Under the same prefix as the sorted set, so the app's
+    Redis user may touch it with no change to its ACL."""
+    return f'refresh_tokens:{{{user_id}}}:sessions'
+
+
+class Session(TypedDict):
+    """A live session, as the account page lists it"""
+    id: str
+    device: str
+    signed_in_at: int
+    last_active_at: int
 
 
 def _used_link_key(token: str) -> str:
@@ -103,28 +125,49 @@ def _used_link_key(token: str) -> str:
     return f'used_links:{hashlib.sha256(token.encode()).hexdigest()}'
 
 
-# Records a refresh token, in place of the one it replaces when rotating.
-# A script runs inside Redis with nothing else in between, so the check and
-# the swap are one step: of two requests rotating the same token at once,
-# only the first finds it, and the second is refused (returns 0) rather than
-# turning one session into two. Swapping in one step also matters at the
-# session cap: storing first would evict another device's session.
-#   KEYS[1]  the user's set     ARGV[1]  new JTI       ARGV[2]  its expiry time
-#   ARGV[3]  now                ARGV[4]  session cap
-#   ARGV[5]  JTI to replace, or '' for a new sign-in
+# Records a session's refresh token: a new session, or a rotation, which
+# replaces the session's current token. A script runs inside Redis with
+# nothing else in between, so the check and the swap are one step: of two
+# requests rotating the same token at once, only the first finds it current,
+# and the second is refused (returns 0) rather than turning one session into
+# two. Swapping in one step also matters at the session cap: storing first
+# would evict another device's session.
+#   KEYS[1]  the user's sorted set       KEYS[2]  the user's session hash
+#   ARGV[1]  session id                  ARGV[2]  new JTI
+#   ARGV[3]  its expiry time             ARGV[4]  now
+#   ARGV[5]  session cap                 ARGV[6]  JTI to replace, or '' for a new session
+#   ARGV[7]  a new session's device      ARGV[8]  when it signed in
 _RECORD_TOKEN = """
-if ARGV[5] ~= '' and redis.call('ZREM', KEYS[1], ARGV[5]) == 0 then
-  return 0
+local session
+if ARGV[6] ~= '' then
+  local raw = redis.call('HGET', KEYS[2], ARGV[1])
+  if not raw then return 0 end
+  session = cjson.decode(raw)
+  if session.jti ~= ARGV[6] then return 0 end
+else
+  session = {device = ARGV[7], signed_in_at = tonumber(ARGV[8])}
 end
-redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[3])
--- Keep the newest sessions; the lowest scores expire first
-redis.call('ZREMRANGEBYRANK', KEYS[1], 0, -(tonumber(ARGV[4]) + 1))
--- The key goes when its last token expires. That need not be the token
--- just recorded: one near its session's 30-day cap expires before another
--- device's fresh sign-in.
+session.jti = ARGV[2]
+session.last_active_at = math.floor(tonumber(ARGV[4]))
+redis.call('HSET', KEYS[2], ARGV[1], cjson.encode(session))
+redis.call('ZADD', KEYS[1], ARGV[3], ARGV[1])
+-- Drop the expired sessions, and the oldest past the cap (the lowest
+-- scores expire first), from both keys
+local gone = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[4])
+for _, id in ipairs(redis.call('ZRANGE', KEYS[1], 0, -(tonumber(ARGV[5]) + 1))) do
+  table.insert(gone, id)
+end
+for _, id in ipairs(gone) do
+  redis.call('ZREM', KEYS[1], id)
+  redis.call('HDEL', KEYS[2], id)
+end
+-- The keys go when their last session expires. That need not be the one
+-- just recorded: one near its 30-day cap expires before another device's
+-- fresh sign-in.
 local last = redis.call('ZRANGE', KEYS[1], -1, -1, 'WITHSCORES')
-redis.call('EXPIREAT', KEYS[1], math.ceil(tonumber(last[2])))
+local expires = math.ceil(tonumber(last[2]))
+redis.call('EXPIREAT', KEYS[1], expires)
+redis.call('EXPIREAT', KEYS[2], expires)
 return 1
 """
 
@@ -134,7 +177,8 @@ class _Skipped(redis.ConnectionError):
 
 
 class RedisService:
-    """Refresh-token allowlist in Redis.
+    """Refresh-token allowlist in Redis, by session: each sign-in is a session,
+    whose refresh token rotates on every refresh.
 
     Redis runs with noeviction because losing these keys logs users out, so
     anything else stored here must carry a TTL, or go once used, as the job
@@ -182,57 +226,87 @@ class RedisService:
             mark_redis_unreachable(current_app)
         current_app.logger.exception(message, *args)
 
-    def _record(self, user_id: int, jti: str, ttl_seconds: int, replaces: str) -> bool:
+    def _record(self, user_id: int, session_id: str, jti: str, ttl_seconds: int,
+                replaces: str = '', device: str = '') -> bool:
         self._check_reachable()
         now = time.time()
         recorded = self._record_token(
-            keys=[_tokens_key(user_id)],
-            args=[jti, now + ttl_seconds, now, MAX_SESSIONS_PER_USER, replaces])
+            keys=[_tokens_key(user_id), _sessions_key(user_id)],
+            args=[session_id, jti, now + ttl_seconds, now, MAX_SESSIONS_PER_USER, replaces,
+                  device, int(now)])
         return bool(recorded == 1)
 
-    def store_refresh_token(self, user_id: int, jti: str, ttl_seconds: int) -> bool | None:
-        """Record a new sign-in's refresh token; None if Redis failed"""
+    def store_refresh_token(self, user_id: int, session_id: str, jti: str, ttl_seconds: int,
+                            device: str) -> bool | None:
+        """Record a new sign-in: its session, and its first refresh token.
+        None if Redis failed."""
         try:
-            return self._record(user_id, jti, ttl_seconds, replaces='')
+            return self._record(user_id, session_id, jti, ttl_seconds, device=device)
         except redis.RedisError as error:
             self._failed(error, 'Could not record a refresh token for user %s', user_id)
             return None
 
-    def rotate_refresh_token(self, user_id: int, old_jti: str, new_jti: str,
+    def rotate_refresh_token(self, user_id: int, session_id: str, old_jti: str, new_jti: str,
                              ttl_seconds: int) -> bool | None:
-        """Swap a refresh token for its successor.
+        """Swap a session's refresh token for its successor, and mark the
+        session active now.
 
-        False if `old_jti` was no longer there (another request rotated it
-        first, or it was revoked), and None if Redis failed: the caller must
-        tell those apart, since only the first means the session is over.
+        False if `old_jti` was no longer the session's (another request rotated
+        it first, or the session ended), and None if Redis failed: the caller
+        must tell those apart, since only the first means the session is over.
         """
         try:
-            return self._record(user_id, new_jti, ttl_seconds, replaces=old_jti)
+            return self._record(user_id, session_id, new_jti, ttl_seconds, replaces=old_jti)
         except redis.RedisError as error:
             self._failed(error, 'Could not rotate a refresh token for user %s', user_id)
             return None
 
-    def is_token_valid(self, user_id: int, jti: str) -> bool | None:
-        """Whether the refresh token is live; None if Redis failed.
+    def is_token_valid(self, user_id: int, session_id: str, jti: str) -> bool | None:
+        """Whether the refresh token is its session's current one, and the
+        session is live; None if Redis failed.
 
         None is not False: the token may be fine, and calling it revoked would
         sign the user out over an outage.
         """
         try:
             self._check_reachable()
-            expires_at = self._client.zscore(_tokens_key(user_id), jti)
-            return expires_at is not None and expires_at > time.time()
+            pipe = self._client.pipeline()
+            pipe.zscore(_tokens_key(user_id), session_id)
+            pipe.hget(_sessions_key(user_id), session_id)
+            expires_at, raw = pipe.execute()
+            return (expires_at is not None and expires_at > time.time() and raw is not None
+                    and json.loads(raw).get('jti') == jti)
         except redis.RedisError as error:
             self._failed(error, 'Could not check a refresh token for user %s', user_id)
             return None
 
-    def revoke_token(self, user_id: int, jti: str) -> None:
-        """End one session. Logout is best effort, so a failure is only logged."""
+    def _end_session(self, user_id: int, session_id: str) -> bool:
+        """End one session; whether it was live"""
+        self._check_reachable()
+        pipe = self._client.pipeline()
+        pipe.zscore(_tokens_key(user_id), session_id)
+        pipe.zrem(_tokens_key(user_id), session_id)
+        pipe.hdel(_sessions_key(user_id), session_id)
+        expires_at, _, _ = pipe.execute()
+        return expires_at is not None and expires_at > time.time()
+
+    def revoke_token(self, user_id: int, session_id: str) -> None:
+        """End this device's session. Logout is best effort, so a failure is
+        only logged."""
         try:
-            self._check_reachable()
-            self._client.zrem(_tokens_key(user_id), jti)
+            self._end_session(user_id, session_id)
         except redis.RedisError as error:
             self._failed(error, 'Could not revoke a refresh token for user %s', user_id)
+
+    def revoke_session(self, user_id: int, session_id: str) -> bool | None:
+        """End one of the user's sessions, from another device: whether it was
+        live, or None if Redis failed, which the caller must not report as
+        done (the session is still valid)."""
+        try:
+            return self._end_session(user_id, session_id)
+        except redis.RedisError as error:
+            self._failed(error, 'Could not revoke a session of user %s', user_id)
+            return None
 
     def revoke_all_user_tokens(self, user_id: int) -> int | None:
         """Revoke every session the user has.
@@ -245,12 +319,35 @@ class RedisService:
             self._check_reachable()
             pipe = self._client.pipeline()
             pipe.zcount(key, time.time(), '+inf')
-            pipe.delete(key)
+            pipe.delete(key, _sessions_key(user_id))
             live, _ = pipe.execute()
             return int(live)
         except redis.RedisError as error:
             self._failed(error, 'Could not revoke the sessions of user %s', user_id)
             return None
+
+    def list_sessions(self, user_id: int) -> list[Session] | None:
+        """The user's live sessions, most recently active first; None if
+        Redis failed"""
+        try:
+            self._check_reachable()
+            pipe = self._client.pipeline()
+            pipe.zrangebyscore(_tokens_key(user_id), time.time(), '+inf')
+            pipe.hgetall(_sessions_key(user_id))
+            live, details = pipe.execute()
+        except redis.RedisError as error:
+            self._failed(error, 'Could not list the sessions of user %s', user_id)
+            return None
+        sessions: list[Session] = []
+        for session_id in live:
+            raw = details.get(session_id)
+            if raw is None:
+                continue
+            session = json.loads(raw)
+            sessions.append(Session(
+                id=session_id, device=session['device'], signed_in_at=session['signed_in_at'],
+                last_active_at=session['last_active_at']))
+        return sorted(sessions, key=lambda each: each['last_active_at'], reverse=True)
 
     def claim_link(self, token: str, ttl_seconds: int) -> bool | None:
         """Mark an emailed link used, for as long as it could still work.

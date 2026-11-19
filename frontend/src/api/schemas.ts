@@ -26,6 +26,8 @@ export interface ApiSchemas {
   RegisterCompleteRequest: RegisterCompleteRequest;
   RegisterCompleteResponse: RegisterCompleteResponse;
   RegisterRequest: RegisterRequest;
+  SessionResponse: SessionResponse;
+  SessionsResponse: SessionsResponse;
   TokensResponse: TokensResponse;
 }
 /**
@@ -173,6 +175,22 @@ export interface RegisterCompleteResponse {
  */
 export interface RegisterRequest {
   email: string;
+}
+/**
+ * One of the account's live sessions: a sign-in on some device
+ */
+export interface SessionResponse {
+  current: boolean;
+  device: string;
+  id: string;
+  last_active_at: string;
+  signed_in_at: string;
+}
+/**
+ * GET /api/account/sessions: the live sessions, most recently active first
+ */
+export interface SessionsResponse {
+  sessions: SessionResponse[];
 }
 /**
  * A login's or refresh's new access token, and the CSRF value of the

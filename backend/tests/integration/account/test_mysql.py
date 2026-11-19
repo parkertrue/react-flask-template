@@ -15,13 +15,14 @@ def test_deletes_the_row_and_the_sessions(
         integration_client.post('/api/auth/login', json={
             'email': integration_user.email, 'password': PASSWORD})
     client = integration_redis.get_client()
-    assert client.zcard(f'refresh_tokens:{user_id}') == 2
+    sessions, details = f'refresh_tokens:{{{user_id}}}', f'refresh_tokens:{{{user_id}}}:sessions'
+    assert (client.zcard(sessions), client.hlen(details)) == (2, 2)
 
     response = integration_client.post(
         '/api/account/delete', json={'password': PASSWORD},
         headers={'Authorization': f'Bearer {create_access_token(identity=str(user_id))}'})
 
     assert response.status_code == 200
-    assert client.exists(f'refresh_tokens:{user_id}') == 0
+    assert client.exists(sessions, details) == 0
     integration_db.session.expire_all()
     assert integration_db.session.scalar(select(func.count()).select_from(User)) == 0

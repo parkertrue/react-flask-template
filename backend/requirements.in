@@ -26,3 +26,5 @@ email-validator
 itsdangerous
 # The driver DATABASE_URL names (mysql+pymysql://), loaded by SQLAlchemy
 PyMySQL
+# Names a session's device from its User-Agent (app/utils/devices.py)
+ua-parser

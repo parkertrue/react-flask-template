@@ -4,10 +4,11 @@ import {
   clearAuthCookies, deleteAccount, getAccount, exportAccountData, REGISTRATION_LINK_HOURS,
   requestPasswordReset, completePasswordReset, PASSWORD_RESET_LINK_HOURS,
   requestEmailChange, completeEmailChange, undoEmailChange, EMAIL_CHANGE_LINK_HOURS, changePassword,
+  listSessions, endSession,
 } from '../authService'
 import { api } from '@/api/api'
 import { backendConstant } from '@/test/backend'
-import { account, dataExport, tokens } from '@/test/fixtures'
+import { account, dataExport, sessions, tokens } from '@/test/fixtures'
 
 vi.mock('@/api/api')
 
@@ -59,6 +60,7 @@ describe('authService', () => {
   it.each([
     ['getAccount', getAccount, '/account', account()],
     ['exportAccountData', exportAccountData, '/account/export', dataExport()],
+    ['listSessions', listSessions, '/account/sessions', sessions()],
   ])('%s gets the right endpoint and returns its body', async (_, call, path, body) => {
     vi.mocked(api.get).mockResolvedValue({ data: body })
 
@@ -106,6 +108,21 @@ describe('authService', () => {
     vi.mocked(api.post).mockResolvedValue({ data: { email: 'b@example.com' } })
 
     expect(await call('a-token')).toEqual({ email: 'b@example.com' })
+  })
+
+  it('endSession deletes that session, its id kept whole in the path', async () => {
+    vi.mocked(api.delete).mockResolvedValue({ data: {} })
+
+    await endSession('a/b?c')
+
+    expect(api.delete).toHaveBeenCalledExactlyOnceWith('/account/sessions/a%2Fb%3Fc')
+  })
+
+  it('endSession passes failures on to the caller untouched', async () => {
+    const error = new Error('Request failed')
+    vi.mocked(api.delete).mockRejectedValue(error)
+
+    await expect(endSession('laptop')).rejects.toBe(error)
   })
 
   // Its callers are already ending the session, with nothing left to try

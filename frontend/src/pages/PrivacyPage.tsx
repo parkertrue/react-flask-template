@@ -26,6 +26,7 @@ export default function PrivacyPage() {
         <li>Your account: your email address, a hash of your password (never the password itself) and when you registered.</li>
         <li>Which version of the terms you accepted, and when.</li>
         <li>What you save in the app. [List each kind of content your app stores.]</li>
+        <li>Your sessions: for each device signed in to your account, a name for it taken from its browser (such as &quot;Firefox on Windows&quot;) and when it signed in and was last active, so you can see them on your Account page and log any of them out. Each goes when its session ends.</li>
         <li>Security records: your IP address, browser, the pages and requests you make, and sign-in events such as failed logins, kept to protect your account and the service.</li>
         <li>In your browser: a sign-in cookie and a few values in local storage that keep you signed in. They are strictly necessary for the service you asked for, so we do not ask for consent to them, and we use no analytics or advertising cookies.</li>
       </ul>

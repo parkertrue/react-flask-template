@@ -698,10 +698,10 @@ def set_refresh_token(app, client, user, fake_redis, auth_time, expires_in):
     auth_time, expiring expires_in seconds from now; return its CSRF header."""
     with app.app_context():
         token = create_refresh_token(
-            identity=str(user.id), additional_claims={'auth_time': auth_time},
+            identity=str(user.id), additional_claims={'auth_time': auth_time, 'sid': 'a-session'},
             expires_delta=timedelta(seconds=expires_in))
         claims = decode_token(token, allow_expired=True)
-    fake_redis.store_refresh_token(user.id, claims['jti'], 60)
+    fake_redis.store_refresh_token(user.id, 'a-session', claims['jti'], 60, device='A browser')
     client.set_cookie('__Secure-refresh_token', token, path='/api/auth')
     return {'X-CSRF-REFRESH-TOKEN': claims['csrf']}
 
@@ -871,7 +871,7 @@ class TestRefreshEndpoint:
     def test_refresh_fails_closed_when_the_check_fails(
             self, client, sample_user, fake_redis, monkeypatch):
         csrf = login(client)
-        monkeypatch.setattr(fake_redis, 'is_token_valid', lambda user_id, jti: None)
+        monkeypatch.setattr(fake_redis, 'is_token_valid', lambda user_id, session_id, jti: None)
 
         response = client.post('/api/auth/refresh', headers=csrf)
 

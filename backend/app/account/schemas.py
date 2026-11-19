@@ -66,3 +66,19 @@ class PasswordChangeRequest(BaseModel):
     new_password: Password
 
     model_config = ConfigDict(extra='forbid')
+
+
+class SessionResponse(BaseModel):
+    """One of the account's live sessions: a sign-in on some device"""
+    id: str
+    # A name for the device, from its User-Agent (app/utils/devices.py)
+    device: str
+    signed_in_at: UtcDatetime
+    last_active_at: UtcDatetime
+    # The session of the request's own token
+    current: bool
+
+
+class SessionsResponse(BaseModel):
+    """GET /api/account/sessions: the live sessions, most recently active first"""
+    sessions: list[SessionResponse]

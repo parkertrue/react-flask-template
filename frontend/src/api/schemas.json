@@ -411,6 +411,51 @@
       "title": "RegisterRequest",
       "type": "object"
     },
+    "SessionResponse": {
+      "description": "One of the account's live sessions: a sign-in on some device",
+      "properties": {
+        "current": {
+          "type": "boolean"
+        },
+        "device": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last_active_at": {
+          "type": "string"
+        },
+        "signed_in_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "device",
+        "signed_in_at",
+        "last_active_at",
+        "current"
+      ],
+      "title": "SessionResponse",
+      "type": "object"
+    },
+    "SessionsResponse": {
+      "description": "GET /api/account/sessions: the live sessions, most recently active first",
+      "properties": {
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/SessionResponse"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "title": "SessionsResponse",
+      "type": "object"
+    },
     "TokensResponse": {
       "description": "A login's or refresh's new access token, and the CSRF value of the\nrefresh token set in the cookie (none when CSRF protection is off)",
       "properties": {

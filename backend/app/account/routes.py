@@ -1,10 +1,11 @@
 import hmac
+import re
 from datetime import datetime, timezone
 from typing import Any, cast
 
-from flask import Blueprint, Response, current_app, jsonify, make_response, request
+from flask import Blueprint, Response, abort, current_app, jsonify, make_response, request
 from flask.typing import ResponseReturnValue
-from flask_jwt_extended import current_user, jwt_required, unset_refresh_cookies
+from flask_jwt_extended import current_user, get_jwt, jwt_required, unset_refresh_cookies
 from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -14,7 +15,7 @@ from app.account.emails import (
     change_state, send_email_change_email, send_email_changed_email, state_account, undo_state)
 from app.account.schemas import (
     AccountDeleteRequest, AccountExport, AccountResponse, DataExportResponse, EmailChangeRequest,
-    EmailChangedResponse, EmailLinkRequest, PasswordChangeRequest,
+    EmailChangedResponse, EmailLinkRequest, PasswordChangeRequest, SessionResponse, SessionsResponse,
 )
 from app.auth.models import User
 from app.auth.emails import PASSWORD_CHANGE
@@ -311,3 +312,51 @@ def change_password() -> ResponseReturnValue:
     # A fresh login: the password was just typed. Should Redis fail here,
     # the answer is a 503 and this device logs in again, with the new one.
     return issue_tokens(user_id, auth_time=int(datetime.now(timezone.utc).timestamp()))
+
+
+# What a session id can look like (secrets.token_urlsafe in auth/routes.py):
+# anything else names no session
+_SESSION_ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
+
+
+def _utc(timestamp: int) -> datetime:
+    return datetime.fromtimestamp(timestamp, timezone.utc)
+
+
+@account_bp.route('/sessions', methods=['GET'])
+@jwt_required()
+def list_sessions() -> ResponseReturnValue:
+    """The account's live sessions, so the user can see where it is signed
+    in and end any of them (ASVS 7.5.2). Each is named by its device and
+    dated; the one this request's token belongs to is marked current."""
+    redis_service = get_redis_service()
+    sessions = redis_service.list_sessions(current_user.id) if redis_service else None
+    if sessions is None:
+        return service_unavailable()
+    current = get_jwt().get('sid')
+    body = SessionsResponse(sessions=[
+        SessionResponse(
+            id=session['id'], device=session['device'],
+            signed_in_at=_utc(session['signed_in_at']),
+            last_active_at=_utc(session['last_active_at']),
+            current=session['id'] == current)
+        for session in sessions])
+    return jsonify(body.model_dump()), 200
+
+
+@account_bp.route('/sessions/<session_id>', methods=['DELETE'])
+@jwt_required()
+def revoke_session(session_id: str) -> ResponseReturnValue:
+    """End one of the account's sessions: that device must log in again
+    once its access token expires, within 15 minutes (DECISIONS.md). A
+    session another account has, or none has, is a 404 alike."""
+    if not _SESSION_ID.fullmatch(session_id):
+        abort(404)
+    redis_service = get_redis_service()
+    ended = redis_service.revoke_session(current_user.id, session_id) if redis_service else None
+    if ended is None:
+        return service_unavailable('Could not log out that device, please try again shortly')
+    if not ended:
+        abort(404)
+    security_event('session_revoked', user_id=current_user.id)
+    return jsonify(MessageResponse(message='Logged out').model_dump()), 200

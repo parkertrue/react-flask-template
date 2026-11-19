@@ -152,8 +152,9 @@ def create_app() -> Flask:
             return False
 
         jti = jwt_payload.get('jti')
+        session_id = jwt_payload.get('sid')
         user_id = jwt_payload.get('sub')
-        if not jti or not user_id:
+        if not jti or not isinstance(session_id, str) or not user_id:
             return True
         try:
             user_id_int = int(user_id)
@@ -165,10 +166,11 @@ def create_app() -> Flask:
         # logged out of. Refuse it as a 503, not a revocation: the client
         # keeps its session and tries again once Redis is back.
         redis_service = get_redis_service()
-        is_valid = redis_service.is_token_valid(user_id_int, jti) if redis_service else None
+        is_valid = (redis_service.is_token_valid(user_id_int, session_id, jti)
+                    if redis_service else None)
         if is_valid is None:
             raise TokenStoreUnavailable()
-        # Not in the allowlist: logged out, rotated, or expired
+        # Not its session's current token: logged out, rotated, or expired
         return not is_valid
 
     # Registered by a call, not as a decorator, so csrf_refused below calls
