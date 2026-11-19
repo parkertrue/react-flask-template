@@ -69,15 +69,15 @@ packaging==26.3
     # via limits
 pycparser==3.0
     # via cffi
-pydantic==2.14.2
+pydantic==2.14.3
     # via -r requirements.in
-pydantic-core==2.50.2
+pydantic-core==2.50.4
     # via pydantic
 pyjwt==2.15.1
     # via
     #   -r requirements.in
     #   flask-jwt-extended
-pymysql==1.2.3
+pymysql==1.2.4
     # via -r requirements.in
 redis==8.1.0
     # via -r requirements.in
