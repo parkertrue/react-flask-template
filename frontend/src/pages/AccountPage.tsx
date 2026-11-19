@@ -1,4 +1,4 @@
-import { useEffect, useState, type SubmitEvent } from 'react'
+import { useEffect, useRef, useState, type SubmitEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/auth/useAuth'
@@ -20,6 +20,7 @@ import {
 } from '@/utils/validation'
 import { APP_NAME } from '@/appInfo'
 import type { LoginState } from './LoginPage'
+import SessionList from './SessionList'
 
 // The export's file name starts with the app's name
 const EXPORT_FILE_PREFIX = slugify(APP_NAME)
@@ -31,6 +32,7 @@ export default function AccountPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [askingLogoutAll, setAskingLogoutAll] = useState(false)
+  const logoutAllButton = useRef<HTMLButtonElement>(null)
   // Refetched when the window regains focus: an email change completes in
   // the tab its link opens, or on another device (DECISIONS.md, caching)
   const { data: account, error: accountError } = useQuery({
@@ -364,10 +366,13 @@ export default function AccountPage() {
 
       <section aria-labelledby="sessions-heading">
         <h2 id="sessions-heading">Sessions</h2>
-        <p>Log out everywhere this account is signed in, including this browser.</p>
+        <p>Where this account is signed in. Log out a device you don't recognise, then change your password.</p>
+        <SessionList fallbackFocus={() => logoutAllButton.current?.focus()} />
+        <p>Or log out everywhere this account is signed in, including this browser.</p>
         {error && <div className="error-message" role="alert">{error}</div>}
         <button
           type="button"
+          ref={logoutAllButton}
           onClick={askToLogoutAll}
           aria-disabled={submitting}
           className="btn btn-danger"

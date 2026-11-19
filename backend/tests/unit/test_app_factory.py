@@ -110,7 +110,7 @@ class TestRedisReconnect:
             user.set_password('TestPassword123')
             app_module.db.session.add(user)
             app_module.db.session.commit()
-            token = create_refresh_token(identity=str(user.id))
+            token = create_refresh_token(identity=str(user.id), additional_claims={'sid': 'a-session'})
             csrf = decode_token(token)['csrf']
         client = app.test_client()
         client.set_cookie('__Secure-refresh_token', token, path='/api/auth')

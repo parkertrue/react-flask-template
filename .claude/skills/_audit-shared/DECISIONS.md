@@ -736,9 +736,6 @@ findings.
 
 - **Account security beyond the basics:** no multi-factor login (ASVS 5.0
   chapter 6, Authentication).
-  No list of active sessions either (ASVS 7.5.2): a user can end every
-  session with "Log out all devices" but cannot see them. It belongs on
-  `AccountPage`.
 - **Certificate renewal waits for a real deployment.** The Let's
   Encrypt steps still edit the tracked `docker-compose.yml` and the shared
   nginx template (which breaks CI and the test stack if followed, and leaves

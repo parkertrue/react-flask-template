@@ -5,3 +5,27 @@
 .account-email {
   overflow-wrap: anywhere;
 }
+
+/* One row per signed-in device: its name and times, and its button, which
+   wraps under them on a narrow screen */
+.session-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0;
+}
+
+.session-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.session-times {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}

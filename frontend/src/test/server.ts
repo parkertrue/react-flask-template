@@ -1,13 +1,14 @@
 import { afterAll, afterEach, beforeAll } from 'vitest'
 import { http, HttpResponse, type RequestHandler } from 'msw'
 import { setupServer } from 'msw/node'
-import { account, tokens } from './fixtures'
+import { account, sessions, tokens } from './fixtures'
 
 // The happy path of every shared endpoint; a feature keeps its own handlers
 // beside its tests. A test overrides the ones it cares about with
 // server.use(); resetHandlers() drops the overrides.
 export const handlers = [
   http.get('/api/account', () => HttpResponse.json(account())),
+  http.get('/api/account/sessions', () => HttpResponse.json(sessions())),
   http.post('/api/auth/register', () =>
     HttpResponse.json({ message: 'Check your inbox' }, { status: 202 })),
   http.post('/api/auth/register/complete', () => HttpResponse.json(tokens())),

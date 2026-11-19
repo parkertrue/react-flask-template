@@ -135,10 +135,10 @@ class TestSend:
                             lambda message, *, delay=None: enqueued.append(message))
         with patch('app.utils.redis_service.redis.Redis'):
             service = RedisService('redis://app:secret@redis:6379/0', max_connections=5)
-        service.get_client().zscore.side_effect = RedisConnectionError('Connection refused')
+        service.get_client().pipeline.side_effect = RedisConnectionError('Connection refused')
 
         with app.app_context():
-            assert service.is_token_valid(1, 'jti') is None
+            assert service.is_token_valid(1, 'a-session', 'jti') is None
             with pytest.raises(JobQueueUnavailable):
                 declared.send(7, 'a label')
 

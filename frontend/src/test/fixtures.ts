@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders } from 'axios'
 import { ERROR_CODES, type ErrorBody, type ErrorCode } from '@/api/errors'
-import type { Account, DataExport, Tokens } from '@/auth/authService'
+import type { Account, DataExport, Sessions, Tokens } from '@/auth/authService'
 
 // API responses as the backend sends them. Build fakes from these rather
 // than by hand, so a mocked response cannot drift from the real one.
@@ -31,6 +31,23 @@ export function httpError(status: number, data: unknown = {}) {
 /** The body of GET /api/account */
 export function account(email = 'user@example.com', created_at = '2026-01-15T10:30:00+00:00'): Account {
   return { email, created_at }
+}
+
+/** The body of GET /api/account/sessions: this browser's session, and
+ * another device's that was active since */
+export function sessions(): Sessions {
+  return {
+    sessions: [
+      {
+        id: 'laptop', device: 'Firefox on Windows', current: false,
+        signed_in_at: '2026-01-10T09:00:00+00:00', last_active_at: '2026-01-15T11:00:00+00:00',
+      },
+      {
+        id: 'this-browser', device: 'Edge on macOS', current: true,
+        signed_in_at: '2026-01-15T10:30:00+00:00', last_active_at: '2026-01-15T10:30:00+00:00',
+      },
+    ],
+  }
 }
 
 /** The body of GET /api/account/export, with one feature's rows */

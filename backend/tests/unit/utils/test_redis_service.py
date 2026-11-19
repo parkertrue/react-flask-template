@@ -1,4 +1,5 @@
 import hashlib
+import json
 import time
 
 import pytest
@@ -96,87 +97,109 @@ class TestTokenManagement:
     # tests/integration/test_redis_auth.py; these cover how its answers and
     # failures reach the caller.
 
-    def test_store_refresh_token_records_a_new_sign_in(self, service):
+    KEYS = ['refresh_tokens:{1}', 'refresh_tokens:{1}:sessions']
+
+    def test_store_refresh_token_records_a_new_session(self, service):
         service._record_token.return_value = 1
 
-        assert service.store_refresh_token(1, 'test-jti', ttl_seconds=3600) is True
+        assert service.store_refresh_token(1, 'a-session', 'test-jti', ttl_seconds=3600,
+                                           device='Firefox on Windows') is True
         call = service._record_token.call_args.kwargs
-        assert call['keys'] == ['refresh_tokens:1']
-        jti, expires_at, now, _, replaces = call['args']
-        assert (jti, round(expires_at - now), replaces) == ('test-jti', 3600, '')
+        assert call['keys'] == self.KEYS
+        session_id, jti, expires_at, now, cap, replaces, device, signed_in_at = call['args']
+        assert (session_id, jti, round(expires_at - now), cap, replaces, device) == (
+            'a-session', 'test-jti', 3600, redis_service.MAX_SESSIONS_PER_USER, '', 'Firefox on Windows')
+        assert signed_in_at == int(now)
 
     def test_store_refresh_token_error(self, service, caplog):
         """Should return None on Redis errors"""
         service._record_token.side_effect = redis.RedisError('Write failed')
 
-        assert service.store_refresh_token(1, 'jti', 60) is None
+        assert service.store_refresh_token(1, 'a-session', 'jti', 60, device='x') is None
         assert 'Could not record a refresh token for user 1' in caplog.text
         assert 'Write failed' in caplog.text
 
-    def test_rotate_refresh_token_replaces_the_old_jti(self, service):
+    def test_rotate_refresh_token_replaces_the_session_s_jti(self, service):
         service._record_token.return_value = 1
 
-        assert service.rotate_refresh_token(1, 'old-jti', 'new-jti', ttl_seconds=60) is True
-        jti, _, _, _, replaces = service._record_token.call_args.kwargs['args']
-        assert (jti, replaces) == ('new-jti', 'old-jti')
+        assert service.rotate_refresh_token(1, 'a-session', 'old-jti', 'new-jti', ttl_seconds=60) is True
+        session_id, jti, _, _, _, replaces, _, _ = service._record_token.call_args.kwargs['args']
+        assert (session_id, jti, replaces) == ('a-session', 'new-jti', 'old-jti')
 
     def test_rotate_refresh_token_refuses_a_token_already_rotated(self, service):
-        """The script answers 0 when the old JTI was no longer there"""
+        """The script answers 0 when the old JTI was no longer the session's"""
         service._record_token.return_value = 0
 
-        assert service.rotate_refresh_token(1, 'old-jti', 'new-jti', 60) is False
+        assert service.rotate_refresh_token(1, 'a-session', 'old-jti', 'new-jti', 60) is False
 
     def test_rotate_refresh_token_error_is_not_a_refusal(self, service, caplog):
         """None, not False: the session is fine, Redis is not"""
         service._record_token.side_effect = redis.RedisError('Write failed')
 
-        assert service.rotate_refresh_token(1, 'old-jti', 'new-jti', 60) is None
+        assert service.rotate_refresh_token(1, 'a-session', 'old-jti', 'new-jti', 60) is None
         assert 'Could not rotate a refresh token for user 1' in caplog.text
 
-    def test_is_token_valid_when_unexpired(self, service):
-        service._client.zscore.return_value = time.time() + 60
+    @staticmethod
+    def answer(service, expires_at, session):
+        """What Redis answers for a session: its expiry, and its details"""
+        pipe = service._client.pipeline.return_value
+        pipe.execute.return_value = [expires_at, None if session is None else json.dumps(session)]
+        return pipe
 
-        assert service.is_token_valid(1, 'test-jti') is True
-        service._client.zscore.assert_called_once_with('refresh_tokens:1', 'test-jti')
+    def test_is_token_valid_for_the_session_s_current_token(self, service):
+        pipe = self.answer(service, time.time() + 60, {'jti': 'test-jti'})
 
-    def test_is_token_valid_when_expired(self, service):
-        """An entry not yet pruned must still be rejected once past its expiry"""
-        service._client.zscore.return_value = time.time() - 1
+        assert service.is_token_valid(1, 'a-session', 'test-jti') is True
+        pipe.zscore.assert_called_once_with(self.KEYS[0], 'a-session')
+        pipe.hget.assert_called_once_with(self.KEYS[1], 'a-session')
 
-        assert service.is_token_valid(1, 'test-jti') is False
+    @pytest.mark.parametrize(('expires_in', 'session'), [
+        (-1, {'jti': 'test-jti'}),
+        (None, {'jti': 'test-jti'}),
+        (60, {'jti': 'a-later-jti'}),
+        (60, None),
+    ], ids=['expired, not yet pruned', 'no such session', 'an older token', 'no details'])
+    def test_is_token_valid_refuses(self, service, expires_in, session):
+        self.answer(service, None if expires_in is None else time.time() + expires_in, session)
 
-    def test_is_token_valid_not_exists(self, service):
-        service._client.zscore.return_value = None
-
-        assert service.is_token_valid(1, 'test-jti') is False
+        assert service.is_token_valid(1, 'a-session', 'test-jti') is False
 
     def test_is_token_valid_error_is_not_a_revocation(self, service, caplog):
         """None, not False: the caller must not sign the user out over an outage"""
-        service._client.zscore.side_effect = redis.RedisError('Read failed')
+        service._client.pipeline.return_value.execute.side_effect = redis.RedisError('Read failed')
 
-        assert service.is_token_valid(1, 'jti') is None
+        assert service.is_token_valid(1, 'a-session', 'jti') is None
         assert 'Read failed' in caplog.text
 
-    def test_revoke_token_removes_it(self, service):
-        service._client.zrem.return_value = 1
+    @pytest.mark.parametrize(('expires_in', 'live'), [(60, True), (-1, False), (None, False)],
+                             ids=['live', 'expired', 'none'])
+    def test_revoke_session_removes_it_from_both_keys(self, service, expires_in, live):
+        pipe = service._client.pipeline.return_value
+        pipe.execute.return_value = [None if expires_in is None else time.time() + expires_in, 1, 1]
 
-        service.revoke_token(1, 'test-jti')
+        assert service.revoke_session(1, 'a-session') is live
+        pipe.zrem.assert_called_once_with(self.KEYS[0], 'a-session')
+        pipe.hdel.assert_called_once_with(self.KEYS[1], 'a-session')
 
-        service._client.zrem.assert_called_once_with('refresh_tokens:1', 'test-jti')
+    def test_revoke_session_error_is_not_done(self, service, caplog):
+        service._client.pipeline.return_value.execute.side_effect = redis.RedisError('Delete failed')
+
+        assert service.revoke_session(1, 'a-session') is None
+        assert 'Could not revoke a session of user 1' in caplog.text
 
     def test_revoke_token_error_is_logged_not_raised(self, service, caplog):
-        service._client.zrem.side_effect = redis.RedisError('Delete failed')
+        service._client.pipeline.return_value.execute.side_effect = redis.RedisError('Delete failed')
 
-        service.revoke_token(1, 'jti')
+        service.revoke_token(1, 'a-session')
 
         assert 'Delete failed' in caplog.text
 
     def test_revoke_all_user_tokens_returns_live_count(self, service):
         pipe = service._client.pipeline.return_value
-        pipe.execute.return_value = [3, 1]
+        pipe.execute.return_value = [3, 2]
 
         assert service.revoke_all_user_tokens(1) == 3
-        pipe.delete.assert_called_once_with('refresh_tokens:1')
+        pipe.delete.assert_called_once_with(*self.KEYS)
 
     def test_revoke_all_user_tokens_error(self, service, caplog):
         service._client.pipeline.return_value.execute.side_effect = (
@@ -184,6 +207,30 @@ class TestTokenManagement:
 
         assert service.revoke_all_user_tokens(1) is None
         assert 'Could not revoke the sessions of user 1' in caplog.text
+
+    def test_list_sessions_live_ones_most_recently_active_first(self, service):
+        pipe = service._client.pipeline.return_value
+        details = {
+            'older': {'jti': 'j1', 'device': 'Firefox on Windows', 'signed_in_at': 100, 'last_active_at': 200},
+            'newer': {'jti': 'j2', 'device': 'Safari on iOS', 'signed_in_at': 150, 'last_active_at': 300},
+            'expired': {'jti': 'j3', 'device': 'Chrome on Linux', 'signed_in_at': 1, 'last_active_at': 2},
+        }
+        # Live per the sorted set; 'gone' has no details (a race with an end)
+        pipe.execute.return_value = [['older', 'newer', 'gone'],
+                                     {key: json.dumps(value) for key, value in details.items()}]
+
+        assert service.list_sessions(1) == [
+            {'id': 'newer', 'device': 'Safari on iOS', 'signed_in_at': 150, 'last_active_at': 300},
+            {'id': 'older', 'device': 'Firefox on Windows', 'signed_in_at': 100, 'last_active_at': 200},
+        ]
+        assert pipe.zrangebyscore.call_args.args[0] == self.KEYS[0]
+        pipe.hgetall.assert_called_once_with(self.KEYS[1])
+
+    def test_list_sessions_error(self, service, caplog):
+        service._client.pipeline.return_value.execute.side_effect = redis.RedisError('Read failed')
+
+        assert service.list_sessions(1) is None
+        assert 'Could not list the sessions of user 1' in caplog.text
 
 
 class TestUsedLinks:
@@ -248,11 +295,13 @@ class TestSkipRedisAfterConnectionFailure:
 
     # Every public method, with what it returns on a failure
     CALLS = {
-        'is_token_valid': (lambda s: s.is_token_valid(1, 'jti'), None),
-        'revoke_token': (lambda s: s.revoke_token(1, 'jti'), None),
+        'is_token_valid': (lambda s: s.is_token_valid(1, 'sid', 'jti'), None),
+        'revoke_token': (lambda s: s.revoke_token(1, 'sid'), None),
+        'revoke_session': (lambda s: s.revoke_session(1, 'sid'), None),
         'revoke_all_user_tokens': (lambda s: s.revoke_all_user_tokens(1), None),
-        'store_refresh_token': (lambda s: s.store_refresh_token(1, 'jti', 60), None),
-        'rotate_refresh_token': (lambda s: s.rotate_refresh_token(1, 'a', 'b', 60), None),
+        'list_sessions': (lambda s: s.list_sessions(1), None),
+        'store_refresh_token': (lambda s: s.store_refresh_token(1, 'sid', 'jti', 60, device='x'), None),
+        'rotate_refresh_token': (lambda s: s.rotate_refresh_token(1, 'sid', 'a', 'b', 60), None),
         'claim_link': (lambda s: s.claim_link('token', 60), None),
         'release_link': (lambda s: s.release_link('token'), None),
     }
@@ -276,7 +325,7 @@ class TestSkipRedisAfterConnectionFailure:
     @pytest.mark.parametrize('error', [redis.ConnectionError, redis.TimeoutError])
     def test_skips_redis_after_it_proves_unreachable(self, service, call, failed, error):
         self.break_connection(service, error('down'))
-        service.is_token_valid(1, 'jti')
+        service.is_token_valid(1, 'sid', 'jti')
         calls_so_far = self.redis_calls(service)
 
         assert call(service) == failed
@@ -284,29 +333,31 @@ class TestSkipRedisAfterConnectionFailure:
 
     def test_tries_again_after_the_interval(self, service, clock):
         self.break_connection(service, redis.ConnectionError('down'))
-        service.is_token_valid(1, 'jti')
-        service._client.zscore.side_effect = None
-        service._client.zscore.return_value = None
+        service.is_token_valid(1, 'sid', 'jti')
+        execute = service._client.pipeline.return_value.execute
+        execute.side_effect = None
+        execute.return_value = [None, None]
 
         clock[0] += redis_service.RECONNECT_INTERVAL_SECONDS
 
-        assert service.is_token_valid(1, 'jti') is False
-        assert service._client.zscore.call_count == 2
+        assert service.is_token_valid(1, 'sid', 'jti') is False
+        assert execute.call_count == 2
 
     def test_other_errors_do_not_pause_redis(self, service):
         """A full Redis or a NOPERM answers fast; only unreachable means wait"""
-        service._client.zscore.side_effect = redis.ResponseError('OOM')
-        service.is_token_valid(1, 'jti')
+        execute = service._client.pipeline.return_value.execute
+        execute.side_effect = redis.ResponseError('OOM')
+        service.is_token_valid(1, 'sid', 'jti')
 
-        service.is_token_valid(1, 'jti')
+        service.is_token_valid(1, 'sid', 'jti')
 
-        assert service._client.zscore.call_count == 2
+        assert execute.call_count == 2
 
     def test_logs_the_failure_once_per_outage(self, service, caplog):
         self.break_connection(service, redis.ConnectionError('down'))
 
         for _ in range(3):
-            service.is_token_valid(1, 'jti')
+            service.is_token_valid(1, 'sid', 'jti')
 
         assert caplog.text.count('Could not check a refresh token') == 1
 

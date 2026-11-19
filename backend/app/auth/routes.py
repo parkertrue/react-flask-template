@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from collections.abc import Callable
@@ -38,6 +39,7 @@ from app.auth.schemas import (
     RegisterCompleteResponse, RegisterRequest, TokensResponse, is_guessable,
     is_normalized_email, normalize_email)
 from app.utils.breached import is_breached
+from app.utils.devices import device_name
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.jobs import JobQueueUnavailable, job
 from app.utils.links import LinkClaims, LinkExpired, LinkInvalid, read_link_token
@@ -150,7 +152,7 @@ def _refresh_user_id() -> str | None:
     return user_id
 
 
-def issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
+def issue_tokens(user_id: int, auth_time: int, rotating: tuple[str, str] | None = None,
                   email: str | None = None) -> ResponseReturnValue:
     """Build a 200 response carrying a fresh access token and refresh cookie.
 
@@ -161,9 +163,14 @@ def issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
     cookie) has an absolute lifetime. Once either passes, the cookie is
     expired and refresh answers 401.
 
-    The new refresh token's JTI is recorded in Redis, in place of the JTI in
-    `replaces` when rotating; the blocklist loader treats any refresh token
-    whose JTI is absent there as revoked.
+    Each sign-in starts a session, named by a random id (`sid`) that every
+    rotation carries on, and that the access token carries too, so the
+    account page can tell this device's session from the others. The new
+    refresh token's JTI is recorded in Redis as its session's current one;
+    `rotating`, when refreshing, is the session's id and the JTI it replaces.
+    The blocklist loader treats any refresh token that is not its session's
+    current one as revoked. A new session is named by its device
+    (app/utils/devices.py).
 
     `email`, given by sign-up, is answered beside the tokens, so the page
     signs in under the account's address.
@@ -172,10 +179,11 @@ def issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
     session_ends = (datetime.fromtimestamp(auth_time, timezone.utc)
                     + current_app.config['JWT_REFRESH_TOKEN_EXPIRES'])
     lifetime = min(current_app.config['SESSION_IDLE_TIMEOUT'], session_ends - now)
-    access_token = create_access_token(identity=str(user_id))
+    session_id = rotating[0] if rotating else secrets.token_urlsafe(16)
+    access_token = create_access_token(identity=str(user_id), additional_claims={'sid': session_id})
     refresh_token = create_refresh_token(
         identity=str(user_id),
-        additional_claims={'auth_time': auth_time},
+        additional_claims={'auth_time': auth_time, 'sid': session_id},
         expires_delta=lifetime)
 
     redis_service = get_redis_service()
@@ -183,10 +191,13 @@ def issue_tokens(user_id: int, auth_time: int, replaces: str | None = None,
     ttl = max(int(lifetime.total_seconds()), 1)
     if redis_service is None:
         recorded = None
-    elif replaces:
-        recorded = redis_service.rotate_refresh_token(user_id, replaces, jti, ttl_seconds=ttl)
+    elif rotating:
+        recorded = redis_service.rotate_refresh_token(
+            user_id, session_id, rotating[1], jti, ttl_seconds=ttl)
     else:
-        recorded = redis_service.store_refresh_token(user_id, jti, ttl_seconds=ttl)
+        recorded = redis_service.store_refresh_token(
+            user_id, session_id, jti, ttl_seconds=ttl,
+            device=device_name(request.headers.get('User-Agent')))
 
     if recorded is False:
         # Another request rotated this token between the blocklist check and
@@ -485,19 +496,20 @@ def login() -> ResponseReturnValue:
 def refresh() -> ResponseReturnValue:
     """Rotate: issue a new token pair and revoke the refresh token just used"""
     claims = get_jwt()
-    return issue_tokens(current_user.id, auth_time=claims['auth_time'], replaces=claims['jti'])
+    return issue_tokens(current_user.id, auth_time=claims['auth_time'],
+                        rotating=(claims['sid'], claims['jti']))
 
 
 @auth_bp.route('/logout', methods=['POST'])
 @jwt_required(refresh=True, locations=['cookies'])
 def logout() -> ResponseReturnValue:
     user_id = current_user.id
-    # The blocklist loader already refused a refresh token without a jti
-    jti = get_jwt()['jti']
+    # The blocklist loader already refused a refresh token without a session
+    session_id = get_jwt()['sid']
 
     redis_service = get_redis_service()
     if redis_service:
-        redis_service.revoke_token(user_id, jti)
+        redis_service.revoke_token(user_id, session_id)
     security_event('logout', user_id=user_id)
 
     response = make_response(jsonify(MessageResponse(message='Logged out').model_dump()), 200)

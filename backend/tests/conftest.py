@@ -1,4 +1,5 @@
 import os
+import time
 import pytest
 import sqlite3
 from datetime import timedelta
@@ -87,13 +88,23 @@ def client(app, db):
 
 
 class FakeRedisService:
-    """In-memory stand-in for RedisService's refresh-token and used-link
-    methods."""
+    """In-memory stand-in for RedisService's session and used-link methods.
 
-    def __init__(self):
-        self.tokens = set()  # {(user_id, jti)}
+    `sessions` holds what Redis would: each session's current JTI, device and
+    times. `tokens` is the live (user id, JTI) pairs, for tests that only
+    count sessions or check which token is current.
+    """
+
+    def __init__(self, clock=time.time):
+        self.clock = clock
+        # Keyed by (user id, session id): the JTI, device and times of each
+        self.sessions = {}
         self.ttls = {}  # {jti: the ttl_seconds it was recorded with}
         self.used_links = {}  # {token: the ttl_seconds it was claimed for}
+
+    @property
+    def tokens(self):
+        return {(user_id, session['jti']) for (user_id, _), session in self.sessions.items()}
 
     def claim_link(self, token, ttl_seconds):
         if token in self.used_links:
@@ -104,29 +115,43 @@ class FakeRedisService:
     def release_link(self, token):
         self.used_links.pop(token, None)
 
-    def store_refresh_token(self, user_id, jti, ttl_seconds):
-        self.tokens.add((user_id, jti))
+    def store_refresh_token(self, user_id, session_id, jti, ttl_seconds, device):
+        now = int(self.clock())
+        self.sessions[(user_id, session_id)] = {
+            'jti': jti, 'device': device, 'signed_in_at': now, 'last_active_at': now}
         self.ttls[jti] = ttl_seconds
         return True
 
-    def rotate_refresh_token(self, user_id, old_jti, new_jti, ttl_seconds):
-        if (user_id, old_jti) not in self.tokens:
+    def rotate_refresh_token(self, user_id, session_id, old_jti, new_jti, ttl_seconds):
+        session = self.sessions.get((user_id, session_id))
+        if session is None or session['jti'] != old_jti:
             return False
-        self.tokens.discard((user_id, old_jti))
-        self.tokens.add((user_id, new_jti))
+        session['jti'] = new_jti
+        session['last_active_at'] = int(self.clock())
         self.ttls[new_jti] = ttl_seconds
         return True
 
-    def is_token_valid(self, user_id, jti):
-        return (user_id, jti) in self.tokens
+    def is_token_valid(self, user_id, session_id, jti):
+        session = self.sessions.get((user_id, session_id))
+        return session is not None and session['jti'] == jti
 
-    def revoke_token(self, user_id, jti):
-        self.tokens.discard((user_id, jti))
+    def revoke_token(self, user_id, session_id):
+        self.sessions.pop((user_id, session_id), None)
+
+    def revoke_session(self, user_id, session_id):
+        return self.sessions.pop((user_id, session_id), None) is not None
 
     def revoke_all_user_tokens(self, user_id):
-        mine = {t for t in self.tokens if t[0] == user_id}
-        self.tokens -= mine
+        mine = [key for key in self.sessions if key[0] == user_id]
+        for key in mine:
+            del self.sessions[key]
         return len(mine)
+
+    def list_sessions(self, user_id):
+        mine = [{'id': session_id, 'device': session['device'],
+                 'signed_in_at': session['signed_in_at'], 'last_active_at': session['last_active_at']}
+                for (owner, session_id), session in self.sessions.items() if owner == user_id]
+        return sorted(mine, key=lambda each: each['last_active_at'], reverse=True)
 
 
 # ============================================================================

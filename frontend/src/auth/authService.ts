@@ -1,7 +1,7 @@
 import { api } from '@/api/api'
 import type {
   AccountDeleteRequest, AccountResponse, DataExportResponse, EmailChangeRequest,
-  EmailChangedResponse, EmailLinkRequest, LoginRequest, PasswordChangeRequest,
+  EmailChangedResponse, EmailLinkRequest, LoginRequest, PasswordChangeRequest, SessionsResponse,
   PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
   RegisterCompleteResponse, RegisterRequest, TokensResponse,
 } from '@/api/schemas'
@@ -107,6 +107,20 @@ export async function changePassword(currentPassword: string, newPassword: strin
     current_password: currentPassword, new_password: newPassword,
   } satisfies PasswordChangeRequest)
   return response.data
+}
+
+// The account's live sessions, most recently active first; `current` marks
+// this browser's
+export type Sessions = SessionsResponse
+
+export async function listSessions() {
+  const response = await api.get<Sessions>('/account/sessions')
+  return response.data
+}
+
+// Ends one of the account's sessions: that device must log in again
+export async function endSession(id: string) {
+  await api.delete(`/account/sessions/${encodeURIComponent(id)}`)
 }
 
 export async function logoutUser() {
