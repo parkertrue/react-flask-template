@@ -81,17 +81,21 @@ looser (per worker, reset on restart) instead of every limited route failing.
 
 **A Redis outage still costs a few seconds once per reconnect window.** Every
 call a request makes to Redis (the token store and the job queue, so login,
-refresh, sign-up, logout and account deletion alike) shares one breaker per
-worker process (`redis_unreachable`, `redis_service.py`): once a call fails to
-connect, each fails at once for `RECONNECT_INTERVAL_SECONDS` (5 s), then one
-call probes Redis again. The probe pays the 1 s lookup of the stopped
-container's name twice (the client's one retry, kept so a connection Redis
-dropped is replaced unseen); a rate-limited route adds Flask-Limiter's own
-probe, which backs off by itself and counts in memory meanwhile. Measured:
-login 503 in about 4 s at worst, refresh 3 s (PR #28, backend on
-`APP_ENV=production`); sign-up 2.2 s for the probe, then as fast as a
-sign-up with Redis up (E2E stack, 2026-11-16). The answer is the same 503
-either way. A no-retry probe client would save about 1 s for a second client
+refresh, sign-up, logout and account deletion alike, and, since every access
+token's session is checked in Redis, any signed-in request) shares one
+breaker per worker process (`redis_unreachable`, `redis_service.py`): once a
+call fails to connect, each fails at once for `RECONNECT_INTERVAL_SECONDS`
+(5 s), then one call probes Redis again. The probe pays the 1 s lookup of the
+stopped container's name twice (the client's one retry, kept so a connection
+Redis dropped is replaced unseen); a rate-limited route adds Flask-Limiter's
+own probe, which backs off by itself and counts in memory meanwhile.
+Measured: login 503 in about 4 s at worst, refresh 3 s (PR #28, backend on
+`APP_ENV=production`); sign-up 2.2 s for the probe, then as fast as a sign-up
+with Redis up (E2E stack, 2026-11-16). A signed-in request that lands on the
+probe takes 2.0 s and answers 200, since the session check fails open; the
+others in the window are as fast as with Redis up (E2E stack and production
+config, 2026-11-19). The answer is the same 503 either way where Redis is
+required. A no-retry probe client would save about 1 s for a second client
 and more breaker code. *Revisit when:* a readiness check or alert exists for
 Redis, or users see these delays outside an outage.
 
@@ -201,10 +205,12 @@ and MySQL speaks TLS over TCP only. They are fixed by bumping the pinned tag
 once upstream ships one. *Revisit when:* the CVE is in the server's TLS or
 authentication path, or the compose file starts running mysqlsh.
 
-**The backend image ships `ordered-set` without its license file.** It is
-MIT (a Flask-Limiter dependency), and its wheel has no license file in
-`.dist-info`, unlike every other installed package. MIT's notice condition
-applies to copies handed to others, and the backend image only runs on the
+**The backend image ships `ordered-set` and `ua-parser-builtins` without
+their license files.** `ordered-set` is MIT (a Flask-Limiter dependency) and
+`ua-parser-builtins` is Apache-2.0 (`ua-parser`'s User-Agent regexes), and
+neither wheel has a license file in `.dist-info`, unlike every other
+installed package. MIT's notice condition and Apache-2.0's §4(a) apply to
+copies handed to others, and the backend image only runs on the
 operator's own server. The frontend's notices do ship
 (`third-party-licenses.txt`), since every visitor receives the bundle.
 *Revisit when:* images are pushed anywhere others can pull them, or shipped
@@ -269,6 +275,19 @@ the hour passes. The cap is what bounds distributed password guessing, so it
 stays. *Revisit when:* users report lockouts, or the app holds accounts worth
 targeting (then add a CAPTCHA or an emailed unlock link instead of the hard
 cap).
+
+**An undo link works for 7 days, whatever changed since** (user,
+2026-11-20). After an email change, the old address gets a link that moves
+the account back and ends every session. Its state names only the account
+(id and creation time), so it still works after the address or the password
+changes again: an intruder who changed both cannot outrun it. The cost: for
+those 7 days, whoever reads the old inbox can take the account back,
+including a mailbox the owner left because it was compromised, taken back by
+an employer or lost with a lapsed domain, and then reset the password there.
+Users who change their address because they are losing the old one should
+do it before they lose it. *Revisit when:* users report accounts taken back
+from an old address, or the app holds data that justifies support-assisted
+recovery instead.
 
 **No mutation-testing tool.** New tests are mutation-checked by hand (CLAUDE.md
 Test Architecture). *Revisit when:* the suites grow past what spot checks can
@@ -388,6 +407,16 @@ would hand-write all of it. It costs 23 KB gzipped in the bundle; its 27
 lockfile packages (all MIT) are mostly Node-only and not bundled. *Revisit
 when:* the client needs streaming or `AbortSignal` beyond what axios offers,
 or a major axios release changes the interceptor API.
+
+**ua-parser names a session's device** (user, 2026-11-20).
+`app/utils/devices.py` turns a User-Agent into "Firefox on Windows" through
+`ua-parser` and its `ua-parser-builtins` regexes: about 1.1 MB, Apache-2.0,
+no other dependency, about 1 ms per parse (2.9 ms worst at the 512-character
+cap). A hand-written regex would be about 20 lines, but would name devices
+worse as user agents change. The regexes release monthly, so Dependabot
+proposes a bump monthly. *Revisit when:* the account page stops naming
+devices, or browsers' reduced User-Agent strings leave too little to parse,
+so a few lines of string matching name devices as well.
 
 **Pages load data with TanStack Query hooks and submit forms from
 `onSubmit`: no React Router loaders or actions, no React form actions, no

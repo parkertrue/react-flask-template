@@ -61,7 +61,10 @@ Upgrades waiting on a release or a date; Dependabot proposes the rest
   it closes by itself once an eslint bump brings minimatch 11. If it is
   still open in mid-December 2026, try forcing 11 with an npm `overrides`
   entry, with `src/__tests__/eslintRules.test.ts` (which plants a
-  violation of every glob-scoped rule) as the guard.
+  violation of every glob-scoped rule) as the guard. Fixed upstream since:
+  eslint 10.15.0 (2026-11-13) and typescript-eslint 8.73.0 (2026-11-16)
+  take minimatch 11, and Dependabot's cooldown brings them by about
+  2026-11-23. Delete this issue once alert 14 closes.
 
 ## Production to-dos
 
