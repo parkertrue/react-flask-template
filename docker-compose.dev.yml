@@ -100,7 +100,7 @@ services:
   # Catches every email the worker sends, whatever the address: read them at
   # http://localhost:8025
   mailpit:
-    image: axllent/mailpit:v1.33.0
+    image: axllent/mailpit:v1.33.1
     restart: unless-stopped
     ports:
       - "127.0.0.1:1025:1025"

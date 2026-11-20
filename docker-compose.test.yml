@@ -123,7 +123,7 @@ services:
   # Catches every email the worker sends: the integration suite and
   # Playwright read them through its API (port 8026)
   mailpit:
-    image: axllent/mailpit:v1.33.0
+    image: axllent/mailpit:v1.33.1
     security_opt:  # as db
       - no-new-privileges:true
     healthcheck:
