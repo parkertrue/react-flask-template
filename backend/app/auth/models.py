@@ -64,12 +64,13 @@ class User(Model):
 
     @property
     def password_state(self) -> str:
-        """Names the password the account has now, without revealing it: a
-        password reset link carries it, so the link stops working once the
-        password changes, by that reset or any other. Keyed with SECRET_KEY,
-        since the link's token can be read, and a hash's hash could be
-        cracked offline. Base64url, not hex: a token holding hex compresses,
-        and the link's page reads no address from a compressed one."""
+        """Names the password the account has now, without revealing it:
+        every token and every reset or email-change link carries it, so each
+        stops working once the password changes (a reset, a change, or an
+        email change's undo). Keyed with SECRET_KEY, since a link's token
+        can be read, and a hash's hash could be cracked offline. Base64url,
+        not hex: a token holding hex compresses, and the link's page reads
+        no address from a compressed one."""
         secret = current_app.config['JWT_SECRET_KEY'].encode()
         digest = hmac.new(secret, self.password_hash.encode(), hashlib.sha256).digest()
         return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()

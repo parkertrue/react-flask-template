@@ -299,10 +299,8 @@ services:
   # Runs the jobs the backend queues (backend/app/utils/jobs.py), such as
   # sending email, from the backend's image. Only it holds the mail server's
   # password, and it reaches Redis as its own user, which may touch the job
-  # queue alone. Its capacity: 2 threads (WORKER_THREADS), each sending one email
-  # at a time, so about 2 to 6 emails a second, as fast as the mail server
-  # answers. deploy.sh runs and replaces exactly one worker container; for
-  # more, raise WORKER_THREADS in jobs.py before adding containers.
+  # queue alone. One container, a few emails a second (docs/deployment.md,
+  # Capacity).
   worker:
     logging: *logging
     <<: [*security, *backend-hardening]
@@ -414,8 +412,9 @@ services:
           memory: 128m
 
 # nginx reaches only the backend; the bundled MySQL and Redis sit on a
-# network with no route out of the host, reachable only from the backend and
-# migrate, which reach an external database or Redis through edge.
+# network with no route out of the host, reachable only from the backend,
+# migrate and the worker, which reach external services (a managed database
+# or Redis, the mail server) through edge.
 networks:
   edge:
     ipam:

@@ -7,7 +7,7 @@ with decoys, so the answer's size tells nothing), which are compared here.
 The password, and its full hash, never leave.
 
 Fails open: an outage or a slow answer lets the password through, logged,
-rather than stop sign-up (DECISIONS.md). Production checks by default;
+rather than stop a new password (DECISIONS.md). Production checks by default;
 elsewhere only when PWNED_PASSWORDS_URL is set (config.py).
 """
 import hashlib
@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app
 
-# Each sign-up waits on it, so it gives up well before a user would: the
+# Each new password waits on it, so it gives up well before a user would: the
 # whole call, the name lookup and a slow answer included
 TIMEOUT_SECONDS = 2
 

@@ -118,7 +118,7 @@ export async function listSessions() {
   return response.data
 }
 
-// Ends one of the account's sessions: that device must log in again
+// Ends one of the account's sessions: that device is refused at its next request
 export async function endSession(id: string) {
   await api.delete(`/account/sessions/${encodeURIComponent(id)}`)
 }

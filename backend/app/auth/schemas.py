@@ -88,13 +88,13 @@ def _check_password_characters(value: str) -> str:
     return value
 
 
-# Every password the app accepts, at registration, a reset, login and before a change
-# only the owner may make. One set of rules, so a rule loosened in one place
+# Every password the app accepts: sign-up, a reset, a change, login, and the
+# one typed again before a change only the owner may make. One set of rules, so a rule loosened in one place
 # is loosened in all of them, and no password registration refuses can be
 # tried anywhere. NIST SP 800-63B's: length alone, no rules on which kinds of
 # character it holds; spaces and every script and emoji welcome (passphrases).
-# Sign-up and a reset also refuse a guessable one (is_guessable) and a breached one
-# (app/utils/breached.py).
+# A new password (sign-up, a reset, a change) is also refused when guessable
+# (is_guessable) or breached (app/utils/breached.py).
 Password = Annotated[
     str,
     # Listed first, so the length is pydantic's own check on the str (its
