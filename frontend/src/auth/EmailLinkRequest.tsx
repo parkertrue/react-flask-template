@@ -91,7 +91,7 @@ export default function EmailLinkRequest(props: EmailLinkRequestProps) {
         <div className="auth-container">
           <div className="auth-card">
             <h1 ref={heading} tabIndex={-1}>Check your inbox</h1>
-            <p className="sent-to">{sentText(sentTo)}</p>
+            <p>{sentText(sentTo)}</p>
             <p>Not there? Check your spam folder, or send it again.</p>
             {error}
             <p className="visually-hidden" role="status">{status}</p>

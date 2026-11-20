@@ -236,7 +236,7 @@ export default function AccountPage() {
     <div className="account-page page-column">
       <PageTitle>Account</PageTitle>
       <h1>Account</h1>
-      <p className="account-email">Signed in as <strong>{email}</strong></p>
+      <p>Signed in as <strong>{email}</strong></p>
       {/* One persistent live region, so the loaded details are announced */}
       <p role="status">
         {account && (

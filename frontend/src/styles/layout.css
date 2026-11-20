@@ -6,7 +6,11 @@
 
 /* A column, so a page can fill the height between the navbar and the
    footer (centered-page) */
+/* Wraps a long run with no space to break at (an email address) anywhere,
+   rather than push the page sideways on a narrow screen (WCAG 1.4.10).
+   Every page and dialog sits inside it; the footer's links have their own. */
 .main-content {
+  overflow-wrap: anywhere;
   flex: 1;
   display: flex;
   flex-direction: column;
