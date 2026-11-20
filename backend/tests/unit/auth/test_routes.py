@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import jwt
 import pytest
-from dramatiq import Worker
 from flask_jwt_extended import create_refresh_token, decode_token
 from itsdangerous import TimestampSigner, URLSafeTimedSerializer
 from redis import ConnectionError as RedisConnectionError
@@ -22,7 +21,7 @@ from app.auth.emails import (
     send_password_changed_email, send_password_reset_email, send_registration_email)
 from app.auth.models import TERMS_VERSION, User
 from app.utils.errors import SERVICE_UNAVAILABLE_MESSAGE
-from app.utils.jobs import QUEUE_NAME, PermanentJobFailure
+from app.utils.jobs import PermanentJobFailure
 from app.utils.links import make_link_token, read_link_token
 from app.utils.passwords import hash_password, verify_password
 from app.utils.redis_service import mark_redis_unreachable
@@ -187,15 +186,11 @@ class TestRegistrationEmail:
 
         assert outbox == []
 
-    def test_the_worker_runs_it_from_the_queue(self, app, client, db, jobs, outbox):
+    def test_the_worker_runs_it_from_the_queue(self, app, client, db, jobs, outbox, run_jobs):
         """The job the route queued is the one that sends: its name and
         arguments line up"""
         client.post('/api/auth/register', json={'email': 'new@example.com'})
-        broker = app.extensions['jobs_broker']
-        worker = Worker(broker, worker_timeout=10)
-        worker.start()
-        broker.join(QUEUE_NAME, fail_fast=True)
-        worker.stop()
+        run_jobs()
 
         assert [message['To'] for message in outbox] == ['new@example.com']
 
@@ -1722,16 +1717,12 @@ class TestPasswordResetEmails:
 
         assert outbox == []
 
-    def test_the_worker_runs_both_from_the_queue(self, app, client, db, sample_user, jobs, outbox):
+    def test_the_worker_runs_both_from_the_queue(self, app, client, db, sample_user, jobs, outbox, run_jobs):
         """The jobs the routes queued are the ones that send"""
         client.post('/api/auth/password-reset', json={'email': 'test@example.com'})
         client.post('/api/auth/password-reset/complete', json={
             'token': reset_token(app, 'test@example.com'), 'password': 'a valid passphrase'})
-        broker = app.extensions['jobs_broker']
-        worker = Worker(broker, worker_timeout=10)
-        worker.start()
-        broker.join(QUEUE_NAME, fail_fast=True)
-        worker.stop()
+        run_jobs()
 
         assert sorted(message['Subject'] for message in outbox) == [
             'Reset your Some App password', 'Your Some App password was changed']

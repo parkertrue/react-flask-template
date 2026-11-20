@@ -12,6 +12,11 @@ declares, with JSON arguments, never an arbitrary function. Each is signed
 with SECRET_KEY when queued, and the worker runs none it cannot verify, so
 a Redis password alone cannot choose a job's arguments either: the email
 change's jobs mint links that move an account (SignedMessages).
+
+Queue a job before committing when the job is the request's point. When
+the write must stand on its own, queue after committing and catch and log
+JobQueueUnavailable, as the password reset does: otherwise a Redis outage
+answers 503 with the row already saved, and the user's retry saves it again.
 """
 import functools
 import hashlib

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from dramatiq import Message, Worker
+from dramatiq import Message
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import Retries, TimeLimit
 from flask import Blueprint, current_app
@@ -40,16 +40,6 @@ def make_app(app, monkeypatch):
             fresh.register_blueprint(blueprint)
         return fresh
     return make
-
-
-def run_jobs(app):
-    """Run every queued job, retries included, to the end"""
-    broker = app.extensions['jobs_broker']
-    worker = Worker(broker, worker_timeout=10)
-    worker.start()
-    broker.join(QUEUE_NAME, fail_fast=False)
-    worker.join()
-    worker.stop()
 
 
 def queued(app):
@@ -146,7 +136,7 @@ class TestSend:
 
 
 class TestRun:
-    def test_runs_in_an_app_context(self, make_app):
+    def test_runs_in_an_app_context(self, make_app, run_jobs):
         seen = []
         blueprint = Blueprint('things', __name__)
 
@@ -162,7 +152,7 @@ class TestRun:
 
         assert seen == [(7, app.name)]
 
-    def test_a_failing_job_is_retried_then_kept_as_failed(self, make_app):
+    def test_a_failing_job_is_retried_then_kept_as_failed(self, make_app, run_jobs):
         attempts = []
         blueprint = Blueprint('things', __name__)
 
@@ -175,13 +165,13 @@ class TestRun:
         with app.app_context():
             flaky.send()
 
-        run_jobs(app)
+        run_jobs(app, fail_fast=False)
 
         # The first try and MAX_RETRIES more
         assert len(attempts) == 3
         assert len(app.extensions['jobs_broker'].dead_letters) == 1
 
-    def test_a_permanent_failure_is_not_retried(self, make_app):
+    def test_a_permanent_failure_is_not_retried(self, make_app, run_jobs):
         attempts = []
         blueprint = Blueprint('things', __name__)
 
@@ -194,7 +184,7 @@ class TestRun:
         with app.app_context():
             refused.send()
 
-        run_jobs(app)
+        run_jobs(app, fail_fast=False)
 
         assert len(attempts) == 1
         assert len(app.extensions['jobs_broker'].dead_letters) == 1
@@ -231,7 +221,7 @@ class TestSignedMessages:
         with app.app_context():
             return jobs._signature(app.config['JWT_SECRET_KEY'], actor_name, args, {})
 
-    def test_the_app_signs_what_it_queues(self, notify):
+    def test_the_app_signs_what_it_queues(self, notify, run_jobs):
         with notify.app.app_context():
             notify.job.send(7, 'owner@example.com')
 
@@ -242,7 +232,7 @@ class TestSignedMessages:
     @pytest.mark.parametrize('forgery', [
         'unsigned', 'wrong key', 'other arguments', 'added kwargs', 'other job', 'not a string',
     ])
-    def test_a_message_the_app_did_not_sign_runs_nothing(self, notify, security_events, forgery):
+    def test_a_message_the_app_did_not_sign_runs_nothing(self, notify, security_events, forgery, run_jobs):
         app = notify.app
         args = [7, 'attacker@example.com']
         owners = self.signed(app, 'things.notify', [7, 'owner@example.com'])
@@ -294,7 +284,7 @@ def test_closing_closes_a_redis_brokers_client(app, monkeypatch):
     (ConnectionError('the mail server is down'), 'with unhandled exception'),
     (PermanentJobFailure('the address does not exist'), 'with expected exception'),
 ])
-def test_the_worker_logs_a_failed_message_by_its_id_alone(make_app, error, line):
+def test_the_worker_logs_a_failed_message_by_its_id_alone(make_app, run_jobs, error, line):
     """A real worker logs the message it consumed, arguments and all, through
     the handler run_worker installs: the address must not reach the log"""
     blueprint = Blueprint('things', __name__)
@@ -313,7 +303,7 @@ def test_the_worker_logs_a_failed_message_by_its_id_alone(make_app, error, line)
     log.addHandler(handler)
     log.setLevel(logging.INFO)
     try:
-        run_jobs(app)
+        run_jobs(app, fail_fast=False)
     finally:
         log.removeHandler(handler)
         log.setLevel(level)

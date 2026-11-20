@@ -4,9 +4,11 @@ from unittest.mock import patch
 import pytest
 
 from app.auth.models import User
+from app.utils import passwords
 from app.utils.passwords import (
     DUMMY_PASSWORD_HASH, PasswordHashingBusy, hash_password, verify_password)
 from tests.conftest import register
+from tests.unit.conftest import PRODUCTION_HASH_METHOD
 
 
 @pytest.fixture
@@ -25,9 +27,18 @@ def test_hash_round_trips(app):
     assert verify_password(password_hash, 'WrongPassword123') is False
 
 
-def test_the_login_dummy_hash_costs_what_a_real_one_does(app):
+def test_production_hashes_at_werkzeugs_scrypt_cost(app, monkeypatch):
+    """The unit tests hash cheaply (cheap_password_hashing); the app does
+    not. A change of cost is a decision (DECISIONS.md), so it fails here."""
+    monkeypatch.setattr(passwords, 'PASSWORD_HASH_METHOD', PRODUCTION_HASH_METHOD)
+
+    assert hash_password('TestPassword123').startswith('scrypt:32768:8:1$')
+
+
+def test_the_login_dummy_hash_costs_what_a_real_one_does(app, monkeypatch):
     """An unknown email must take as long as a wrong password, even after
     the hashing cost is raised"""
+    monkeypatch.setattr(passwords, 'PASSWORD_HASH_METHOD', PRODUCTION_HASH_METHOD)
     method_and_cost = DUMMY_PASSWORD_HASH.split('$')[0]
 
     assert method_and_cost == hash_password('TestPassword123').split('$')[0]

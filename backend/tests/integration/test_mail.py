@@ -3,9 +3,11 @@ read back through its API"""
 import json
 import os
 import urllib.request
+from email.utils import parseaddr
 from urllib.parse import quote
 
 import pytest
+from flask import current_app
 
 from app.utils.mail import send_email
 
@@ -32,6 +34,8 @@ def test_mailpit_receives_the_email(inbox):
 
     summary, = inbox()
     message = mailpit(f"/message/{summary['ID']}")
+    # The configured sender, which a new app renames (test_env_literals.py)
+    sender = parseaddr(current_app.config['EMAIL_FROM'])[1]
     assert (message['Subject'], message['From']['Address'], message['To'][0]['Address']) == (
-        'Integration hello', 'no-reply@app.localhost', ADDRESS)
+        'Integration hello', sender, ADDRESS)
     assert message['Text'] == 'Sent over SMTP.\r\n'
