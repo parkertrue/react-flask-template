@@ -33,14 +33,19 @@ test.describe('Email change', () => {
     await login(page, newEmail)
 
     // The old address was told, and its link moves the account back,
-    // logging every device out
+    // logging every device out and turning the password off
     await page.goto(await emailedLink(oldEmail, CHANGED_SUBJECT))
     await page.getByRole('button', { name: 'Move my account back' }).click()
     await expect(page.getByText(/^Your account is back at/)).toBeFocused()
     await expect(page.getByRole('link', { name: 'Reset your password' })).toHaveAttribute('href', '/password-reset')
     await expect(page.getByRole('link', { name: /\(account\)$/ })).toBeHidden()
+    // Whoever changed the address may know the password: it no longer
+    // logs in, and the owner resets it
     await page.goto('/login')
-    await login(page, oldEmail, TEST_PASSWORD)
+    await page.getByLabel('Email').fill(oldEmail)
+    await page.getByLabel('Password').fill(TEST_PASSWORD)
+    await page.getByRole('button', { name: 'Log in' }).click()
+    await expect(page.getByRole('alert')).toHaveText(/Invalid email or password/)
   })
 
   test('another device signed in to the account shows the new address once it looks again', async ({ page, browser }) => {

@@ -1,5 +1,6 @@
 import hmac
 import re
+import secrets
 from datetime import datetime, timezone
 from typing import Any, cast
 
@@ -206,9 +207,12 @@ def complete_email_change() -> ResponseReturnValue:
 @account_bp.route('/email/undo', methods=['POST'])
 @limiter.limit('10 per hour')
 def undo_email_change() -> ResponseReturnValue:
-    """Move the account back to the address the link was sent to, and end
-    every session: its owner did not make the change. The owner then resets
-    the password, which reaches them at this address again."""
+    """Move the account back to the address the link was sent to, end
+    every session, and replace the password with one nobody knows: its
+    owner did not make the change, and whoever did may know the password.
+    That also ends the change's own link, and every other pending link,
+    since each names the password. The owner then resets the password,
+    which reaches them at this address again."""
     payload = EmailLinkRequest.model_validate(request.get_json())
     claims = read_email_link(EMAIL_UNDO_LINK, payload.token, EMAIL_UNDO_LINK_LIFETIME)
     if not isinstance(claims, LinkClaims):
@@ -230,6 +234,9 @@ def undo_email_change() -> ResponseReturnValue:
         return service_unavailable()
 
     user.email = claims.email
+    # Without it, the address is back where the change's own link expects
+    # it, and that link would move the account away again
+    user.set_password(secrets.token_urlsafe(32))
     try:
         db.session.commit()
     except IntegrityError:
