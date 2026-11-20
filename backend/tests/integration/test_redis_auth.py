@@ -112,6 +112,22 @@ class TestSessionBounds:
 
         assert 'stale' not in _ids(integration_redis, integration_user.id)
 
+    def test_the_list_leaves_out_expired_sessions(
+        self, integration_client, integration_user, integration_redis
+    ):
+        """An expired session stays in Redis until the next sign-in prunes
+        it: listed, its "Log out" would answer 404"""
+        _login(integration_client)
+        zset, details = _keys(integration_user.id)
+        integration_redis.get_client().zadd(zset, {'expired': time.time() - 1})
+        integration_redis.get_client().hset(details, 'expired', json.dumps({
+            'jti': 'old', 'device': 'Firefox on Windows', 'signed_in_at': 1, 'last_active_at': 2}))
+
+        listed = integration_redis.list_sessions(integration_user.id)
+
+        assert [each['id'] for each in listed] == [
+            session_id for session_id in _ids(integration_redis, integration_user.id) if session_id != 'expired']
+
     def test_keys_expire_with_the_newest_session(
         self, integration_client, integration_user, integration_redis
     ):

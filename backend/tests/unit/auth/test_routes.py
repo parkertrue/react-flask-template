@@ -288,6 +288,31 @@ class TestCompleteRegistration:
         assert response.status_code == 503
         assert db.session.scalar(select(func.count()).select_from(User)) == 0
 
+    def test_starts_with_none_of_an_earlier_owners_sessions(self, client, db, fake_redis):
+        """A restored backup hands the id out again, and Redis still holds the
+        sessions of the account that had it"""
+        next_id = (db.session.scalar(select(func.max(User.id))) or 0) + 1
+        fake_redis.store_refresh_token(next_id, 'lost-accounts-session', 'jti', 60, 'Firefox on Windows')
+
+        token = register(client, 'new@example.com').get_json()['access_token']
+        sessions = client.get('/api/account/sessions', headers={'Authorization': f'Bearer {token}'})
+
+        [only] = sessions.get_json()['sessions']
+        assert only['current'] is True
+        # Deleted, not just hidden: they held another person's devices
+        assert (next_id, 'lost-accounts-session') not in fake_redis.sessions
+
+    def test_redis_failing_to_clear_old_sessions_makes_nothing(
+            self, client, db, fake_redis, monkeypatch):
+        token = link_token(client.application, 'new@example.com')
+        monkeypatch.setattr(fake_redis, 'revoke_all_user_tokens', lambda user_id: None)
+
+        response = self.complete(client, token)
+
+        assert response.status_code == 503
+        assert db.session.scalar(select(func.count()).select_from(User)) == 0
+        assert fake_redis.used_links == {}
+
     def test_a_link_works_again_if_the_account_was_not_made(
             self, client, db, fake_redis, monkeypatch):
         """The database failed after the link was claimed: the link must

@@ -346,6 +346,14 @@ def complete_registration() -> ResponseReturnValue:
         user = User(email=email, terms_version=payload.terms_version)
         user.set_password(payload.password)
         db.session.add(user)
+        # A restored backup hands ids out again, and Redis keeps sessions by
+        # id: the account starts with none of an earlier owner's, or it
+        # would list their devices as its own. Nothing is made if Redis fails.
+        db.session.flush()
+        if redis_service.revoke_all_user_tokens(user.id) is None:
+            db.session.rollback()
+            redis_service.release_link(payload.token)
+            return service_unavailable()
         db.session.commit()
     except IntegrityError:
         # Another request registered the same email since the check above
