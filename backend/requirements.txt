@@ -43,7 +43,7 @@ flask-sqlalchemy==3.1.1
     # via
     #   -r requirements.in
     #   flask-migrate
-gunicorn==26.2.0
+gunicorn==27.0.1
     # via -r requirements.in
 idna==3.20
     # via email-validator
