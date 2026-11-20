@@ -311,6 +311,27 @@ class TestUndoEmailChange:
 
         assert response.get_json()['error']['code'] == 'LINK_USED'
 
+    def test_the_changes_own_link_cannot_move_it_away_again(
+            self, app, client, db, sample_user, fake_redis, jobs):
+        """Once back at its old address, the account matches what the
+        change's link expects again: the undo must end that link too"""
+        change = change_token(app, sample_user)
+        client.post('/api/account/email/complete', json={'token': change})
+        self.undo(client, undo_token(app, sample_user))
+
+        response = client.post('/api/account/email/complete', json={'token': change})
+
+        assert response.get_json()['error']['code'] == 'LINK_USED'
+        assert current_email(db, sample_user) == 'test@example.com'
+
+    def test_the_password_no_longer_logs_in(self, app, client, db, moved, fake_redis):
+        """Whoever made the change may know it: the owner resets it next"""
+        self.undo(client, undo_token(app, moved))
+
+        response = client.post('/api/auth/login', json={'email': 'test@example.com', 'password': PASSWORD})
+
+        assert response.status_code == 401
+
     def test_once_back_the_link_is_used(self, app, client, db, moved, fake_redis):
         token = undo_token(app, moved)
         self.undo(client, token)

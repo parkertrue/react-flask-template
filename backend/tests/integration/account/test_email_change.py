@@ -1,7 +1,7 @@
 """An email change end to end on real services: the app queues the link as
 its Redis user, a worker sends it as the worker's, Mailpit receives it, the
 link moves the account in MySQL, the old address is told, and its link
-moves the account back"""
+moves the account back and turns the password off"""
 from urllib.parse import parse_qs, urlsplit
 
 from app.auth.models import TERMS_VERSION
@@ -35,6 +35,7 @@ def test_change_then_undo(integration_client, worker):
     notice_subject, undo_path, undo = emailed_token(OLD)
     account = integration_client.get('/api/account', headers=headers)
     undone = integration_client.post('/api/account/email/undo', json={'token': undo})
+    again = integration_client.post('/api/account/email/complete', json={'token': token})
 
     assert asked.status_code == 202
     assert (subject, path) == (f'Confirm your new {app_name} email', '/account/email/complete')
@@ -42,5 +43,7 @@ def test_change_then_undo(integration_client, worker):
     assert account.get_json()['email'] == NEW
     assert (notice_subject, undo_path) == (f'Your {app_name} email was changed', '/account/email/undo')
     assert undone.get_json() == {'email': OLD}
+    # Whoever made the change can neither move it away again nor log in
+    assert again.get_json()['error']['code'] == 'LINK_USED'
     assert integration_client.post('/api/auth/login', json={
-        'email': OLD, 'password': PASSWORD}).status_code == 200
+        'email': OLD, 'password': PASSWORD}).status_code == 401

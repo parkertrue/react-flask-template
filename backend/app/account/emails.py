@@ -3,8 +3,8 @@ declares them on the blueprint), and the states its links carry.
 
 A change takes two links. The one to the new address moves the account
 there; its state names the account and hashes its current address and
-password, so it stops working once either changes (another change, or a
-reset by an owner taking the account back). Then the old address is told,
+password, so it stops working once either changes (another change, a
+reset, or the undo below, which also replaces the password). Then the old address is told,
 with a link that moves the account back: its state names the account alone,
 so it still works after whoever made the change resets the password or
 changes the address again.
@@ -96,7 +96,8 @@ def email_changed_message(new_email: str, link: str) -> tuple[str, str]:
     return f'Your {app_name} email was changed', email_body(
         f'The email address of your {app_name} account was just changed to {masked(new_email)}.',
         f"If it wasn't you, open this link within {EMAIL_UNDO_LINK_DAYS} days to move the "
-        'account back to this address and log out every device, then reset your password:',
+        'account back to this address, log out every device and turn off the password, '
+        'then reset your password:',
         link)
 
 

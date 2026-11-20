@@ -57,7 +57,8 @@ describe('UndoEmailChangePage', () => {
 
     const done = await screen.findByText(/Your account is back at/)
     expect(done).toHaveTextContent(
-      'Your account is back at old@example.com, and every device was logged out. Reset your password now')
+      'Your account is back at old@example.com, every device was logged out, and the password no longer works. '
+      + 'Reset your password to log in again.')
     expect(done).toHaveFocus()
     expect(undoEmailChange).toHaveBeenCalledExactlyOnceWith(TOKEN)
     expect(screen.getByRole('link', { name: 'Reset your password' })).toHaveAttribute('href', '/password-reset')

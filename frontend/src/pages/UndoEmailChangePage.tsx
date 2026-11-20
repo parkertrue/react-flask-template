@@ -19,9 +19,10 @@ const PROBLEMS: Record<LinkProblemKind, string> = {
 }
 
 // The page the old address's link opens, after an email change its owner
-// may not have made: moves the account back and logs out every device. A
-// button, not a request as the page loads (mail scanners open links). Then
-// the owner resets the password, which whoever made the change may know.
+// may not have made: moves the account back, logs out every device and
+// turns off the password, which whoever made the change may know. A button,
+// not a request as the page loads (mail scanners open links). Then the owner
+// resets the password.
 export default function UndoEmailChangePage() {
   const { isAuthenticated, logout } = useAuth()
   const link = useEmailLink()
@@ -60,8 +61,8 @@ export default function UndoEmailChangePage() {
     content = (
       <>
         <p ref={done} tabIndex={-1} className="success-message">
-          Your account is back at <strong>{movedTo}</strong>, and every device was logged out.
-          Reset your password now: whoever changed your email may know it.
+          Your account is back at <strong>{movedTo}</strong>, every device was logged out,
+          and the password no longer works. Reset your password to log in again.
         </p>
         <p className="auth-footer">
           <Link to="/password-reset" className="text-link padded-link">Reset your password</Link>
