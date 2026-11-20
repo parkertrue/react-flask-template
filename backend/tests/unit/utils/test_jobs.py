@@ -200,6 +200,76 @@ class TestRun:
         assert len(app.extensions['jobs_broker'].dead_letters) == 1
 
 
+class TestSignedMessages:
+    """A message written to Redis by anyone but the app (a Redis password
+    alone) runs nothing: the email change's jobs mint links that move an
+    account, given any user id and address"""
+
+    @pytest.fixture
+    def notify(self, make_app):
+        sent = []
+        blueprint = Blueprint('things', __name__)
+
+        @job(blueprint)
+        def notify(user_id, address):
+            sent.append((user_id, address))
+
+        @job(blueprint)
+        def other(user_id, address):
+            sent.append(('other', user_id, address))
+
+        app = make_app(blueprint)
+        return SimpleNamespace(app=app, sent=sent, job=notify)
+
+    def forge(self, app, actor_name, args, kwargs=None, **options):
+        """Put a message on the queue as a Redis client would, bypassing Job.send"""
+        app.extensions['jobs_broker'].enqueue(Message(
+            queue_name=QUEUE_NAME, actor_name=actor_name, args=args,
+            kwargs=kwargs or {}, options=options))
+
+    def signed(self, app, actor_name, args):
+        with app.app_context():
+            return jobs._signature(app.config['JWT_SECRET_KEY'], actor_name, args, {})
+
+    def test_the_app_signs_what_it_queues(self, notify):
+        with notify.app.app_context():
+            notify.job.send(7, 'owner@example.com')
+
+        run_jobs(notify.app)
+
+        assert notify.sent == [(7, 'owner@example.com')]
+
+    @pytest.mark.parametrize('forgery', [
+        'unsigned', 'wrong key', 'other arguments', 'added kwargs', 'other job', 'not a string',
+    ])
+    def test_a_message_the_app_did_not_sign_runs_nothing(self, notify, security_events, forgery):
+        app = notify.app
+        args = [7, 'attacker@example.com']
+        owners = self.signed(app, 'things.notify', [7, 'owner@example.com'])
+        forged = {
+            'unsigned': lambda: self.forge(app, 'things.notify', args),
+            'wrong key': lambda: self.forge(
+                app, 'things.notify', args,
+                signature=jobs._signature('x' * 32, 'things.notify', args, {})),
+            'other arguments': lambda: self.forge(app, 'things.notify', args, signature=owners),
+            'added kwargs': lambda: self.forge(
+                app, 'things.notify', [7, 'owner@example.com'],
+                kwargs={'address': 'attacker@example.com'}, signature=owners),
+            'other job': lambda: self.forge(
+                app, 'things.other', [7, 'owner@example.com'], signature=owners),
+            'not a string': lambda: self.forge(app, 'things.notify', args, signature=7),
+        }
+        forged[forgery]()
+        [message] = queued(app)
+
+        run_jobs(app)
+
+        assert notify.sent == []
+        # Dropped, not retried or kept: its arguments are a stranger's
+        assert app.extensions['jobs_broker'].dead_letters == []
+        assert security_events() == [{'message': 'job_refused', 'message_id': message.message_id}]
+
+
 def test_the_job_settings(app):
     """What CLAUDE.md and docs/deployment.md promise, as literals: ten
     retries backing off from 15s to an hour, and a minute per try"""

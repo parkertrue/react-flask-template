@@ -474,26 +474,31 @@ never show, which should then ask for the password. The worker, email and
 signed links then cover the queue and the emailed link; what's new is
 storing the file and deleting it.
 
-**Background jobs: Dramatiq, with the worker on a Redis user of its own
-that may run KEYS** (user, 2026-11-09). The `worker` service runs the jobs
+**Background jobs: Dramatiq, with the worker on a Redis user of its own that
+may run KEYS** (user, 2026-11-09). The `worker` service runs the jobs
 requests queue (`backend/app/utils/jobs.py`). RQ was passed over because a
 message names any importable function (its callbacks too), so a write to
 Redis would run code in the worker, which holds `SECRET_KEY` and the
 database password; Celery for its weight. Dramatiq runs only declared
-actors, with JSON arguments. Its Redis broker's upkeep (requeuing a dead
-worker's messages, dropping expired failed ones) calls `KEYS`, which
-`-@dangerous` refuses, so the worker connects as `worker`, which may touch
-only `dramatiq` and `dramatiq:*` and holds `+keys`, and the app's broker
-never runs the upkeep (`maintenance_chance=0`): the `app` user keeps no
-dangerous command, and a stolen worker password reaches the queue alone.
-`KEYS` reveals no more than `SCAN`, which both users have and whose output
-Redis does not filter by key pattern; it blocks Redis while it walks every
-key, a few milliseconds per hundred thousand, on about one worker call in
-a thousand. Dramatiq is LGPL-3.0: installed unmodified by pip and run on
-the operator's own servers, it asks nothing of the app (as with the
-images' GPL code); a patched copy of its Lua script would.
-*Revisit when:* Dramatiq's upkeep stops calling `KEYS` (drop `+keys`), the
-keyspace reaches millions of keys, or the app is distributed to others.
+actors, with JSON arguments, and the app signs each message with
+`SECRET_KEY` (`Job.send`), which the worker checks before anything else
+(`SignedMessages`): a Redis password alone can neither run a job nor choose
+its arguments, which matters since the email change's jobs mint links that
+move an account. A copy of a message the app signed only repeats an email
+the app asked for. Its Redis broker's upkeep (requeuing a dead worker's
+messages, dropping expired failed ones) calls `KEYS`, which `-@dangerous`
+refuses, so the worker connects as `worker`, which may touch only `dramatiq`
+and `dramatiq:*` and holds `+keys`, and the app's broker never runs the
+upkeep (`maintenance_chance=0`): the `app` user keeps no dangerous command,
+and a stolen worker password reaches the queue alone. `KEYS` reveals no more
+than `SCAN`, which both users have and whose output Redis does not filter by
+key pattern; it blocks Redis while it walks every key, a few milliseconds
+per hundred thousand, on about one worker call in a thousand. Dramatiq is
+LGPL-3.0: installed unmodified by pip and run on the operator's own servers,
+it asks nothing of the app (as with the images' GPL code); a patched copy of
+its Lua script would. *Revisit when:* Dramatiq's upkeep stops calling `KEYS`
+(drop `+keys`), the keyspace reaches millions of keys, or the app is
+distributed to others.
 
 **Email: SMTP to a managed provider, plain text, sent by the worker alone**
 (user, 2026-11-09). `backend/app/utils/mail.py` speaks SMTP, which every

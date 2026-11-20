@@ -8,9 +8,15 @@ A feature declares its jobs from its blueprint, as it registers an export,
 so the core imports no feature: `@job(<blueprint>)` on the function, or
 `job(auth_bp)(send_registration_email)` (auth/routes.py). Messages are JSON and
 name a declared job: a message written to Redis can only run a job the code
-declares, with JSON arguments, never an arbitrary function.
+declares, with JSON arguments, never an arbitrary function. Each is signed
+with SECRET_KEY when queued, and the worker runs none it cannot verify, so
+a Redis password alone cannot choose a job's arguments either: the email
+change's jobs mint links that move an account (SignedMessages).
 """
 import functools
+import hashlib
+import hmac
+import json
 import logging
 import signal
 import sys
@@ -21,13 +27,13 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from types import FrameType
-from typing import TextIO
+from typing import Any, TextIO
 
 from dramatiq import Actor, Broker, Message, Worker
 from dramatiq.broker import MessageProxy
 from dramatiq.brokers.redis import RedisBroker
 from dramatiq.brokers.stub import StubBroker
-from dramatiq.middleware import Retries, TimeLimit
+from dramatiq.middleware import Middleware, Retries, SkipMessage, TimeLimit
 from flask import Blueprint, Flask, current_app
 from flask.blueprints import BlueprintSetupState
 from redis import ConnectionError as RedisConnectionError
@@ -86,6 +92,33 @@ def _millis(delta: timedelta) -> int:
     return int(delta.total_seconds() * 1000)
 
 
+def _signature(secret: str, actor_name: str, args: Any, kwargs: Any) -> str:
+    """What a message naming this job with these arguments is signed with:
+    an HMAC keyed with SECRET_KEY, over the arguments as JSON (a message's
+    own form), so neither the job nor any argument can be swapped"""
+    payload = json.dumps([actor_name, list(args), dict(kwargs or {})],
+                         separators=(',', ':'), sort_keys=True)
+    return hmac.new(secret.encode(), b'job:' + payload.encode(), hashlib.sha256).hexdigest()
+
+
+class SignedMessages(Middleware):
+    """Runs only messages the app signed (Job.send). One with no signature,
+    or a wrong one, was written to Redis by someone else: it is dropped, not
+    retried, and logged as job_refused by its id alone, since its arguments
+    are a stranger's."""
+
+    def __init__(self, secret: str, log: logging.Logger) -> None:
+        self.secret = secret
+        self.log = log
+
+    def before_process_message(self, broker: Broker, message: MessageProxy) -> None:
+        given = message.options.get('signature')
+        expected = _signature(self.secret, message.actor_name, message.args, message.kwargs)
+        if not isinstance(given, str) or not hmac.compare_digest(given, expected):
+            self.log.warning('job_refused', extra={'fields': {'message_id': message.message_id}})
+            raise SkipMessage()
+
+
 @dataclass(frozen=True)
 class Job:
     """A declared job. Send it from a request; the worker runs it."""
@@ -100,8 +133,10 @@ class Job:
         # answer at once rather than wait out the outage again
         if redis_unreachable(current_app):
             raise JobQueueUnavailable()
+        signature = _signature(current_app.config['JWT_SECRET_KEY'], self.name, args, {})
         try:
-            actor.send(*args)
+            # A message option, which a retry keeps (SignedMessages reads it)
+            actor.send_with_options(args=args, signature=signature)
         except RedisError as e:
             if isinstance(e, (RedisConnectionError, RedisTimeoutError)):
                 mark_redis_unreachable(current_app)
@@ -148,7 +183,9 @@ def init_jobs(app: Flask) -> None:
     a Redis on localhost the moment anything asked for it. Unit tests queue
     on an in-memory broker.
     """
-    middleware = [
+    middleware: list[Middleware] = [
+        # First, so nothing else acts on a message no one signed
+        SignedMessages(app.config['JWT_SECRET_KEY'], app.logger.getChild('security')),
         TimeLimit(time_limit=_millis(TIME_LIMIT)),
         Retries(max_retries=MAX_RETRIES, min_backoff=_millis(MIN_BACKOFF),
                 max_backoff=_millis(MAX_BACKOFF)),
