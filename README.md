@@ -125,6 +125,7 @@ E2E needs a [certificate](#https-certificate). Locally, Playwright reuses an E2E
 GitHub Actions runs lint, every test suite and config checks on each push and pull request to `main`, and the integration, E2E and smoke jobs nightly too. Dependabot opens weekly update PRs; for security fixes as soon as an advisory is published, enable Dependabot alerts and security updates under Settings > Advanced Security, and turn off "Dismiss low impact alerts" under Dependabot rules.
 
 To stop a failing check from merging, require these status checks on `main` (Settings > Branches): Backend unit, Frontend unit, Scaffold, Compose files, Workflows, Dockerfiles, Nginx config, Backend integration, Platform smoke, Deploy smoke and Playwright E2E.
+Leave "Require branches to be up to date before merging" off: with it on, each merge sends every other open PR back for a rebase and a full CI run, while CI on `main` after each merge already catches what two PRs break together.
 
 ---
 
