@@ -139,6 +139,21 @@ the whole signed-in app.
 *Revisit when:* a session ended during a Redis outage must stop at once, or
 the per-request lookup shows in `upstream_response_time`.
 
+**PRs need not be up to date with `main` to merge** (user, 2026-11-19).
+Branch protection requires the eleven status checks but leaves "Require
+branches to be up to date before merging" off, GitHub's default. On, every
+merge put every other open PR behind, and each needed a rebase and a full CI
+run (about ten minutes) before it could merge, so a week's Dependabot PRs
+became a chain. Git still refuses a PR that conflicts with `main`, and
+Dependabot rebases those itself; CI runs on `main` after every merge and
+nightly. The risk accepted: two PRs that each pass alone can break together,
+and the deploy timer ships `main` within minutes, before its CI reports;
+`deploy.sh` rolls back a release that does not start. A merge queue would
+test each PR on top of the last, but GitHub offers it only to
+organisation-owned repositories.
+*Revisit when:* several people merge in parallel, or the repository moves to
+an organisation (then use a merge queue).
+
 **No nginx healthcheck.** Compose uses healthchecks only to order startup and
 never restarts an unhealthy container, and nothing depends on nginx, so a
 healthcheck would do nothing. Without one, `up --wait` reports nginx healthy
