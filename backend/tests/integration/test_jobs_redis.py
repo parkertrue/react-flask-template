@@ -5,7 +5,7 @@ import os
 import threading
 
 import pytest
-from dramatiq import Worker
+from dramatiq import Message, Worker
 from flask import Blueprint
 from redis.exceptions import ResponseError
 
@@ -56,6 +56,24 @@ def test_the_worker_runs_what_the_app_queued(apps):
     worker.stop()
 
     assert ran == ['from the app']
+
+
+def test_the_worker_runs_nothing_written_to_redis_without_the_app(apps):
+    """Someone with the app's Redis password but not SECRET_KEY queues a job
+    straight into Redis, as an attacker would: the worker refuses it"""
+    app, worker_app = apps
+    app.extensions['jobs_broker'].enqueue(Message(
+        queue_name=QUEUE_NAME, actor_name='integration_jobs.record',
+        args=['from a stranger'], kwargs={}, options={}))
+
+    broker = worker_app.extensions['jobs_broker']
+    worker = Worker(broker, worker_timeout=100)
+    worker.start()
+    broker.join(QUEUE_NAME)
+    worker.join()
+    worker.stop()
+
+    assert ran == []
 
 
 def open_sockets(client):
