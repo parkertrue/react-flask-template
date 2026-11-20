@@ -181,7 +181,7 @@ The app is at `https://<SERVER_NAME>`. On a server, deploy with `deploy.sh` inst
 - `frontend/src/components/layout/Navbar.tsx` and `frontend/src/pages/HomePage.tsx`: the links to it, and their tests
 - `AFTER_LOGIN_PATH` in `frontend/src/auth/GuestRoute.tsx`: where logging in leads
 
-A feature's background jobs plug in through its own blueprint, as its data export does: `@job(<blueprint>)` on the function (`backend/app/utils/jobs.py`; sign-up's is in `backend/app/auth/routes.py`), queued from a route with `.send(...)`. Its unit tests read what a request queued with the `jobs` fixture and the email a job sent with `outbox` (`backend/tests/unit/conftest.py`).
+A feature's background jobs plug in through its own blueprint, as its data export does: `@job(<blueprint>)` on the function (`backend/app/utils/jobs.py`; sign-up's is in `backend/app/auth/routes.py`), queued from a route with `.send(...)`. Queue a job before committing when the job is the request's point; when the write must stand on its own, queue after committing and catch and log `JobQueueUnavailable`, as the password reset does, or a Redis outage answers 503 with the row already saved and the user's retry saves it again. Its unit tests read what a request queued with the `jobs` fixture, run it with `run_jobs`, and read the email a job sent with `outbox` (`backend/tests/unit/conftest.py`).
 
 CI's Scaffold job deletes the examples and edits exactly these files (`.github/scripts/remove_examples.py`), renames the app (step 5), then runs lint and the unit suites, so shared code can't come to depend on an example or the template's name. Changing a wiring point means changing the script with it.
 

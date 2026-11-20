@@ -3,14 +3,13 @@ that it has an account), and the notice to the old one, with the link back"""
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from dramatiq import Worker
 
 from app.account import emails as account_emails
 from app.account.emails import (
     EMAIL_CHANGE_LINK, EMAIL_CHANGE_LINK_HOURS, EMAIL_CHANGE_LINK_LIFETIME, EMAIL_UNDO_LINK,
     EMAIL_UNDO_LINK_LIFETIME, change_state, masked, send_email_change_email,
     send_email_changed_email, undo_state)
-from app.utils.jobs import QUEUE_NAME, PermanentJobFailure
+from app.utils.jobs import PermanentJobFailure
 from app.utils.links import read_link_token
 
 
@@ -114,20 +113,13 @@ def test_masked(email, shown):
     assert masked(email) == shown
 
 
-def test_the_worker_runs_both_from_the_queue(app, client, db, sample_user, auth_headers, jobs, outbox):
+def test_the_worker_runs_both_from_the_queue(app, client, db, sample_user, auth_headers, jobs, outbox, run_jobs):
     """The jobs the routes queued are the ones that send"""
     client.post('/api/account/email', headers=auth_headers,
                 json={'email': 'new@example.com', 'password': 'TestPassword123'})
-    broker = app.extensions['jobs_broker']
-
-    def run():
-        worker = Worker(broker, worker_timeout=10)
-        worker.start()
-        broker.join(QUEUE_NAME, fail_fast=True)
-        worker.stop()
-    run()
+    run_jobs()
     client.post('/api/account/email/complete', json={'token': token(outbox[0])})
-    run()
+    run_jobs()
 
     assert [(m['To'], m['Subject']) for m in outbox] == [
         ('new@example.com', 'Confirm your new Some App email'),

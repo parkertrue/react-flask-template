@@ -2,12 +2,25 @@ import json
 import smtplib
 
 import pytest
-from dramatiq import Message
+from dramatiq import Message, Worker
 
 from app.config import MailServer
+from app.utils import passwords
 from app.utils.jobs import QUEUE_NAME
 from app.utils.log import JsonFormatter
 from tests.conftest import FakeRedisService
+
+# Saved before cheap_password_hashing patches it, for the tests that pin it
+PRODUCTION_HASH_METHOD = passwords.PASSWORD_HASH_METHOD
+
+
+@pytest.fixture(autouse=True)
+def cheap_password_hashing(monkeypatch):
+    """Hash at the smallest scrypt cost Werkzeug takes (n=256, under 1ms).
+    Production's costs ~80ms a hash, which was most of the suite's run
+    time. Verifying reads the cost from the hash, so cheap hashes stay
+    cheap; tests/unit/utils/test_passwords.py pins production's."""
+    monkeypatch.setattr(passwords, 'PASSWORD_HASH_METHOD', 'scrypt:256:8:1')
 
 
 @pytest.fixture(autouse=True)
@@ -104,6 +117,23 @@ def outbox(app, monkeypatch):
     monkeypatch.setitem(app.config, 'EMAIL_SERVER', MailServer('tls', 'smtp.test', 465, 'mailer', 'mailpass'))
     monkeypatch.setitem(app.config, 'EMAIL_FROM', 'App <no-reply@app.test>')
     return sent
+
+
+@pytest.fixture
+def run_jobs(app):
+    """Run what is queued with a real worker, retries included, to the end:
+    run_jobs(), or run_jobs(other_app). A job that fails stops it with its
+    error, unless fail_fast=False, for a test of a job that fails."""
+    def run(on=None, *, fail_fast=True):
+        broker = (on or app).extensions['jobs_broker']
+        worker = Worker(broker, worker_timeout=10)
+        worker.start()
+        try:
+            broker.join(QUEUE_NAME, fail_fast=fail_fast)
+            worker.join()
+        finally:
+            worker.stop()
+    return run
 
 
 @pytest.fixture
