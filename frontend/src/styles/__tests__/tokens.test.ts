@@ -24,6 +24,8 @@ const PAIRINGS: [string, string, string, number][] = [
   ['muted text on muted panels', 'text-muted', 'surface-muted', TEXT],
   // Borders and focus rings
   ['field borders', 'border', 'surface', NON_TEXT],
+  // Read-only fields and info messages (forms.css, messages.css)
+  ['field borders on muted panels', 'border', 'surface-muted', NON_TEXT],
   ['focus rings and focused fields', 'primary', 'surface', NON_TEXT],
   ['focus rings on muted panels', 'primary', 'surface-muted', NON_TEXT],
   ['invalid fields', 'danger', 'surface', NON_TEXT],

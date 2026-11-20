@@ -2,10 +2,6 @@
   margin-top: 2rem;
 }
 
-.account-email {
-  overflow-wrap: anywhere;
-}
-
 /* One row per signed-in device: its name and times, and its button, which
    wraps under them on a narrow screen */
 .session-list {
@@ -22,7 +18,6 @@
   gap: 0.5rem 1rem;
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--color-border);
-  overflow-wrap: anywhere;
 }
 
 .session-times {

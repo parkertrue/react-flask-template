@@ -25,7 +25,11 @@ function capture(text: string, pattern: RegExp) {
 export const TEST_PASSWORD = 'a secure test passphrase'
 
 // Every run registers fresh accounts, so emails must never repeat
-export const uniqueEmail = (prefix: string) => `${prefix}-${randomUUID()}@example.com`
+// Long, with nothing to break at (no hyphen or dot), as a real address can
+// be: every reflow check then sees one, which a page that does not wrap it
+// pushes sideways at 320px. The part before the @ may hold 64 characters.
+export const uniqueEmail = (prefix: string) =>
+  `${(prefix + randomUUID()).replaceAll('-', '').slice(0, 64)}@example.com`
 
 // The test stack's Mailpit, which catches every email the worker sends
 // (docker-compose.test.yml)
@@ -53,9 +57,12 @@ export async function emailedLink(address: string, subject = `Finish signing up 
   return capture((await emailTo(address, subject)).Text, /(https:\/\/\S+)/)
 }
 
-// A token no server signed: its payload names someone@example.com, which
-// the page shows, and the backend refuses it as invalid
-const UNSIGNED_TOKEN = `${Buffer.from(JSON.stringify(['someone@example.com', ''])).toString('base64url')}.aTime.aSignature`
+/** The address the unsigned links name: long, with nothing to break at */
+export const LINK_ADDRESS = 'someonewithalongaddressthathasnothingtobreakat@example.com'
+
+// A token no server signed: its payload names LINK_ADDRESS, which the page
+// shows, and the backend refuses it as invalid
+const UNSIGNED_TOKEN = `${Buffer.from(JSON.stringify([LINK_ADDRESS, ''])).toString('base64url')}.aTime.aSignature`
 
 /** A sign-up link no server signed, for pages that need not finish */
 export const UNSIGNED_LINK = `/signup/complete#token=${UNSIGNED_TOKEN}`
@@ -315,21 +322,24 @@ const TEXT_SPACING = `* {
 }
 p { margin-bottom: 2em !important; }`
 
-/** How far the page scrolls sideways with `css` applied */
+/** How far the page, or an open dialog, scrolls sideways with `css` applied */
 const overflowWith = (page: Page, css: string) => page.evaluate(css => {
   // A constructed stylesheet: the CSP refuses a <style> element
   const sheet = new CSSStyleSheet()
   sheet.replaceSync(css)
   document.adoptedStyleSheets = [sheet]
-  const { scrollWidth, clientWidth } = document.documentElement
+  // The page, and an open modal dialog, which sits in the top layer: what
+  // overflows inside it never widens the page
+  const widths = [document.documentElement, ...document.querySelectorAll('dialog[open]')]
+    .map(element => element.scrollWidth - element.clientWidth)
   document.adoptedStyleSheets = []
-  return scrollWidth - clientWidth
+  return Math.max(...widths)
 }, css)
 
 /**
- * Nothing scrolls sideways: WCAG 1.4.10 and 1.4.12 at 320px wide (400%
- * zoom), as it is and with the text-spacing overrides, and 1.4.4 with
- * text at 200% at the page's own width.
+ * Nothing scrolls sideways, on the page or in an open dialog: WCAG 1.4.10
+ * and 1.4.12 at 320px wide (400% zoom), as it is and with the text-spacing
+ * overrides, and 1.4.4 with text at 200% at the page's own width.
  */
 export async function expectReflow(page: Page) {
   expect(await overflowWith(page, 'html { font-size: 200% !important; }'),

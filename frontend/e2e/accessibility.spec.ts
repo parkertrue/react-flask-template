@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import {
   askToDeleteAccount, askToLogoutAll, boxOf, expectNoCspViolations, expectNoViolations, expectReflow,
   expectTargetSize, expectVisibleFocus, expireAccessToken, fillRegistration, fillReset, holdRequests,
-  memberSince, registerAndLogin, requestLink, requestReset, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
+  LINK_ADDRESS, memberSince, registerAndLogin, requestLink, requestReset, serviceUnavailable, uniqueEmail, UNSIGNED_LINK,
   UNSIGNED_RESET_LINK, UNSIGNED_CHANGE_LINK, UNSIGNED_UNDO_LINK, askToChangeEmail, askToChangePassword,
 } from './helpers'
 import { APP_NAME } from '../src/appInfo'
@@ -161,7 +161,7 @@ test.describe('Accessibility', () => {
     test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
       await page.goto(UNSIGNED_LINK)
 
-      await expect(page.getByLabel('Email')).toHaveValue('someone@example.com')
+      await expect(page.getByLabel('Email')).toHaveValue(LINK_ADDRESS)
       await expectNoViolations(page)
       await expectReflow(page)
       // The navbar's and footer's, the four fields (the read-only email
@@ -287,7 +287,7 @@ test.describe('Accessibility', () => {
     test("the link's page has no violations, reflows, shows focus and has large enough targets", async ({ page }) => {
       await page.goto(UNSIGNED_RESET_LINK)
 
-      await expect(page.getByLabel('Email')).toHaveValue('someone@example.com')
+      await expect(page.getByLabel('Email')).toHaveValue(LINK_ADDRESS)
       await expectNoViolations(page)
       await expectReflow(page)
       // The navbar's and footer's, the three fields (the read-only email
@@ -346,15 +346,27 @@ test.describe('Accessibility', () => {
   })
 
   test.describe("an email change's link pages", () => {
-    for (const [name, link, heading, button] of [
-      ['the new address', UNSIGNED_CHANGE_LINK, 'Confirm your new email', 'Confirm new email'],
-      ['the old address', UNSIGNED_UNDO_LINK, 'Undo an email change', 'Move my account back'],
+    for (const [name, link, heading, button, done] of [
+      ['the new address', UNSIGNED_CHANGE_LINK, 'Confirm your new email', 'Confirm new email', /^Your email is now/],
+      ['the old address', UNSIGNED_UNDO_LINK, 'Undo an email change', 'Move my account back', /^Your account is back at/],
     ] as const) {
+      test(`${name}'s page, done, has no violations, reflows and has large enough targets`, async ({ page }) => {
+        await page.route('**/api/account/email/*', route => route.fulfill({ json: { email: LINK_ADDRESS } }))
+        await page.goto(link)
+        await page.getByRole('button', { name: button }).click()
+
+        await expect(page.getByText(done)).toBeFocused()
+        await expect(page.getByText(done)).toContainText(LINK_ADDRESS)
+        await expectNoViolations(page)
+        await expectReflow(page)
+        await expectTargetSize(page)
+      })
+
       test(`${name}'s page has no violations, reflows, shows focus and has large enough targets`, async ({ page }) => {
         await page.goto(link)
 
         await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible()
-        await expect(page.getByText('someone@example.com')).toBeVisible()
+        await expect(page.getByText(LINK_ADDRESS)).toBeVisible()
         await expectNoViolations(page)
         await expectReflow(page)
         // The navbar's and footer's, and the button
@@ -404,6 +416,19 @@ test.describe('Accessibility', () => {
       await expectReflow(page)
       await expectVisibleFocus(page, 12)
       await expectTargetSize(page)
+    })
+
+    test("the account page, once an email change's link is sent, still reflows", async ({ page }) => {
+      await page.goto('/account')
+      await expect(memberSince(page)).toBeVisible()
+      const newEmail = uniqueEmail('e2e-a11y-sent-to-a-new-address')
+      await page.route('**/api/account/email', route => route.fulfill({ status: 202, json: { message: 'Check your inbox' } }))
+
+      const dialog = await askToChangeEmail(page, newEmail)
+      await dialog.getByRole('button', { name: 'Send link' }).click()
+
+      await expect(page.getByText(/^We sent a link to/)).toContainText(newEmail)
+      await expectReflow(page)
     })
 
     test('changing the password, asking, busy and then failed, has no violations', async ({ page }) => {

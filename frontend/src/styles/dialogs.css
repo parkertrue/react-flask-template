@@ -17,10 +17,6 @@
   font-size: 1.25rem;
 }
 
-.dialog-body {
-  overflow-wrap: anywhere;
-}
-
 .dialog-body p {
   margin: 0 0 0.5rem;
 }
