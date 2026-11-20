@@ -238,7 +238,11 @@ class TestTokenManagement:
             {'id': 'newer', 'device': 'Safari on iOS', 'signed_in_at': 150, 'last_active_at': 300},
             {'id': 'older', 'device': 'Firefox on Windows', 'signed_in_at': 100, 'last_active_at': 200},
         ]
-        assert pipe.zrangebyscore.call_args.args[0] == self.KEYS[0]
+        key, low, high = pipe.zrangebyscore.call_args.args
+        assert key == self.KEYS[0]
+        # Live ones only: a session's score is when it expires
+        assert abs(low - time.time()) < 5
+        assert high == '+inf'
         pipe.hgetall.assert_called_once_with(self.KEYS[1])
 
     def test_list_sessions_error(self, service, caplog):

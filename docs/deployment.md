@@ -443,7 +443,7 @@ docker compose --env-file .env.prod exec -T db sh -c \
 
 The new volume creates both database users from `.env.prod`, so this works with new passwords too.
 
-**Accounts created after the backup are gone**, and MySQL hands their ids out again from where the dump left off. Their devices still look signed in, but their next request is refused: every token names its account by id and creation time, so it never works as the account that takes the id next. Losing those accounts and every write since the backup is a personal data breach: record it ([Personal Data and Legal Pages](personal-data.md)).
+**Accounts created after the backup are gone**, and MySQL hands their ids out again from where the dump left off. Their devices still look signed in, but their next request is refused: every token names its account by id and creation time, so it never works as the account that takes the id next, and a new account that takes one of their ids starts with none of their sessions. Losing those accounts and every write since the backup is a personal data breach: record it ([Personal Data and Legal Pages](personal-data.md)).
 
 **Watch free disk.** When the disk fills, writes that need new space fail at once with 503s while every health check stays green; they succeed again as soon as space is freed.
 
