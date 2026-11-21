@@ -25,7 +25,7 @@ NEW_EMAIL = 'new@example.com'
 
 
 def change_token(app, user, email=NEW_EMAIL, ago=timedelta(0)):
-    """The link the worker would email the new address now, as if sent ago"""
+    """The link the worker would email the new address, as if sent `ago` before now"""
     then = int(time.time() - ago.total_seconds())
     with app.app_context(), patch.object(TimestampSigner, 'get_timestamp', return_value=then):
         return make_link_token(EMAIL_CHANGE_LINK, email, change_state(db_user(user)))

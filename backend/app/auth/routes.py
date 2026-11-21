@@ -51,8 +51,8 @@ from app.utils.schemas import MessageResponse
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-# Sends sign-up's email from the worker, so the form's answer never waits on
-# the mail server, and takes as long for a registered address as a new one
+# Sent from the worker, so no answer waits on the mail server, and the forms
+# answer as fast whether the address has an account or not
 registration_email = job(auth_bp)(send_registration_email)
 password_reset_email = job(auth_bp)(send_password_reset_email)
 password_changed_email = job(auth_bp)(send_password_changed_email)
@@ -71,7 +71,7 @@ def _email_digest(email: str) -> str:
 
 def _request_email_key() -> str:
     """Rate-limit key for the account the request body's email names,
-    whatever the IP: the one being logged in to, or signed up.
+    whatever the IP: the one being logged in to, or emailed a link.
 
     A per-IP limit alone either locks out everyone behind a shared address or,
     set loosely, lets one attacker guess an account's password (or flood an
@@ -97,8 +97,9 @@ def account_key(email: str) -> str:
 
 def account_password_limit(
         key_func: Callable[[], str], deduct_when: Callable[[Response], bool]) -> RouteLimit:
-    """Wrong passwords for one account, wherever they are typed: login and
-    account deletion share one budget, so guesses spread over both add up.
+    """Wrong passwords for one account, wherever they are typed: login,
+    account deletion and the email and password changes share one budget,
+    so guesses spread over them add up.
 
     key_func names the account with account_key; deduct_when tells a wrong
     password from any other answer.
@@ -107,9 +108,9 @@ def account_password_limit(
         '100 per hour', scope='account-password', key_func=key_func, deduct_when=deduct_when)
 
 
-# Emails to one address, whichever form asks for them: sign-up's and a
-# password reset's share 3 an hour and 6 a day, so no one can flood an inbox
-# through the app, alternating the two or not. The 429 tells nothing: it
+# Emails to one address, whichever form asks for them: sign-up, a password
+# reset and an email change's new address share 3 an hour and 6 a day, so no
+# one can flood an inbox through the app, alternating them or not. The 429 tells nothing: it
 # comes as soon for an address with an account as for one without.
 emails_to_address_limit = limiter.shared_limit(
     '3 per hour;6 per day', scope='emails-to-address', key_func=_request_email_key)

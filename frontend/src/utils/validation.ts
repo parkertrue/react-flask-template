@@ -60,7 +60,7 @@ export const GUESSABLE_PASSWORD_MESSAGE =
   "Choose a password that doesn't contain your email address or the app's name."
 
 /**
- * Refuse, at sign-up only, a password holding the account's address, the
+ * Refuse a new password (sign-up, a reset, a change) holding the account's address, the
  * part before its @ (when long enough to matter) or the app's name, ignoring
  * case, after NFKC, as the backend does. Without the address (a link whose
  * token the page can't read), only the name is checked; the backend still

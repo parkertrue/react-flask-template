@@ -354,8 +354,8 @@ def list_sessions() -> ResponseReturnValue:
 @account_bp.route('/sessions/<session_id>', methods=['DELETE'])
 @jwt_required()
 def revoke_session(session_id: str) -> ResponseReturnValue:
-    """End one of the account's sessions: that device must log in again
-    once its access token expires, within 15 minutes (DECISIONS.md). A
+    """End one of the account's sessions: that device is refused at its
+    next request (the user loader checks its session, DECISIONS.md). A
     session another account has, or none has, is a 404 alike."""
     if not _SESSION_ID.fullmatch(session_id):
         abort(404)
