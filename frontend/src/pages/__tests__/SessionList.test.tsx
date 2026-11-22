@@ -27,6 +27,17 @@ function threeDevices() {
   }
 }
 
+// Two other devices both named Firefox on Windows, then this browser
+function twoOfOneName() {
+  const { sessions: [laptop, here] } = sessions()
+  if (!laptop || !here) throw new Error('fixtures changed')
+  const desktop = {
+    ...laptop, id: 'desktop',
+    signed_in_at: '2026-01-12T08:00:00+00:00', last_active_at: '2026-01-14T18:00:00+00:00',
+  }
+  return { sessions: [laptop, desktop, here] }
+}
+
 const list = () => screen.getByRole('list', { name: 'Signed-in devices' })
 const items = () => within(list()).getAllByRole('listitem')
 const logOut = (device: string) => screen.getByRole('button', { name: `Log out ${device}` })
@@ -47,6 +58,20 @@ describe('SessionList', () => {
     // Every device but this one can be logged out from here
     expect(within(laptop as HTMLElement).getByRole('button')).toHaveAccessibleName('Log out Firefox on Windows')
     expect(within(here as HTMLElement).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('tells apart two devices of the same name by their times', async () => {
+    vi.mocked(listSessions).mockResolvedValue(twoOfOneName())
+    renderList()
+
+    await screen.findByRole('list', { name: 'Signed-in devices' })
+    const [first, second] = items().slice(0, 2).map(item => ({
+      button: within(item).getByRole('button', { name: 'Log out Firefox on Windows' }),
+      times: within(item).getByText(/^Signed in/),
+    }))
+    expect(first?.button).toHaveAccessibleDescription(first?.times.textContent ?? '')
+    expect(second?.button).toHaveAccessibleDescription(second?.times.textContent ?? '')
+    expect(first?.times.textContent).not.toBe(second?.times.textContent)
   })
 
   it('says it is loading, then why it could not', async () => {

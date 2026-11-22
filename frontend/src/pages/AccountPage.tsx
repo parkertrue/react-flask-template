@@ -423,6 +423,7 @@ export default function AccountPage() {
             description="Your account and everything in it will be deleted. This cannot be undone."
             submitLabel={deleting ? 'Deleting...' : 'Delete account'}
             busy={deleting}
+            danger
             onSubmit={e => void handleDelete(e)}
             onCancel={() => setAskingDelete(false)}
           >

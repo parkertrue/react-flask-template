@@ -553,10 +553,20 @@ test.describe('Accessibility', () => {
       await expect(dialog).toHaveCSS('border-top-width', '1px')
       await page.emulateMedia({ forcedColors: 'none' })
 
+      // Red marks the deletion alone: the email change's dialog, the same
+      // FormDialog, submits in another color
+      const red = await dialog.getByRole('button', { name: 'Delete account' })
+        .evaluate(button => getComputedStyle(button).backgroundColor)
+
       // Escape keeps the account, and focus goes back to the button that asked
       await page.keyboard.press('Escape')
       await expect(dialog).toBeHidden()
       await expect(page.getByRole('button', { name: 'Delete account' })).toBeFocused()
+
+      const changeEmail = await askToChangeEmail(page, uniqueEmail('e2e-a11y-color'))
+      await expect(changeEmail.getByRole('button', { name: 'Send link' })).not.toHaveCSS('background-color', red)
+      await page.keyboard.press('Escape')
+      await expect(changeEmail).toBeHidden()
 
       dialog = await askToDeleteAccount(page)
       const release = await holdRequests(page, 'POST', '**/api/account/delete', serviceUnavailable)
