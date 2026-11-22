@@ -16,10 +16,10 @@ Every app built from the template collects personal data from its first sign-up,
 | The first 5 characters of a new password's SHA-1, sent to Have I Been Pwned's Pwned Passwords to check it is not a breached one | Sent, not kept | Nothing identifies the user or the password from it |
 | Users' content (the notes example) | The feature's tables | Until the user deletes it or the account |
 | Sessions, at most 10 per user: each one's refresh-token id, a device name derived from the browser's User-Agent ("Firefox on Windows"; the User-Agent itself is not kept), and when it signed in and was last active | Redis | Until the session expires (7 days idle, 30 at most), logs out, is logged out from the account page, or the account is deleted |
-| Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to an hour |
+| Rate-limit counters: per IP, per keyed hash of an email, per user | Redis | A minute to a day |
 | Queued jobs' arguments, such as an email's recipient | Redis | Until the job runs; a day after its last try, for one that keeps failing |
 | A hash of each sign-up link used, no address | Redis | 24 hours, the link's lifetime |
-| Everything above that Redis held, deleted and expired values included | Redis's on-disk log (the bundled Redis, in production) | Until Redis compacts the log, after about 1 MB of writes; a managed Redis keeps it on its provider's terms |
+| Everything above that Redis held, deleted and expired values included | Redis's on-disk log (the bundled Redis, in production) | Until Redis compacts the log, once its writes since the last compaction reach the size of what Redis holds (at least 1 MB); a managed Redis keeps it on its provider's terms |
 | Emails sent | Your mail provider | By the provider's retention |
 | Access log: IP, path (no query string), status, timings, User-Agent, Referer | nginx's stdout, kept by Docker | Until the next deploy replaces the container, or Docker's 3 × 10 MB rotate out |
 | Security events: IP, user id; a keyed hash of the typed email on a failed login, a sign-up request or a password reset request (an email change logs the user id alone) | The backend's stdout, kept by Docker | The same |
@@ -46,4 +46,4 @@ No analytics and no third-party requests: the browser talks to your server alone
 **Duties that start with a feature:**
 - **Content other users can see** (sharing, profiles, comments, uploads): a way to report illegal content (EU Digital Services Act, Art. 16), and in the US a DMCA agent and a repeat-infringer policy.
 - **Children:** an audience under 13, or knowing that a user is, brings COPPA, and consent-based processing the GDPR's age of consent.
-- **Email beyond sign-up** (newsletters, product announcements): CAN-SPAM, PECR and CASL, with consent and an unsubscribe link. Sign-up's and a password reset's emails are transactional, which needs neither, but must name its sender truthfully (`EMAIL_FROM`).
+- **Email beyond sign-up** (newsletters, product announcements): CAN-SPAM, PECR and CASL, with consent and an unsubscribe link. The template's emails (sign-up, a password reset, an email change, and notices of a changed password or address) are transactional, which needs neither, but must name their sender truthfully (`EMAIL_FROM`).

@@ -33,8 +33,8 @@ expiry, the CSP, and React's escaping. Keeps the client simple: no cookie for
 API calls, so no CSRF on them. See the comment in `frontend/src/auth/storage.ts`.
 *Revisit when:* the app renders third-party or user-supplied HTML.
 
-**A breached-password check that fails open** (user, 2026-11-09). Sign-up
-checks a new password against Have I Been Pwned's Pwned Passwords
+**A breached-password check that fails open** (user, 2026-11-09). Sign-up,
+a password reset and a password change check a new password against Have I Been Pwned's Pwned Passwords
 (`backend/app/utils/breached.py`), as NIST SP 800-63B requires, through its
 range API: 5 characters of the password's SHA-1 leave the server, padded, so
 the service learns nothing it could tie to the user. If the service is down
@@ -42,8 +42,8 @@ or slow (2 s for the whole call, the name lookup included: it runs on a
 pool of 4 threads, so a call past the deadline holds no request thread or
 database connection), the password is accepted and `breach_check_failed` logged,
 since a third party's outage must not stop sign-up; a breached password can
-slip through meanwhile. Login and account deletion never check: they only
-compare. CodeQL's `py/weak-sensitive-data-hashing` flags the SHA-1 of the
+slip through meanwhile. Login, account deletion and an email change never
+check: they only compare. CodeQL's `py/weak-sensitive-data-hashing` flags the SHA-1 of the
 password (in `breached.py` and its test); both alerts were dismissed as false
 positives (user, 2026-11-09): SHA-1 is how the API names a password, the full
 hash never leaves memory or reaches storage, and stored passwords stay
@@ -56,9 +56,9 @@ sessions. Revoking on reuse would also log out a second tab that lost the
 rotation race. *Revisit when:* the app holds data that justifies logging users
 out on a false positive.
 
-**No per-IP quota on the whole API.** Only login, sign-up's two steps,
-refresh, account deletion and the data export have Flask limits; users sharing an address (offices, carrier NAT) would lock each
-other out. nginx's per-IP `limit_req`/`limit_conn` on `/api` is the coarse
+**No per-IP quota on the whole API.** Only the auth and account routes CLAUDE.md
+lists under `auth/` have Flask limits; users sharing an address (offices,
+carrier NAT) would lock each other out. nginx's per-IP `limit_req`/`limit_conn` on `/api` is the coarse
 backstop.
 
 **Sign-up proves the address first, and answers every address alike**
@@ -252,8 +252,8 @@ apart from the test stack's, which serves the same placeholders on purpose
 (LEGAL-21). *Revisit when:* the first real deployment is prepared.
 
 **One set of password rules, at login too, raised with no migration**
-(user, 2026-11-09). Every password the app accepts (register, login, account
-deletion) is one `Password` type: 15 to 128 characters, NIST's minimum for a
+(user, 2026-11-09). Every password the app accepts (sign-up, login, a
+reset, account deletion, an email change, a password change) is one `Password` type: 15 to 128 characters, NIST's minimum for a
 password that is the only factor, with no composition rules. Login applies
 the length too, so an account whose password predates the rule (8
 characters were enough before 2026-11-09) cannot log in; no real account
@@ -534,9 +534,8 @@ never for secrets; a link that carries no secret may use a query string.
 - *Frontend.* Every query keeps TanStack Query's `staleTime` of 0, so a
   page shows its cached data and refetches on mount. A longer `staleTime`
   hides changes made on another device or in another tab; `Infinity` on the
-  account query was weighed and dropped, since email and password changes
-  are coming and an email change usually completes in the tab its
-  verification link opens. The account query instead refetches on window
+  account query was weighed and dropped, since an email change usually completes
+  in the tab its verification link opens. The account query instead refetches on window
   focus (overriding the default for that query alone; infinite lists keep
   it off, entry above), and the account page shows the address it answers,
   the navbar's too (`updateEmail`, which keeps the cache: the account is
@@ -647,8 +646,8 @@ two backends, as above, started one after the other).
 
 **nginx's per-IP limits are per nginx.** On a platform, each task runs its
 own nginx beside its backend, so three tasks give one client three times the
-budget of `limit_req`/`limit_conn`. The backend's own limits (login,
-register, refresh, account deletion) count in Redis and stay exact. Exact
+budget of `limit_req`/`limit_conn`. The backend's own limits (the auth
+and account routes) count in Redis and stay exact. Exact
 limits at the edge belong to the load balancer's WAF. *Revisit when:* a
 deployment runs enough tasks that the multiplied budget matters.
 
