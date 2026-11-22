@@ -37,12 +37,11 @@ as RULES.md.
     a page, a config value) plus a step in README's "Starting a New App" that
     tells the developer what to fill in, and why.
 - **Rate by what's true today, then say what would raise it.** Notes are
-  private; the app sends transactional email (sign-up) and calls one
+  private; the app sends transactional email only and calls one
   outside API (Pwned Passwords, 5 characters of a hash); there is no
   payment or analytics yet. A risk that only arrives with such a feature is
   **low** with its trigger named in the Fix. Known gaps in DECISIONS.md
-  (email change, password change or reset, certificate renewal) are not
-  new findings, but say when the law makes one more urgent than recorded.
+  (its "Known gaps" section) are not new findings, but say when the law makes one more urgent than recorded.
 
 ### Severity for legal findings
 
@@ -93,7 +92,9 @@ as RULES.md.
   its infrastructure collect or derive: account fields, note content, IP
   addresses and user agents (nginx access logs, rate-limit keys, app logs),
   tokens and their claims, Redis keys, MySQL rows, backups (when they exist),
-  browser storage (`localStorage`, cookies), queued jobs' arguments (Redis),
+  browser storage (`localStorage`, cookies), sessions and anything derived
+  from request headers (device names from the User-Agent, in Redis),
+  queued jobs' arguments (Redis),
   Redis's on-disk persistence (its log and `dump.rdb`) and what it keeps past
   a key's TTL, emails at the mail provider, and tokens in emailed links. For each: where it is stored,
   for how long, who can read it, and whether anything ever deletes it. Read
@@ -145,7 +146,7 @@ as RULES.md.
   deleting the account, and later cancelling a subscription should take no
   more steps than signing up.
 - **Email** (CAN-SPAM, CASL, PECR): the template's emails are transactional
-  (sign-up's two): check that each names its sender truthfully
+  (grep `email_body(` in `backend/app` for every one): check that each names its sender truthfully
   (`EMAIL_FROM`), names the app and links the privacy notice. Marketing
   email would add CAN-SPAM's unsubscribe and PECR's and CASL's consent.
 
