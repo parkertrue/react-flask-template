@@ -16,7 +16,8 @@ from app.account.emails import (
     change_state, send_email_change_email, send_email_changed_email, state_account, undo_state)
 from app.account.schemas import (
     AccountDeleteRequest, AccountExport, AccountResponse, DataExportResponse, EmailChangeRequest,
-    EmailChangedResponse, EmailLinkRequest, PasswordChangeRequest, SessionResponse, SessionsResponse,
+    EmailChangedResponse, EmailLinkRequest, PasswordChangeRequest, SessionExport, SessionResponse,
+    SessionsResponse,
 )
 from app.auth.models import User
 from app.auth.emails import PASSWORD_CHANGE
@@ -57,10 +58,20 @@ def get_account() -> ResponseReturnValue:
 def export_account() -> ResponseReturnValue:
     """Everything the app keeps on the signed-in user, as one JSON document
     (GDPR Art. 15 and 20). No password is asked for: a session can already
-    read all of it through the other routes."""
+    read all of it through the other routes. The sessions live in Redis:
+    while it is down, a 503, not a file that silently lacks them."""
+    redis_service = get_redis_service()
+    sessions = redis_service.list_sessions(current_user.id) if redis_service else None
+    if sessions is None:
+        return service_unavailable()
     body = DataExportResponse(
         exported_at=datetime.now(timezone.utc),
         account=AccountExport.model_validate(current_user),
+        sessions=[
+            SessionExport(
+                device=session['device'], signed_in_at=_utc(session['signed_in_at']),
+                last_active_at=_utc(session['last_active_at']))
+            for session in sessions],
         data=export_user_data(current_user.id),
     )
     security_event('data_exported', user_id=current_user.id)

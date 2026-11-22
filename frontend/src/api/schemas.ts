@@ -26,6 +26,7 @@ export interface ApiSchemas {
   RegisterCompleteRequest: RegisterCompleteRequest;
   RegisterCompleteResponse: RegisterCompleteResponse;
   RegisterRequest: RegisterRequest;
+  SessionExport: SessionExport;
   SessionResponse: SessionResponse;
   SessionsResponse: SessionsResponse;
   TokensResponse: TokensResponse;
@@ -54,7 +55,8 @@ export interface AccountResponse {
 }
 /**
  * GET /api/account/export: everything the app keeps on the signed-in
- * user. data holds each feature's rows under its name (utils/exports.py).
+ * user. sessions are its live sign-ins (Redis), most recently active first;
+ * data holds each feature's rows under its name (utils/exports.py).
  */
 export interface DataExportResponse {
   account: AccountExport;
@@ -64,6 +66,16 @@ export interface DataExportResponse {
     }[];
   };
   exported_at: string;
+  sessions: SessionExport[];
+}
+/**
+ * A session in an export: what it says about the user, without the ids
+ * that name it to the app
+ */
+export interface SessionExport {
+  device: string;
+  last_active_at: string;
+  signed_in_at: string;
 }
 /**
  * POST /api/account/email: the address to move the account to, and the

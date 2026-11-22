@@ -22,11 +22,21 @@ class AccountExport(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SessionExport(BaseModel):
+    """A session in an export: what it says about the user, without the ids
+    that name it to the app"""
+    device: str
+    signed_in_at: UtcDatetime
+    last_active_at: UtcDatetime
+
+
 class DataExportResponse(BaseModel):
     """GET /api/account/export: everything the app keeps on the signed-in
-    user. data holds each feature's rows under its name (utils/exports.py)."""
+    user. sessions are its live sign-ins (Redis), most recently active first;
+    data holds each feature's rows under its name (utils/exports.py)."""
     exported_at: UtcDatetime
     account: AccountExport
+    sessions: list[SessionExport]
     data: dict[str, list[dict[str, JsonValue]]]
 
 
