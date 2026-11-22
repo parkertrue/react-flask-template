@@ -1,9 +1,11 @@
-import pytest
+import string
 from datetime import datetime, timezone
+
+import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.auth.models import EMAIL_MAX_LENGTH, User
+from app.auth.models import EMAIL_MAX_LENGTH, User, keyed_hash
 
 
 class TestUserModel:
@@ -154,6 +156,32 @@ class TestPasswordHashing:
         user.set_password(password)
 
         assert user.check_password(password) is True
+
+
+class TestKeyedHash:
+    """The state links and tokens carry: keyed, since a link's token can be
+    read and a plain hash of the password hash could be cracked offline"""
+
+    def test_depends_on_the_secret_key(self, app, monkeypatch):
+        with app.app_context():
+            ours = keyed_hash('a password hash')
+            monkeypatch.setitem(app.config, 'JWT_SECRET_KEY', 'another-secret-key-of-32-characters!')
+            theirs = keyed_hash('a password hash')
+
+        assert ours != theirs
+
+    def test_is_base64url_without_padding(self, app):
+        """Not hex: a token holding hex compresses, and the link's page reads
+        no address from a compressed one"""
+        with app.app_context():
+            state = keyed_hash('a password hash')
+
+        assert len(state) == 43
+        assert set(state) <= set(string.ascii_letters + string.digits + '-_')
+
+    def test_names_the_account_s_password(self, app, db, sample_user):
+        with app.app_context():
+            assert sample_user.password_state == keyed_hash(sample_user.password_hash)
 
 
 class TestUserQueries:

@@ -20,6 +20,17 @@ EMAIL_MAX_LENGTH = 128
 TERMS_VERSION = 1
 
 
+def keyed_hash(text: str) -> str:
+    """An HMAC-SHA256 of text keyed with SECRET_KEY, for state an emailed
+    link or a token carries: keyed, since a link's token can be read, and a
+    plain hash of a hash could be cracked offline. Base64url, not hex: a
+    token holding hex compresses, and the link's page reads no address from
+    a compressed one."""
+    secret = current_app.config['JWT_SECRET_KEY'].encode()
+    digest = hmac.new(secret, text.encode(), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
+
+
 class User(Model):
     __tablename__ = 'users'
 
@@ -67,10 +78,5 @@ class User(Model):
         """Names the password the account has now, without revealing it:
         every token and every reset or email-change link carries it, so each
         stops working once the password changes (a reset, a change, or an
-        email change's undo). Keyed with SECRET_KEY, since a link's token
-        can be read, and a hash's hash could be cracked offline. Base64url,
-        not hex: a token holding hex compresses, and the link's page reads
-        no address from a compressed one."""
-        secret = current_app.config['JWT_SECRET_KEY'].encode()
-        digest = hmac.new(secret, self.password_hash.encode(), hashlib.sha256).digest()
-        return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
+        email change's undo)."""
+        return keyed_hash(self.password_hash)

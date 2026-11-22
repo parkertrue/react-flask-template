@@ -9,9 +9,6 @@ with a link that moves the account back: its state names the account alone,
 so it still works after whoever made the change resets the password or
 changes the address again.
 """
-import base64
-import hashlib
-import hmac
 from datetime import timedelta
 
 from flask import current_app
@@ -19,7 +16,7 @@ from sqlalchemy import select
 
 from app import db
 from app.auth.emails import email_body, hours
-from app.auth.models import User
+from app.auth.models import User, keyed_hash
 from app.auth.schemas import is_normalized_email
 from app.utils.jobs import PermanentJobFailure
 from app.utils.links import app_link, make_link_token
@@ -40,18 +37,10 @@ EMAIL_UNDO_LINK_DAYS = 7
 EMAIL_UNDO_LINK_LIFETIME = timedelta(days=EMAIL_UNDO_LINK_DAYS)
 
 
-def _keyed_hash(text: str) -> str:
-    secret = current_app.config['JWT_SECRET_KEY'].encode()
-    digest = hmac.new(secret, text.encode(), hashlib.sha256).digest()
-    # Base64url, as User.password_state: a token holding hex compresses, and
-    # the link's page reads no address from a compressed one
-    return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
-
-
 def change_state(user: User) -> str:
     """The account, and what must not change before the link is used: its
     address and its password. Keyed, since the link's token can be read."""
-    return f'{user.id}:{_keyed_hash(f"{user.email}\n{user.password_state}")}'
+    return f'{user.id}:{keyed_hash(f"{user.email}\n{user.password_state}")}'
 
 
 def undo_state(user: User) -> str:

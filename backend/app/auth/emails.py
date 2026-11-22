@@ -136,7 +136,7 @@ def send_password_reset_email(email: str) -> None:
     send_email(email, subject, body)
 
 
-def send_password_changed_email(email: str, how: str = PASSWORD_RESET) -> None:
+def send_password_changed_email(email: str, how: str) -> None:
     """Tell email its account's password was just reset or changed (ASVS
     6.3.7), so an owner who did not do it learns at once"""
     if not is_normalized_email(email):
