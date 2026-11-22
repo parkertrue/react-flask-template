@@ -7,6 +7,8 @@ from sqlalchemy import select
 from app.auth.models import User
 from app.utils.exports import registered_exports
 from tests.conftest import register
+from tests.unit.account.test_sessions import Device
+from tests.unit.utils.test_devices import FIREFOX_WINDOWS
 
 
 def test_returns_the_signed_in_users_account(client, sample_user, auth_headers):
@@ -63,9 +65,28 @@ class TestExportAccount:
         response = client.get('/api/account/export', headers=auth_headers)
 
         body = response.get_json()
-        assert set(body) == {'exported_at', 'account', 'data'}
+        assert set(body) == {'exported_at', 'account', 'sessions', 'data'}
         with app.app_context():
             assert body['data'] == {name: [] for name in registered_exports()}
+
+    def test_holds_the_sessions_without_their_ids(self, app, sample_user, fake_redis):
+        fake_redis.clock = lambda: 1_800_000_000
+        device = Device(app, FIREFOX_WINDOWS)
+
+        response = device.client.get('/api/account/export', headers=device.headers)
+
+        signed_in = datetime.fromtimestamp(1_800_000_000, timezone.utc).isoformat()
+        assert response.get_json()['sessions'] == [
+            {'device': 'Firefox on Windows', 'signed_in_at': signed_in, 'last_active_at': signed_in}]
+        assert device.session_id not in response.get_data(as_text=True)
+
+    def test_answers_503_while_redis_is_down(
+            self, client, sample_user, auth_headers, no_redis, security_events):
+        response = client.get('/api/account/export', headers=auth_headers)
+
+        assert response.status_code == 503
+        assert response.get_json()['error']['code'] == 'SERVICE_UNAVAILABLE'
+        assert security_events() == []
 
     def test_states_when_it_was_made_in_utc(self, client, sample_user, auth_headers):
         before = datetime.now(timezone.utc)

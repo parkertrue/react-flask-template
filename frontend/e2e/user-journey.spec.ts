@@ -91,6 +91,9 @@ test.describe('Critical User Journey', () => {
 
     expect(filename).toMatch(/-data-\d{4}-\d{2}-\d{2}\.json$/)
     expect(data.account.email).toBe(email)
+    // The one session, this browser's, with no id that names it to the app
+    expect(data.sessions).toHaveLength(1)
+    expect(Object.keys(data.sessions[0] ?? {}).sort()).toEqual(['device', 'last_active_at', 'signed_in_at'])
     await expect(page.getByRole('status').filter({ hasText: 'Download started' }))
       .toHaveText(`Download started: ${filename}`)
   })

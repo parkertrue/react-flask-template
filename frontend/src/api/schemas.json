@@ -59,7 +59,7 @@
       "type": "object"
     },
     "DataExportResponse": {
-      "description": "GET /api/account/export: everything the app keeps on the signed-in\nuser. data holds each feature's rows under its name (utils/exports.py).",
+      "description": "GET /api/account/export: everything the app keeps on the signed-in\nuser. sessions are its live sign-ins (Redis), most recently active first;\ndata holds each feature's rows under its name (utils/exports.py).",
       "properties": {
         "account": {
           "$ref": "#/$defs/AccountExport"
@@ -78,11 +78,18 @@
         },
         "exported_at": {
           "type": "string"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/SessionExport"
+          },
+          "type": "array"
         }
       },
       "required": [
         "exported_at",
         "account",
+        "sessions",
         "data"
       ],
       "title": "DataExportResponse",
@@ -409,6 +416,27 @@
         "email"
       ],
       "title": "RegisterRequest",
+      "type": "object"
+    },
+    "SessionExport": {
+      "description": "A session in an export: what it says about the user, without the ids\nthat name it to the app",
+      "properties": {
+        "device": {
+          "type": "string"
+        },
+        "last_active_at": {
+          "type": "string"
+        },
+        "signed_in_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "device",
+        "signed_in_at",
+        "last_active_at"
+      ],
+      "title": "SessionExport",
       "type": "object"
     },
     "SessionResponse": {

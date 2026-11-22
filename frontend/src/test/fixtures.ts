@@ -60,6 +60,11 @@ export function dataExport(exported_at = '2026-03-14T23:59:30+00:00'): DataExpor
       terms_version: 1,
       terms_accepted_at: '2026-01-15T10:30:00+00:00',
     },
+    sessions: [{
+      device: 'Firefox on Windows',
+      signed_in_at: '2026-03-14T20:00:00+00:00',
+      last_active_at: '2026-03-14T23:59:00+00:00',
+    }],
     data: { items: [{ id: 1, content: 'An item' }] },
   }
 }
