@@ -8,15 +8,18 @@ interface FormDialogProps {
   busy: boolean
   onSubmit: (e: SubmitEvent<HTMLFormElement>) => void
   onCancel: () => void
+  // Red for a submit that deletes something; any other change is primary
+  danger?: boolean
 }
 
-// A question that needs an answer typed in (a password) before something that
-// cannot be undone, on the browser's own modal <dialog>, like ConfirmDialog.
+// A question that needs an answer typed in (a password) before an action, on
+// the browser's own modal <dialog>, like ConfirmDialog. Pass danger when the
+// action deletes something that cannot be brought back, and only then.
 // Render it only while asking: it opens on its first editable field as it mounts and
 // stays open, through a failed submit too, until the page stops rendering it.
 // onSubmit gets the form's submit event; Cancel and Escape call onCancel,
 // and do nothing while busy.
-export default function FormDialog({ title, description, children, submitLabel, busy, onSubmit, onCancel }: FormDialogProps) {
+export default function FormDialog({ title, description, children, submitLabel, busy, onSubmit, onCancel, danger = false }: FormDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const titleId = useId()
@@ -78,7 +81,7 @@ export default function FormDialog({ title, description, children, submitLabel, 
           <button type="button" className="btn btn-secondary" aria-disabled={busy} onClick={cancel}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-danger" aria-disabled={busy}>
+          <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} aria-disabled={busy}>
             {submitLabel}
           </button>
         </div>

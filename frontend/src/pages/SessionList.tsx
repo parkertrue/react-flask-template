@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { endSession, listSessions, type Sessions } from '@/auth/authService'
 import type { SessionResponse } from '@/api/schemas'
@@ -21,6 +21,7 @@ interface SessionListProps {
 // undone by logging in again, so it does not ask first.
 export default function SessionList({ fallbackFocus }: SessionListProps) {
   const queryClient = useQueryClient()
+  const timesId = useId()
   // Refetched when the window regains focus: another device may have
   // signed in or out meanwhile
   const { data, error: loadError } = useQuery({
@@ -76,7 +77,7 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
                 <strong>{session.device}</strong>
                 {session.current && <span> (this device)</span>}
                 <br />
-                <span className="session-times">
+                <span className="session-times" id={`${timesId}-${session.id}`}>
                   Signed in <time dateTime={session.signed_in_at}>{when(session.signed_in_at)}</time>
                   {' · '}last active <time dateTime={session.last_active_at}>{when(session.last_active_at)}</time>
                 </span>
@@ -91,6 +92,8 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
                   onClick={() => void handleEnd(session, data)}
                   aria-disabled={ending !== null}
                   aria-label={`${ending === session.id ? 'Logging out' : 'Log out'} ${session.device}`}
+                  // Its times tell apart two devices of the same name
+                  aria-describedby={`${timesId}-${session.id}`}
                   className="btn btn-secondary"
                 >
                   {ending === session.id ? 'Logging out...' : 'Log out'}
