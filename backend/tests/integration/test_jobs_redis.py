@@ -162,4 +162,4 @@ def test_run_worker_turns_the_upkeep_on(apps, monkeypatch, tmp_path):
     thread.join(timeout=30)
     logging.getLogger('dramatiq').handlers.clear()
 
-    assert chance == 1000
+    assert chance == 10_000

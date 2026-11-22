@@ -493,7 +493,7 @@ upkeep (`maintenance_chance=0`): the `app` user keeps no dangerous command,
 and a stolen worker password reaches the queue alone. `KEYS` reveals no more
 than `SCAN`, which both users have and whose output Redis does not filter by
 key pattern; it blocks Redis while it walks every key, a few milliseconds
-per hundred thousand, on about one worker call in a thousand. Dramatiq is
+per hundred thousand, on about one worker call in a hundred. Dramatiq is
 LGPL-3.0: installed unmodified by pip and run on the operator's own servers,
 it asks nothing of the app (as with the images' GPL code); a patched copy of
 its Lua script would. *Revisit when:* Dramatiq's upkeep stops calling `KEYS`

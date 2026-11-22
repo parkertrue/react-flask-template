@@ -78,10 +78,12 @@ SHUTDOWN_TIMEOUT = timedelta(seconds=25)
 READY_FILE = Path(tempfile.gettempdir()) / 'worker-ready'
 
 # How often a broker call tidies up after workers that stopped without
-# saying so (Dramatiq's default, out of a million calls). Only the worker
-# tidies: it calls KEYS, which only the worker's Redis user may run
-# (DECISIONS.md). The app's broker never does.
-WORKER_MAINTENANCE_CHANCE = 1000
+# saying so, out of a million calls: one in a hundred, ten times Dramatiq's
+# default, so a killed worker's job runs again within a few minutes (about
+# 75 s on average) rather than a quarter of an hour. Only the worker tidies:
+# it calls KEYS, which only the worker's Redis user may run (DECISIONS.md).
+# The app's broker never does.
+WORKER_MAINTENANCE_CHANCE = 10_000
 
 
 class JobQueueUnavailable(Exception):
