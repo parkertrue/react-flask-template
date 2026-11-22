@@ -191,12 +191,15 @@ Audits are **read-only** with respect to the repository:
   (`New-Item -ItemType Junction -Path <worktree>\frontend\node_modules -Target <repo>\frontend\node_modules`;
   `cmd //c mklink` from Git Bash mangles the backslashes); elsewhere `ln -s`.
   Or run `npm ci` if the lockfile changed.
-- **Removing a worktree: unlink first.** Delete the `node_modules` link on its
-  own before removing the worktree (Windows: `cmd /c rmdir <worktree>\frontend\node_modules`,
+- **Removing a worktree: unlink first.** Delete the `node_modules` link **in
+  a call of its own** (Windows: `cmd /c rmdir <worktree>\frontend\node_modules`,
   which removes the junction, not its target; elsewhere `rm` the symlink).
-  Then check `<repo>/frontend/node_modules` still exists, and only then run
-  `git worktree remove --force <path>`. Removing the worktree with the link
-  still in place can delete the main tree's modules through it.
+  In a separate call, check that `<worktree>/frontend/node_modules` is gone
+  (`Test-Path` is False) and `<repo>/frontend/node_modules` still exists.
+  Only then run `git worktree remove --force <path>`. Never put the unlink
+  and the removal in one command: if the call is refused as a whole, the
+  next step removes the worktree with the link still in place, which can
+  delete the main tree's modules through it.
 - Gotchas: `run_tests.sh integration` ends with `down -v`, which kills an E2E
   stack using the same project. Playwright reuses a running stack locally
   (`reuseExistingServer`), so tear down before rerunning E2E and pass

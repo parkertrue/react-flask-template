@@ -74,6 +74,12 @@ with Playwright from a script in the scratch directory. Setup that works:
   px tall. Read both sign-up emails (`auth/emails.py`) for usable wording:
   the link on its own line, what it is for, how long it lasts, what to do
   if unasked, each paragraph one line.
+- **The other emailed links:** the password reset (`requestReset`,
+  `fillReset`), the email change and its undo (`askToChangeEmail`; the undo
+  link from the old address's email): each page's click before it posts,
+  and its problem states (missing, expired, forged, used; the
+  `UNSIGNED_*_LINK` constants in `e2e/helpers.ts`), each focusing its
+  message; the undo page's link on to the password reset.
 - After navigation (including back and forward), wait for the focus change
   before reading `document.activeElement`; read straight after `waitForURL`
   and it is too early.
@@ -86,6 +92,9 @@ Check on every page, logged out and logged in:
 - **Reflow and zoom:** at 320 CSS px width (1.4.10) and with text-only zoom
   at 200% (set the root font size to 200%; 1.4.4), no horizontal scrolling
   and no clipped content. Text spacing overrides (1.4.12) don't break layout.
+  Sign in and link with a long address that has nothing to break at, as
+  `e2e/helpers.ts`' `uniqueEmail` and `LINK_ADDRESS` are: a short one hides
+  an overflow.
 - **Target size:** interactive targets at least 24×24 CSS px or spaced
   (2.5.8). Measure with `getBoundingClientRect`.
 - **States:** read `accessibility.spec.ts` and each feature's spec first:
@@ -93,12 +102,15 @@ Check on every page, logged out and logged in:
   failed load, the error page, a session that ended, edit mode, the open
   delete dialog). Run axe (`@axe-core/playwright`, as they do) on any state
   they miss. Check every dialog (`ConfirmDialog` deleting a note and
-  logging out all devices, `FormDialog` deleting the account): its initial
+  logging out all devices, `FormDialog` deleting the account, changing the
+  email and changing the password): its initial
   focus, the focus returned after Cancel, the focus after confirming (for
   logging out all devices, the busy button, then the home page; for the
   account, the login page's `h1`, with the message that the account is
   gone), and, for
-  `FormDialog`, a failed submit's message inside the dialog.
+  `FormDialog`, a failed submit's message inside the dialog. `SessionList`:
+  after "Log out" on a device, focus moves to the next device's button or
+  "Log out all devices".
 - **Accessibility tree:** take `page.locator('body').ariaSnapshot()` for
   each page and check names, roles and states read sensibly.
 

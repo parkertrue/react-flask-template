@@ -48,10 +48,11 @@ router, fixtures), `frontend/playwright.config.ts`, `frontend/e2e/helpers.ts`.
   (`pytest --durations=15`, Vitest's report). Will the patterns hold at ten
   features: fixtures per feature, table-driven cases, no copy-paste per case?
 - Thresholds: do global coverage thresholds hide a weak critical file? List
-  the coverage of each security-critical module (`backend/app/auth/routes.py`,
-  `utils/redis_service.py`, `utils/links.py`, `utils/breached.py`,
-  `utils/jobs.py`, `utils/mail.py`, `frontend/src/api/api.ts`, `src/auth/`,
-  `src/pages/CompleteRegistrationPage.tsx`). If any is
+  the coverage of each security-critical module: every module under
+  `backend/app/auth/`, `backend/app/account/` and `backend/app/utils/`, and
+  `frontend/src/api/`, `src/auth/`, every `src/pages/Complete*Page.tsx`,
+  `UndoEmailChangePage.tsx` and `SessionList.tsx` (by glob, so a new one is
+  never missed). If any is
   well below the global figure, the guard is a per-path threshold.
 - Flakiness: fixed sleeps, polling without a deadline, selectors tied to
   markup instead of roles and labels (lint already refuses E2E
@@ -104,7 +105,9 @@ which needs no services) with its documented status codes, and every page
 in `frontend/src/routes.tsx`. Add every error code in `backend/app` (the
 frontend `errorBody` list must match), every config guard, every CLAUDE.md
 claim about failure handling (Redis down, DB dropped, refresh race, rate
-limit hit), and every user journey. Journeys include, for example: sign-up's
+limit hit), and every user journey: every flow CLAUDE.md's `auth/` and
+`account/` bullets describe, and each feature's. Journeys include, for
+example: sign-up's
 two steps (the same 202 for any address and the two emails; the link's page
 with the terms checkbox; `TERMS_OUTDATED`, `LINK_EXPIRED`, `LINK_INVALID`,
 `LINK_USED`, a used link's 409, `PASSWORD_GUESSABLE`, `PASSWORD_BREACHED`,

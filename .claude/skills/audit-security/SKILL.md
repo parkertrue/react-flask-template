@@ -34,6 +34,14 @@ this app and record what each one turns up:
   Lua script, the race), revocation, `logout-all`, the session cap, cookie
   flags (`Secure`, `HttpOnly`, `SameSite`, path), CSRF double-submit on
   refresh, `clear-cookies`, what happens to sessions when a user is deleted.
+  Every access token's `sid` checked on each request (fails open while
+  Redis is down, DECISIONS.md) and its `password_state`, so a changed or
+  reset password refuses every older token. The sessions list
+  (`GET`/`DELETE /api/account/sessions`): another account's session id
+  answers 404, device names come from `ua-parser`, and the raw User-Agent
+  is never kept. Cover every route `flask routes` lists and every flow
+  CLAUDE.md's `auth/` and `account/` bullets describe, not only those
+  named here.
 - **Access control:** every route that touches user data requires a token
   and scopes queries to `current_user` (try reading or paginating another
   user's notes via the cursor, and `PUT`/`DELETE /api/notes/<id>` on another
@@ -58,6 +66,18 @@ this app and record what each one turns up:
     re-validated inside the job, what a holder of the `app` or `worker`
     Redis password can queue; `_MessageIdOnly` against what Dramatiq
     really logs.
+  - The password reset: a one-hour link whose state is `password_state`,
+    so any password change spends it; the conditional `UPDATE` (of two
+    racing requests, the second is `LINK_USED`); every session ended first
+    (503 with nothing changed); no email to an address without an account;
+    the changed-password email.
+  - The email change: the password asked (403 `WRONG_PASSWORD`, in login's
+    budget), links built from `change_state` and `undo_state`, the new
+    address confirmed before anything moves, the old one told with the new
+    one masked, the 7-day undo ending every session and voiding the
+    password; whether whoever made the change can spend the undo.
+  - The password change: the same password refused, `is_guessable` and
+    `is_breached`, every session ended, this device's fresh login.
   - `utils/mail.py`: TLS and STARTTLS never optional, the certificate and
     host name checked, header injection through every header, what its
     errors and logs carry; `EMAIL_URL` on the worker alone.
@@ -101,8 +121,8 @@ this app and record what each one turns up:
   clients, unbounded queries or lists, Redis memory growth.
 - **What is missing:** ASVS 5.0 L2 requirements the app neither meets nor has
   recorded in DECISIONS.md. Report each one as a gap with its ASVS 5.0 number.
-  Group gaps that one feature would close (password reset, password
-  change, MFA) into one finding each. Check the security events
+  Group gaps that one feature would close (MFA, for example) into one
+  finding each. Check the security events
   `utils/log.py` logs against ASVS 5.0 chapter 16 (Security Logging) rather
   than reporting logging as missing.
 
@@ -184,8 +204,13 @@ describes. Nothing else.
   whose fragment carries an `email=` besides its token (the page must show
   the token's). Queue, as the `app` Redis user, a message for an undeclared
   actor and one for the sign-up job with a list of recipients: neither may
-  send. Grep the backend's, worker's and nginx's logs for addresses and
-  tokens.
+  send. Password reset: use a link twice, after a password change, and two
+  at once (one must be `LINK_USED`); every older access token is refused
+  afterwards. Email change: complete one, then use its undo link after
+  changing the password as the new owner; complete a change to an address
+  registered meanwhile (409). Revoke another account's session id (404); a
+  revoked device's access token is refused at its next request. Grep the
+  backend's, worker's and nginx's logs for addresses and tokens.
 - **`behind-proxy` probes,** once the test stack is down (both use the
   `app_test` project): bring up the platform smoke stack
   (`docker compose --env-file .env.test -f docker-compose.test.yml -f .github/smoke/platform.yml --profile platform up -d --build --wait`,
@@ -203,9 +228,11 @@ Tear the test stack down. Then, **for the rate-limit probes only**, bring up
 the production-config stack (RULES.md, its mail sink included, or the
 worker refuses to start): the test stack runs `IntegrationConfig`, which
 turns Flask's limits off and trusts no proxy. Besides login's below, probe
-register's (10 an hour per IP; 3 an hour and 6 a day per address, from any
-IP), the completion's (10 an hour per IP) and the data export's (10 an
-hour per user). Check each login limit
+every limit CLAUDE.md's `auth/` bullet lists (the routes and their
+budgets, read from the decorators in `auth/routes.py` and
+`account/routes.py`), the per-address email budget shared by register, the
+password reset and the email change's new address included. Check each
+login limit
 (`backend/app/auth/routes.py`): 5 failures a minute for one account from one
 address answer 429, while the same account still logs in from a second
 address (a stranger's guesses lock out only the stranger); 100 failures an
