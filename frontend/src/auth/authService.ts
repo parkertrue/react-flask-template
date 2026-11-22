@@ -1,7 +1,7 @@
 import { api } from '@/api/api'
 import type {
   AccountDeleteRequest, AccountResponse, DataExportResponse, EmailChangeRequest,
-  EmailChangedResponse, EmailLinkRequest, LoginRequest, PasswordChangeRequest, SessionsResponse,
+  EmailChangedResponse, LinkTokenRequest, LoginRequest, PasswordChangeRequest, SessionsResponse,
   PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
   RegisterCompleteResponse, RegisterRequest, TokensResponse,
 } from '@/api/schemas'
@@ -12,7 +12,7 @@ export type Tokens = TokensResponse
 
 // The body of a completed sign-up: the login's, and the account's address,
 // the one its token named
-export type RegistrationComplete = RegisterCompleteResponse
+type RegistrationComplete = RegisterCompleteResponse
 
 // The body of GET /api/account; created_at is an ISO 8601 time in UTC
 export type Account = AccountResponse
@@ -89,14 +89,14 @@ export async function requestEmailChange(email: string, password: string) {
 // address now
 export async function completeEmailChange(token: string) {
   const response = await api.post<EmailChangedResponse>(
-    '/account/email/complete', { token } satisfies EmailLinkRequest)
+    '/account/email/complete', { token } satisfies LinkTokenRequest)
   return response.data
 }
 
 // The link to the old address: moves the account back and ends every session
 export async function undoEmailChange(token: string) {
   const response = await api.post<EmailChangedResponse>(
-    '/account/email/undo', { token } satisfies EmailLinkRequest)
+    '/account/email/undo', { token } satisfies LinkTokenRequest)
   return response.data
 }
 
@@ -119,7 +119,7 @@ export async function listSessions() {
 }
 
 // Ends one of the account's sessions: that device is refused at its next request
-export async function endSession(id: string) {
+export async function revokeSession(id: string) {
   await api.delete(`/account/sessions/${encodeURIComponent(id)}`)
 }
 

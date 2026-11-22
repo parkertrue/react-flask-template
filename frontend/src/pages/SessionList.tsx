@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { endSession, listSessions, type Sessions } from '@/auth/authService'
+import { revokeSession, listSessions, type Sessions } from '@/auth/authService'
 import type { SessionResponse } from '@/api/schemas'
 import { errorResponse, getErrorMessage } from '@/api/errors'
 
@@ -40,7 +40,7 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
     setError(null)
     setStatus('')
     try {
-      await endSession(id)
+      await revokeSession(id)
       setStatus(`Logged out ${device}.`)
     } catch (err) {
       // A 404: it ended on its own, or from elsewhere, before this click

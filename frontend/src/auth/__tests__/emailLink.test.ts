@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readLink, tokenEmail } from '../emailLink'
-import { linkToken } from '@/test/fixtures'
+import { linkProblemOf, readLink, tokenEmail } from '../emailLink'
+import { errorBody, httpError, linkToken } from '@/test/fixtures'
 
 // What the backend signs: base64url JSON, then the time and the signature
 function signed(payload: unknown) {
@@ -36,5 +36,23 @@ describe('readLink', () => {
 
   it('reads nothing from a fragment without a token', () => {
     expect(readLink('')).toEqual({ token: null, email: '' })
+  })
+})
+
+describe('linkProblemOf', () => {
+  it.each([
+    ['LINK_EXPIRED', 'expired'],
+    ['LINK_INVALID', 'invalid'],
+    ['LINK_USED', 'used'],
+  ] as const)('reads %s as %s', (code, kind) => {
+    expect(linkProblemOf(httpError(400, errorBody(code)))).toBe(kind)
+  })
+
+  it.each([
+    ['another code', httpError(409, errorBody('EMAIL_ALREADY_REGISTERED'))],
+    ['no body', httpError(503)],
+    ['not a request', new Error('boom')],
+  ])('leaves %s to the page', (_, err) => {
+    expect(linkProblemOf(err)).toBeNull()
   })
 })

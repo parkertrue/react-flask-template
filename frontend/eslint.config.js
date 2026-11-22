@@ -117,17 +117,32 @@ const folderOf = file => {
   return parts[0] === 'features' ? parts.slice(0, 2).join('/') : parts[0]
 }
 
+// The directory a file sits in, its tests counted as beside it
+const directoryOf = file => {
+  const directory = path.dirname(file)
+  return path.basename(directory) === '__tests__' ? path.dirname(directory) : directory
+}
+
 // no-restricted-imports only matches the text of a path, so a relative one
 // such as ../health/useHealth or ../routes could reach another folder
 // unseen. This resolves it instead: a relative import must stay in its
 // folder, which leaves the @/ alias, and the rules on it below, as the only
-// way across.
+// way across. The other way round, an @/ import into the file's own
+// directory is written with ./ (or ../ from its tests), as every other one is.
 const relativeWithinFolder = {
   meta: { type: 'problem', schema: [] },
   create(context) {
     const from = folderOf(context.filename)
     const check = source => {
-      if (from === null || typeof source?.value !== 'string' || !source.value.startsWith('.')) return
+      if (from === null || typeof source?.value !== 'string') return
+      if (source.value.startsWith('@/')) {
+        const target = path.join(SRC, source.value.slice(2))
+        if (directoryOf(target) === directoryOf(context.filename)) {
+          context.report({ node: source, message: 'Import within a folder with ./, not the @/ alias.' })
+        }
+        return
+      }
+      if (!source.value.startsWith('.')) return
       const target = path.resolve(path.dirname(context.filename), source.value)
       if (folderOf(target) !== from) {
         context.report({ node: source, message: 'Import from another folder with the @/ alias.' })

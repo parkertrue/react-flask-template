@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import EmailLinkRequest from '@/auth/EmailLinkRequest'
 import { PASSWORD_RESET_LINK_HOURS, requestPasswordReset } from '@/auth/authService'
+import { hours } from '@/utils/time'
 
 // A password reset's first step: the account's address, to email a link
 // to. The link's page, CompletePasswordResetPage, takes the new password.
@@ -16,7 +17,7 @@ export default function PasswordResetPage() {
       send={requestPasswordReset}
       sentText={email => <>
         If <strong>{email}</strong> has an account, we sent it a link. Open it within{' '}
-        {PASSWORD_RESET_LINK_HOURS * 60} minutes to choose a new password.
+        {hours(PASSWORD_RESET_LINK_HOURS)} to choose a new password.
       </>}
       footer={
         <p className="auth-footer">

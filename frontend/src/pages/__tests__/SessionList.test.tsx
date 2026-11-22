@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import SessionList from '../SessionList'
-import { endSession, listSessions } from '@/auth/authService'
+import { revokeSession, listSessions } from '@/auth/authService'
 import { errorBody, httpError, sessions } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
 
@@ -85,14 +85,14 @@ describe('SessionList', () => {
 
   it('logs a device out, drops it, says so and focuses the next device', async () => {
     vi.mocked(listSessions).mockResolvedValue(threeDevices())
-    vi.mocked(endSession).mockResolvedValue()
+    vi.mocked(revokeSession).mockResolvedValue()
     const { user } = renderList()
     await screen.findByRole('list', { name: 'Signed-in devices' })
 
     await user.click(logOut('Firefox on Windows'))
 
     await waitFor(() => expect(status()).toHaveTextContent('Logged out Firefox on Windows.'))
-    expect(endSession).toHaveBeenCalledExactlyOnceWith('laptop')
+    expect(revokeSession).toHaveBeenCalledExactlyOnceWith('laptop')
     expect(items().map(item => item.textContent)).toEqual([
       expect.stringMatching(/^Mobile Safari on iOS/), expect.stringMatching(/^Edge on macOS/)])
     expect(logOut('Mobile Safari on iOS')).toHaveFocus()
@@ -100,7 +100,7 @@ describe('SessionList', () => {
 
   it('focuses the previous device when the last one goes', async () => {
     vi.mocked(listSessions).mockResolvedValue(threeDevices())
-    vi.mocked(endSession).mockResolvedValue()
+    vi.mocked(revokeSession).mockResolvedValue()
     const { user } = renderList()
     await screen.findByRole('list', { name: 'Signed-in devices' })
 
@@ -111,7 +111,7 @@ describe('SessionList', () => {
 
   it('hands focus back to the page when no other device is left', async () => {
     vi.mocked(listSessions).mockResolvedValue(sessions())
-    vi.mocked(endSession).mockResolvedValue()
+    vi.mocked(revokeSession).mockResolvedValue()
     const { user } = renderList()
     await screen.findByRole('list', { name: 'Signed-in devices' })
 
@@ -123,7 +123,7 @@ describe('SessionList', () => {
 
   it('drops a device that had already logged out, and says so', async () => {
     vi.mocked(listSessions).mockResolvedValue(sessions())
-    vi.mocked(endSession).mockRejectedValue(httpError(404, errorBody('NOT_FOUND', 'Not found')))
+    vi.mocked(revokeSession).mockRejectedValue(httpError(404, errorBody('NOT_FOUND', 'Not found')))
     const { user } = renderList()
     await screen.findByRole('list', { name: 'Signed-in devices' })
 
@@ -135,7 +135,7 @@ describe('SessionList', () => {
 
   it('keeps the device and says why when logging it out fails', async () => {
     vi.mocked(listSessions).mockResolvedValue(sessions())
-    vi.mocked(endSession).mockRejectedValue(
+    vi.mocked(revokeSession).mockRejectedValue(
       httpError(503, errorBody('SERVICE_UNAVAILABLE', 'Could not log out that device, please try again shortly')))
     const { user } = renderList()
     await screen.findByRole('list', { name: 'Signed-in devices' })
@@ -150,7 +150,7 @@ describe('SessionList', () => {
   it('marks the buttons busy and ignores another click while one device logs out', async () => {
     vi.mocked(listSessions).mockResolvedValue(threeDevices())
     const { promise, resolve: finish } = Promise.withResolvers<undefined>()
-    vi.mocked(endSession).mockReturnValue(promise)
+    vi.mocked(revokeSession).mockReturnValue(promise)
     const { user } = renderList()
     await screen.findByRole('list', { name: 'Signed-in devices' })
 
@@ -161,7 +161,7 @@ describe('SessionList', () => {
     expect(busy).toHaveTextContent('Logging out...')
     expect(busy).toHaveAttribute('aria-disabled', 'true')
     expect(logOut('Mobile Safari on iOS')).toHaveAttribute('aria-disabled', 'true')
-    expect(endSession).toHaveBeenCalledTimes(1)
+    expect(revokeSession).toHaveBeenCalledTimes(1)
     await act(async () => finish(undefined))
   })
 })

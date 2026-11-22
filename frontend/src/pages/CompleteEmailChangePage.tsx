@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/useAuth'
 import { completeEmailChange, getAccount } from '@/auth/authService'
-import { useEmailLink } from '@/auth/emailLink'
+import { linkProblemOf, useEmailLink, type LinkProblemKind } from '@/auth/emailLink'
 import LinkProblem from '@/auth/LinkProblem'
 import { errorCode, getErrorMessage } from '@/api/errors'
 import PageTitle from '@/components/layout/PageTitle'
+import { ACCOUNT_QUERY_KEY } from './accountQuery'
 
 // Why the link can't move the account, in place of its button
-type LinkProblemKind = 'missing' | 'expired' | 'invalid' | 'used' | 'taken'
+type Problem = LinkProblemKind | 'taken'
 
-const PROBLEMS: Record<LinkProblemKind, string> = {
+const PROBLEMS: Record<Problem, string> = {
   missing: 'This page needs the link from your email. Open the link in the email we sent your new address.',
   expired: 'This link has expired. Ask for a new one on your account page.',
   invalid: 'This link is not valid. Copy the whole link from the email, or ask for a new one on your account page.',
@@ -25,8 +27,9 @@ const PROBLEMS: Record<LinkProblemKind, string> = {
 // account it moves.
 export default function CompleteEmailChangePage() {
   const { isAuthenticated, updateEmail } = useAuth()
+  const queryClient = useQueryClient()
   const link = useEmailLink()
-  const [problem, setProblem] = useState<LinkProblemKind | null>(link.token ? null : 'missing')
+  const [problem, setProblem] = useState<Problem | null>(link.token ? null : 'missing')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [movedTo, setMovedTo] = useState<string | null>(null)
@@ -46,15 +49,15 @@ export default function CompleteEmailChangePage() {
       // This browser's session may be the account just moved, or another:
       // ask whose it is, so the navbar shows its address
       if (isAuthenticated) {
-        await getAccount().then(account => updateEmail(account.email), () => {})
+        await queryClient.query({ queryKey: ACCOUNT_QUERY_KEY, queryFn: getAccount, staleTime: 0 })
+          .then(account => updateEmail(account.email), () => {})
       }
       setMovedTo(email)
     } catch (err) {
       setSubmitting(false)
       const code = errorCode(err)
-      if (code === 'LINK_EXPIRED') setProblem('expired')
-      else if (code === 'LINK_INVALID') setProblem('invalid')
-      else if (code === 'LINK_USED') setProblem('used')
+      const refusal = linkProblemOf(err)
+      if (refusal) setProblem(refusal)
       else if (code === 'EMAIL_ALREADY_REGISTERED') setProblem('taken')
       else setError(getErrorMessage(err))
     }

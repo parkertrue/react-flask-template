@@ -8,7 +8,7 @@ import ProtectedRoute from '@/auth/ProtectedRoute'
 import { storage } from '@/auth/storage'
 import {
   getAccount, logoutAllDevices, clearAuthCookies, deleteAccount, exportAccountData, requestEmailChange,
-  changePassword, listSessions, endSession,
+  changePassword, listSessions, revokeSession,
 } from '@/auth/authService'
 import { saveJsonFile, slugify } from '@/utils/download'
 import type { ErrorCode } from '@/api/errors'
@@ -353,13 +353,13 @@ describe('AccountPage', () => {
   })
 
   it('lists the devices signed in, and moves focus to "Log out all devices" when the last other one goes', async () => {
-    vi.mocked(endSession).mockResolvedValue()
+    vi.mocked(revokeSession).mockResolvedValue()
     const { user } = renderPage()
 
     await user.click(await screen.findByRole('button', { name: 'Log out Firefox on Windows' }))
 
     await waitFor(() => expect(logoutAll()).toHaveFocus())
-    expect(endSession).toHaveBeenCalledExactlyOnceWith('laptop')
+    expect(revokeSession).toHaveBeenCalledExactlyOnceWith('laptop')
   })
 
   it('shows who is signed in, then loads when they joined', async () => {

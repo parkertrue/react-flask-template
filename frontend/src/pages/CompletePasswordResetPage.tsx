@@ -2,13 +2,13 @@ import { useState, type SubmitEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { completePasswordReset } from '@/auth/authService'
-import { useEmailLink } from '@/auth/emailLink'
+import { linkProblemOf, useEmailLink, type LinkProblemKind } from '@/auth/emailLink'
 import LinkProblem from '@/auth/LinkProblem'
 import { errorCode, getErrorMessage } from '@/api/errors'
 import FormField from '@/components/forms/FormField'
 import { useFormFields } from '@/components/forms/useFormFields'
 import PageTitle from '@/components/layout/PageTitle'
-import type { LoginState } from '@/pages/LoginPage'
+import type { LoginState } from './LoginPage'
 import {
   validateNotGuessable,
   validatePassword,
@@ -18,9 +18,7 @@ import {
 } from '@/utils/validation'
 
 // Why the link can't reset the password, in place of the form
-type LinkProblem = 'missing' | 'expired' | 'invalid' | 'used'
-
-const PROBLEMS: Record<LinkProblem, string> = {
+const PROBLEMS: Record<LinkProblemKind, string> = {
   missing: 'This page needs the link from your email. Open the link in the email we sent you.',
   expired: 'This link has expired. Ask for a new one to reset your password.',
   invalid: 'This link is not valid. Copy the whole link from the email, or ask for a new one.',
@@ -38,7 +36,7 @@ export default function CompletePasswordResetPage() {
   const link = useEmailLink()
   const { values, errors, handleChange, validate } = useFormFields({ password: '', confirmPassword: '' })
   const [formError, setFormError] = useState<string | null>(null)
-  const [problem, setProblem] = useState<LinkProblem | null>(link.token ? null : 'missing')
+  const [problem, setProblem] = useState<LinkProblemKind | null>(link.token ? null : 'missing')
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
@@ -64,9 +62,8 @@ export default function CompletePasswordResetPage() {
     } catch (err) {
       setSubmitting(false)
       const code = errorCode(err)
-      if (code === 'LINK_EXPIRED') setProblem('expired')
-      else if (code === 'LINK_INVALID') setProblem('invalid')
-      else if (code === 'LINK_USED') setProblem('used')
+      const refusal = linkProblemOf(err)
+      if (refusal) setProblem(refusal)
       // The field's own message, focused, like a failed submit's
       else if (code === 'PASSWORD_BREACHED' || code === 'PASSWORD_GUESSABLE') {
         validate(form, { password: getErrorMessage(err) })

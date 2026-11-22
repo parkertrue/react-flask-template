@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { errorCode, type ErrorCode } from '@/api/errors'
 
 // What an emailed link's page reads from it: the token, and the address it
 // names ('' when it can't be read)
-export interface EmailLink {
+interface EmailLink {
   token: string | null
   email: string
 }
@@ -30,6 +31,24 @@ export function tokenEmail(token: string | null) {
   } catch {
     return ''
   }
+}
+
+// Why an emailed link's page cannot use its link, for every link: none in
+// the address, or one the backend refused. A page adds its own kinds (an
+// address taken since, say) to the union it keeps.
+export type LinkProblemKind = 'missing' | 'expired' | 'invalid' | 'used'
+
+const REFUSALS: Partial<Record<ErrorCode, LinkProblemKind>> = {
+  LINK_EXPIRED: 'expired',
+  LINK_INVALID: 'invalid',
+  LINK_USED: 'used',
+}
+
+// The kind of a failed request that refused the link, or null for any other
+// failure, which the page handles itself
+export function linkProblemOf(err: unknown): LinkProblemKind | null {
+  const code = errorCode(err)
+  return (code && REFUSALS[code]) ?? null
 }
 
 // The link of the page's address, read once, then stripped off the address

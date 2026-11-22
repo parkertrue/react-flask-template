@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type SubmitEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
-import { useEmailLink } from '@/auth/emailLink'
+import { linkProblemOf, useEmailLink, type LinkProblemKind } from '@/auth/emailLink'
 import LinkProblem from '@/auth/LinkProblem'
 import { completeRegistration } from '@/auth/authService'
 import { errorCode, getErrorMessage } from '@/api/errors'
@@ -18,9 +18,9 @@ import {
 } from '@/utils/validation'
 
 // Why the link can't make an account, in place of the form
-type LinkProblem = 'missing' | 'expired' | 'invalid' | 'used' | 'registered'
+type Problem = LinkProblemKind | 'registered'
 
-const PROBLEMS: Record<LinkProblem, { message: string; to: string; action: string }> = {
+const PROBLEMS: Record<Problem, { message: string; to: string; action: string }> = {
   missing: {
     message: 'This page needs the link from your email. Open the link in the email we sent you.',
     to: '/signup', action: 'Start again',
@@ -53,7 +53,7 @@ export default function CompleteRegistrationPage() {
     password: '', confirmPassword: '', acceptTerms: false
   })
   const [formError, setFormError] = useState<string | null>(null)
-  const [problem, setProblem] = useState<LinkProblem | null>(link.token ? null : 'missing')
+  const [problem, setProblem] = useState<Problem | null>(link.token ? null : 'missing')
   const [submitting, setSubmitting] = useState(false)
 
   // readOnly doesn't stop a checkbox being ticked, so ignore it while busy
@@ -84,9 +84,8 @@ export default function CompleteRegistrationPage() {
     } catch (err) {
       setSubmitting(false)
       const code = errorCode(err)
-      if (code === 'LINK_EXPIRED') setProblem('expired')
-      else if (code === 'LINK_INVALID') setProblem('invalid')
-      else if (code === 'LINK_USED') setProblem('used')
+      const refusal = linkProblemOf(err)
+      if (refusal) setProblem(refusal)
       else if (code === 'EMAIL_ALREADY_REGISTERED') setProblem('registered')
       // The field's own message, focused, like a failed submit's
       else if (code === 'PASSWORD_BREACHED' || code === 'PASSWORD_GUESSABLE') {

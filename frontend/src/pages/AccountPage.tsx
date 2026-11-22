@@ -18,7 +18,9 @@ import {
   validateEmail, validateNotGuessable, validatePassword, validatePasswordMatch,
   EMAIL_MAX_LENGTH, PASSWORD_INPUT_MAX_LENGTH, PASSWORD_MIN_LENGTH,
 } from '@/utils/validation'
+import { hours } from '@/utils/time'
 import { APP_NAME } from '@/appInfo'
+import { ACCOUNT_QUERY_KEY } from './accountQuery'
 import type { LoginState } from './LoginPage'
 import SessionList from './SessionList'
 
@@ -36,7 +38,7 @@ export default function AccountPage() {
   // Refetched when the window regains focus: an email change completes in
   // the tab its link opens, or on another device (DECISIONS.md, caching)
   const { data: account, error: accountError } = useQuery({
-    queryKey: ['account'], queryFn: getAccount, refetchOnWindowFocus: true,
+    queryKey: ACCOUNT_QUERY_KEY, queryFn: getAccount, refetchOnWindowFocus: true,
   })
   const emailChange = useFormFields({ 'new-email': '', 'email-password': '' })
   const [askingEmail, setAskingEmail] = useState(false)
@@ -102,7 +104,7 @@ export default function AccountPage() {
     setChangingEmail(false)
     setAskingEmail(false)
     setEmailStatus(
-      `We sent a link to ${values['new-email']}. Open it within ${EMAIL_CHANGE_LINK_HOURS} hours to move your account there.`)
+      `We sent a link to ${values['new-email']}. Open it within ${hours(EMAIL_CHANGE_LINK_HOURS)} to move your account there.`)
   }
 
   // Each time afresh: no passwords or message from an earlier try
