@@ -32,7 +32,8 @@ from app.auth.emails import (
     PASSWORD_RESET, PASSWORD_RESET_LINK, PASSWORD_RESET_LINK_LIFETIME, REGISTRATION_LINK,
     REGISTRATION_LINK_LIFETIME, send_password_changed_email, send_password_reset_email,
     send_registration_email)
-from app.auth.errors import token_revoked
+from app.auth.errors import (
+    link_refused, password_breached, password_guessable, token_revoked)
 from app.auth.models import TERMS_VERSION, User
 from app.auth.schemas import (
     LoginRequest, PasswordResetCompleteRequest, PasswordResetRequest, RegisterCompleteRequest,
@@ -223,14 +224,6 @@ def issue_tokens(user_id: int, auth_time: int, rotating: tuple[str, str] | None 
     return response
 
 
-def _already_registered() -> ErrorResponse:
-    return error_response(
-        code='EMAIL_ALREADY_REGISTERED',
-        message='Email already registered',
-        status=409
-    )
-
-
 def _terms_outdated() -> ErrorResponse:
     return error_response(
         code='TERMS_OUTDATED',
@@ -251,34 +244,6 @@ def read_email_link(purpose: str, token: str, lifetime: timedelta) -> LinkClaims
     if not is_normalized_email(claims.email):
         return link_refused(purpose, 'invalid')
     return claims
-
-
-def password_guessable() -> ErrorResponse:
-    return error_response(
-        code='PASSWORD_GUESSABLE',
-        message="Choose a password that doesn't contain your email address or the app's name.",
-        status=422)
-
-
-def password_breached() -> ErrorResponse:
-    return error_response(
-        code='PASSWORD_BREACHED',
-        message='This password has appeared in a data breach. Choose another.',
-        status=422)
-
-
-def link_refused(purpose: str, reason: str) -> ErrorResponse:
-    """Refuse an emailed link, and log why: a run of them from one address
-    is someone probing the link's format or replaying stolen links"""
-    security_event('link_refused', purpose=purpose, reason=reason)
-    if reason == 'registered':
-        return _already_registered()
-    if reason == 'expired':
-        return error_response(code='LINK_EXPIRED', message='This link has expired', status=400)
-    if reason == 'used':
-        return error_response(
-            code='LINK_USED', message='This link has already been used', status=400)
-    return error_response(code='LINK_INVALID', message='This link is not valid', status=400)
 
 
 @auth_bp.route('/register', methods=['POST'])

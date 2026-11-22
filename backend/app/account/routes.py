@@ -21,9 +21,11 @@ from app.account.schemas import (
 )
 from app.auth.models import User
 from app.auth.emails import PASSWORD_CHANGE
+from app.auth.errors import (
+    already_registered, link_refused, password_breached, password_guessable, wrong_password)
 from app.auth.routes import (
-    account_key, account_password_limit, emails_to_address_limit, issue_tokens, link_refused,
-    password_breached, password_changed_email, password_guessable, read_email_link)
+    account_key, account_password_limit, emails_to_address_limit, issue_tokens,
+    password_changed_email, read_email_link)
 from app.auth.schemas import is_guessable
 from app.utils.breached import is_breached
 from app.utils.passwords import hash_password
@@ -108,11 +110,7 @@ def delete_account() -> ResponseReturnValue:
     payload = AccountDeleteRequest.model_validate(request.get_json())
     if not current_user.check_password(payload.password):
         security_event('wrong_password', user_id=current_user.id)
-        return error_response(
-            code='WRONG_PASSWORD',
-            message='The password is incorrect',
-            status=403
-        )
+        return wrong_password()
 
     # Sessions first: if Redis cannot revoke them, nothing is deleted yet and
     # the user can try again. A token issued after this (a refresh racing
@@ -133,11 +131,6 @@ def delete_account() -> ResponseReturnValue:
     response = make_response(jsonify(MessageResponse(message='Account deleted').model_dump()), 200)
     unset_refresh_cookies(response)
     return response
-
-
-def _email_taken() -> ResponseReturnValue:
-    return error_response(
-        code='EMAIL_ALREADY_REGISTERED', message='Email already registered', status=409)
 
 
 @account_bp.route('/email', methods=['POST'])
@@ -164,7 +157,7 @@ def request_email_change() -> ResponseReturnValue:
     payload = EmailChangeRequest.model_validate(request.get_json())
     if not current_user.check_password(payload.password):
         security_event('wrong_password', user_id=current_user.id)
-        return error_response(code='WRONG_PASSWORD', message='The password is incorrect', status=403)
+        return wrong_password()
     # Case aside, as MySQL matches users.email: the same address
     if payload.email.lower() == current_user.email.lower():
         return error_response(
@@ -194,7 +187,7 @@ def complete_email_change() -> ResponseReturnValue:
     if not hmac.compare_digest(change_state(user), claims.state):
         return link_refused(EMAIL_CHANGE_LINK, 'used')
     if db.session.execute(select(User.id).where(User.email == claims.email)).first():
-        return _email_taken()
+        return already_registered()
 
     user_id, old_email = user.id, user.email
     user.email = claims.email
@@ -203,7 +196,7 @@ def complete_email_change() -> ResponseReturnValue:
     except IntegrityError:
         # Someone signed up with the address since the check above
         db.session.rollback()
-        return _email_taken()
+        return already_registered()
 
     security_event('email_changed', user_id=user_id)
     try:
@@ -234,7 +227,7 @@ def undo_email_change() -> ResponseReturnValue:
     if user.email == claims.email:
         return link_refused(EMAIL_UNDO_LINK, 'used')
     if db.session.execute(select(User.id).where(User.email == claims.email)).first():
-        return _email_taken()
+        return already_registered()
 
     # First, as a reset does: whoever moved the account must lose it, so
     # nothing changes unless Redis can end their sessions
@@ -252,7 +245,7 @@ def undo_email_change() -> ResponseReturnValue:
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return _email_taken()
+        return already_registered()
 
     security_event('email_change_undone', user_id=user_id, sessions=sessions)
     response = make_response(
@@ -282,7 +275,7 @@ def change_password() -> ResponseReturnValue:
     payload = PasswordChangeRequest.model_validate(request.get_json())
     if not current_user.check_password(payload.current_password):
         security_event('wrong_password', user_id=current_user.id)
-        return error_response(code='WRONG_PASSWORD', message='The password is incorrect', status=403)
+        return wrong_password()
     # Both NFKC-normalized by Password, so any spelling of the same one
     if payload.new_password == payload.current_password:
         return error_response(
@@ -319,7 +312,7 @@ def change_password() -> ResponseReturnValue:
         .values(password_hash=new_hash)))
     db.session.commit()
     if changed.rowcount == 0:
-        return error_response(code='WRONG_PASSWORD', message='The password is incorrect', status=403)
+        return wrong_password()
 
     security_event('password_changed', user_id=user_id, sessions=sessions)
     try:

@@ -18,8 +18,6 @@ interface EmailLinkRequestProps {
   send: (email: string) => Promise<void>
   // What the inbox step says was sent to the address
   sentText: (email: string) => ReactNode
-  // Under the email field: a note on the address's use
-  note?: ReactNode
   // Under the form: where else to go
   footer: ReactNode
 }
@@ -28,7 +26,7 @@ interface EmailLinkRequestProps {
 // reset): the address, then "Check your inbox", with "Send again" and "Use a
 // different email". The link's page does the rest.
 export default function EmailLinkRequest(props: EmailLinkRequestProps) {
-  const { title, hint, submitLabel, busyLabel, send, sentText, note, footer } = props
+  const { title, hint, submitLabel, busyLabel, send, sentText, footer } = props
   const { values, errors, handleChange, validate } = useFormFields({ email: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -145,7 +143,6 @@ export default function EmailLinkRequest(props: EmailLinkRequestProps) {
               required
               maxLength={EMAIL_MAX_LENGTH}
             />
-            {note}
 
             {error}
 
