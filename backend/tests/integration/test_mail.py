@@ -1,8 +1,5 @@
 """Sending email to a real SMTP server: Mailpit (docker-compose.test.yml),
 read back through its API"""
-import json
-import os
-import urllib.request
 from email.utils import parseaddr
 from urllib.parse import quote
 
@@ -10,14 +7,9 @@ import pytest
 from flask import current_app
 
 from app.utils.mail import send_email
+from tests.integration.mailpit import mailpit
 
 ADDRESS = 'integration-mail@example.com'
-
-
-def mailpit(path, method='GET'):
-    request = urllib.request.Request(os.environ['MAILPIT_API_URL'] + path, method=method)
-    with urllib.request.urlopen(request, timeout=5) as response:
-        return json.loads(response.read()) if method == 'GET' else None
 
 
 @pytest.fixture

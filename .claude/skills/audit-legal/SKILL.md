@@ -119,9 +119,9 @@ as RULES.md.
   does. Check for any request the browser makes to a third party (fonts,
   CDNs, scripts, images in `index.html`, CSS and the built bundle): each one
   sends the visitor's IP abroad (LG München I, 3 O 17493/20, on Google
-  Fonts). Then every outbound call the backend or worker makes
-  (`grep -rnE "urlopen|requests\.|smtplib" backend/app`), and what each
-  sends.
+  Fonts). Then every outbound call the backend or worker makes (the files
+  `backend/ruff.toml` lets past TID251's outbound bans, its
+  `[lint.per-file-ignores]`), and what each sends.
 - **Children:** is there an age statement or gate? COPPA applies to services
   directed at, or knowingly collecting from, under-13s; GDPR Art. 8 sets 13
   to 16 for consent by country.
