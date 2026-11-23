@@ -291,8 +291,8 @@ def request_reset(client, ip, email):
 
 
 class TestPasswordResetLimits:
-    """A reset emails a link too: per IP, and per address in the budget
-    sign-up's links use"""
+    """A reset emails a link too: per IP, and per address in a budget of its
+    own, so sign-up requests cannot use up the owner's way back in"""
 
     def test_eleventh_from_one_ip_in_an_hour_is_rate_limited(self, limited_app):
         client = limited_app.test_client()
@@ -310,16 +310,27 @@ class TestPasswordResetLimits:
 
         assert statuses == [202, 202, 202, 429]
 
+    def test_a_seventh_link_to_one_address_in_a_day_is_rate_limited(self, limited_app, clock):
+        client = limited_app.test_client()
+        statuses = []
+        for hour in range(3):
+            statuses.append([request_reset(client, f'203.0.113.{hour}{i}', 'inbox@example.com').status_code
+                             for i in range(3 if hour < 2 else 1)])
+            clock[0] += 61 * 60
+
+        assert statuses == [[202, 202, 202], [202, 202, 202], [429]]
+
     @pytest.mark.parametrize('first, then', [
         (request_link, request_reset), (request_reset, request_link)],
         ids=['sign-up, then a reset', 'a reset, then sign-up'])
-    def test_sign_up_and_a_reset_share_an_address_s_budget(self, limited_app, first, then):
-        """Alternating the two forms sends no more mail to one inbox"""
+    def test_sign_up_and_a_reset_keep_separate_budgets(self, limited_app, first, then):
+        """A stranger's sign-up requests for an address leave its owner's
+        reset working, and the reverse"""
         client = limited_app.test_client()
-        for i in range(3):
-            first(client, f'203.0.113.{i}', 'inbox@example.com')
+        statuses = [first(client, f'203.0.113.{i}', 'inbox@example.com').status_code for i in range(4)]
 
-        assert then(client, '198.51.100.9', 'inbox@example.com').status_code == 429
+        assert statuses == [202, 202, 202, 429]
+        assert then(client, '198.51.100.9', 'inbox@example.com').status_code == 202
 
     def test_eleventh_completion_from_one_ip_in_an_hour_is_rate_limited(self, limited_app):
         """Each a fast 400 after the first, which still counts"""
