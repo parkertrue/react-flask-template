@@ -128,21 +128,6 @@
       "title": "EmailChangedResponse",
       "type": "object"
     },
-    "EmailLinkRequest": {
-      "additionalProperties": false,
-      "description": "An email change's emailed link, posted by its page: the one that moves\nthe account to the new address, or the one that moves it back",
-      "properties": {
-        "token": {
-          "maxLength": 1024,
-          "type": "string"
-        }
-      },
-      "required": [
-        "token"
-      ],
-      "title": "EmailLinkRequest",
-      "type": "object"
-    },
     "HealthResponse": {
       "description": "GET /api/health: \"ok\" whenever the backend answers",
       "properties": {
@@ -157,6 +142,21 @@
       "type": "object"
     },
     "JsonValue": {},
+    "LinkTokenRequest": {
+      "additionalProperties": false,
+      "description": "An email change's emailed link, posted by its page: the one that moves\nthe account to the new address, or the one that moves it back",
+      "properties": {
+        "token": {
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "LinkTokenRequest",
+      "type": "object"
+    },
     "LoginRequest": {
       "additionalProperties": false,
       "properties": {

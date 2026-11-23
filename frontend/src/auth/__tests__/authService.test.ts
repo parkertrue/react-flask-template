@@ -4,7 +4,7 @@ import {
   clearAuthCookies, deleteAccount, getAccount, exportAccountData, REGISTRATION_LINK_HOURS,
   requestPasswordReset, completePasswordReset, PASSWORD_RESET_LINK_HOURS,
   requestEmailChange, completeEmailChange, undoEmailChange, EMAIL_CHANGE_LINK_HOURS, changePassword,
-  listSessions, endSession,
+  listSessions, revokeSession,
 } from '../authService'
 import { api } from '@/api/api'
 import { backendConstant } from '@/test/backend'
@@ -110,19 +110,19 @@ describe('authService', () => {
     expect(await call('a-token')).toEqual({ email: 'b@example.com' })
   })
 
-  it('endSession deletes that session, its id kept whole in the path', async () => {
+  it('revokeSession deletes that session, its id kept whole in the path', async () => {
     vi.mocked(api.delete).mockResolvedValue({ data: {} })
 
-    await endSession('a/b?c')
+    await revokeSession('a/b?c')
 
     expect(api.delete).toHaveBeenCalledExactlyOnceWith('/account/sessions/a%2Fb%3Fc')
   })
 
-  it('endSession passes failures on to the caller untouched', async () => {
+  it('revokeSession passes failures on to the caller untouched', async () => {
     const error = new Error('Request failed')
     vi.mocked(api.delete).mockRejectedValue(error)
 
-    await expect(endSession('laptop')).rejects.toBe(error)
+    await expect(revokeSession('laptop')).rejects.toBe(error)
   })
 
   // Its callers are already ending the session, with nothing left to try

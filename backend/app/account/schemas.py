@@ -56,7 +56,7 @@ class EmailChangeRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
 
-class EmailLinkRequest(BaseModel):
+class LinkTokenRequest(BaseModel):
     """An email change's emailed link, posted by its page: the one that moves
     the account to the new address, or the one that moves it back"""
     token: str = Field(max_length=LINK_TOKEN_MAX_LENGTH)

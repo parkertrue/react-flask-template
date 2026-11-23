@@ -16,7 +16,7 @@ from app.account.emails import (
     change_state, send_email_change_email, send_email_changed_email, state_account, undo_state)
 from app.account.schemas import (
     AccountDeleteRequest, AccountExport, AccountResponse, DataExportResponse, EmailChangeRequest,
-    EmailChangedResponse, EmailLinkRequest, PasswordChangeRequest, SessionExport, SessionResponse,
+    EmailChangedResponse, LinkTokenRequest, PasswordChangeRequest, SessionExport, SessionResponse,
     SessionsResponse,
 )
 from app.auth.models import User
@@ -175,7 +175,7 @@ def complete_email_change() -> ResponseReturnValue:
     """An email change's second step: the link to the new address, which
     proves it, moves the account there. Sessions stay: tokens name the
     account by id. The old address is told, with a link back."""
-    payload = EmailLinkRequest.model_validate(request.get_json())
+    payload = LinkTokenRequest.model_validate(request.get_json())
     claims = read_email_link(EMAIL_CHANGE_LINK, payload.token, EMAIL_CHANGE_LINK_LIFETIME)
     if not isinstance(claims, LinkClaims):
         return claims
@@ -217,7 +217,7 @@ def undo_email_change() -> ResponseReturnValue:
     That also ends the change's own link, and every other pending link,
     since each names the password. The owner then resets the password,
     which reaches them at this address again."""
-    payload = EmailLinkRequest.model_validate(request.get_json())
+    payload = LinkTokenRequest.model_validate(request.get_json())
     claims = read_email_link(EMAIL_UNDO_LINK, payload.token, EMAIL_UNDO_LINK_LIFETIME)
     if not isinstance(claims, LinkClaims):
         return claims

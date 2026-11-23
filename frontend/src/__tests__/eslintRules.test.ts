@@ -47,6 +47,10 @@ describe('import rules', () => {
     ['src/utils/x.ts', "import('../pages/HomePage')", 'local/relative-within-folder'],
     ['src/routes.tsx', "import './pages/HomePage'", 'local/relative-within-folder'],
     ['src/components/layout/x.ts', "import '../../features/notes/useNotes'", 'no-restricted-imports'],
+    // The alias into the file's own directory, which ./ reaches
+    ['src/pages/x.tsx', "import type { X } from '@/pages/LoginPage'", 'local/relative-within-folder'],
+    ['src/pages/__tests__/x.test.tsx', "import '@/pages/LoginPage'", 'local/relative-within-folder'],
+    ['src/main.tsx', "import '@/routes'", 'local/relative-within-folder'],
     // The one-way rules on the @/ alias
     ['src/utils/x.ts', "import '@/features/notes/useNotes'", 'no-restricted-imports'],
     ['src/auth/x.ts', "import '@/routes'", 'no-restricted-imports'],
@@ -69,6 +73,7 @@ describe('import rules', () => {
     ['src/features/notes/__tests__/x.ts', "import '../useNotes'"],
     ['src/features/notes/__tests__/x.ts', "import '@/routes'"],
     ['src/components/layout/x.ts', "import '../forms/FormField'"],
+    ['src/components/dialogs/x.ts', "import '@/components/forms/FormField'"],
     ['src/test/integration/x.ts', "import '../fixtures'"],
     // A shared integration test renders the whole app
     ['src/test/integration/x.ts', "import '@/routes'"],

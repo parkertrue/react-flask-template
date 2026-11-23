@@ -10,9 +10,9 @@ export interface ApiSchemas {
   DataExportResponse: DataExportResponse;
   EmailChangeRequest: EmailChangeRequest;
   EmailChangedResponse: EmailChangedResponse;
-  EmailLinkRequest: EmailLinkRequest;
   HealthResponse: HealthResponse;
   JsonValue: JsonValue;
+  LinkTokenRequest: LinkTokenRequest;
   LoginRequest: LoginRequest;
   MessageResponse: MessageResponse;
   NoteCreateRequest: NoteCreateRequest;
@@ -92,17 +92,17 @@ export interface EmailChangedResponse {
   email: string;
 }
 /**
- * An email change's emailed link, posted by its page: the one that moves
- * the account to the new address, or the one that moves it back
- */
-export interface EmailLinkRequest {
-  token: string;
-}
-/**
  * GET /api/health: "ok" whenever the backend answers
  */
 export interface HealthResponse {
   status: string;
+}
+/**
+ * An email change's emailed link, posted by its page: the one that moves
+ * the account to the new address, or the one that moves it back
+ */
+export interface LinkTokenRequest {
+  token: string;
 }
 export interface LoginRequest {
   email: string;

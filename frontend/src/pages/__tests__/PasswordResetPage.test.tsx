@@ -36,7 +36,7 @@ describe('PasswordResetPage', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Check your inbox' })).toHaveFocus()
     expect(screen.getByText(/has an account, we sent it a link/)).toHaveTextContent(
-      'If user@example.com has an account, we sent it a link. Open it within 60 minutes to choose a new password.')
+      'If user@example.com has an account, we sent it a link. Open it within 1 hour to choose a new password.')
     expect(requestPasswordReset).toHaveBeenCalledExactlyOnceWith('user@example.com')
   })
 })

@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/useAuth'
 import { undoEmailChange } from '@/auth/authService'
-import { useEmailLink } from '@/auth/emailLink'
+import { linkProblemOf, useEmailLink, type LinkProblemKind } from '@/auth/emailLink'
 import LinkProblem from '@/auth/LinkProblem'
 import { errorCode, getErrorMessage } from '@/api/errors'
 import PageTitle from '@/components/layout/PageTitle'
 
 // Why the link can't move the account back, in place of its button
-type LinkProblemKind = 'missing' | 'expired' | 'invalid' | 'used' | 'taken'
+type Problem = LinkProblemKind | 'taken'
 
-const PROBLEMS: Record<LinkProblemKind, string> = {
+const PROBLEMS: Record<Problem, string> = {
   missing: 'This page needs the link from the email that told you your address had changed.',
   expired: 'This link has expired. If you did not change your email, contact us.',
   invalid: 'This link is not valid. Copy the whole link from the email.',
@@ -26,7 +26,7 @@ const PROBLEMS: Record<LinkProblemKind, string> = {
 export default function UndoEmailChangePage() {
   const { isAuthenticated, logout } = useAuth()
   const link = useEmailLink()
-  const [problem, setProblem] = useState<LinkProblemKind | null>(link.token ? null : 'missing')
+  const [problem, setProblem] = useState<Problem | null>(link.token ? null : 'missing')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [movedTo, setMovedTo] = useState<string | null>(null)
@@ -48,9 +48,8 @@ export default function UndoEmailChangePage() {
     } catch (err) {
       setSubmitting(false)
       const code = errorCode(err)
-      if (code === 'LINK_EXPIRED') setProblem('expired')
-      else if (code === 'LINK_INVALID') setProblem('invalid')
-      else if (code === 'LINK_USED') setProblem('used')
+      const refusal = linkProblemOf(err)
+      if (refusal) setProblem(refusal)
       else if (code === 'EMAIL_ALREADY_REGISTERED') setProblem('taken')
       else setError(getErrorMessage(err))
     }
