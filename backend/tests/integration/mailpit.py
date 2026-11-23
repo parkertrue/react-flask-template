@@ -2,13 +2,13 @@
 read through its API (MAILPIT_API_URL)"""
 import json
 import os
-import urllib.request
 from urllib.parse import quote
+from urllib.request import Request, urlopen  # noqa: TID251
 
 
 def mailpit(path, method='GET'):
-    request = urllib.request.Request(os.environ['MAILPIT_API_URL'] + path, method=method)
-    with urllib.request.urlopen(request, timeout=5) as response:
+    request = Request(os.environ['MAILPIT_API_URL'] + path, method=method)
+    with urlopen(request, timeout=5) as response:
         return json.loads(response.read()) if method == 'GET' else None
 
 

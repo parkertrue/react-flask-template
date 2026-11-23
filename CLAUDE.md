@@ -48,7 +48,7 @@ cd backend
 ./run_tests.sh unit --verbose    # Verbose output
 ./run_tests.sh unit --no-coverage
 python export_schemas.py         # After changing a schema: writes the models' JSON Schema for the frontend's types (then npm run api-types there)
-ruff check .                     # Lint (errors, quote style, no print, commented-out code or TODO, no naive datetimes, eval, subprocess or SQL built from strings, no get_jwt_identity or skipped tests, no blind pytest.raises(Exception), no unused noqa; CI fails on any finding, and .github/scripts/check_lint_rules.py plants a case for each rule; CI also runs ruff check ../.github/scripts, whose ruff.toml allows print and subprocess)
+ruff check .                     # Lint (errors, quote style, no print, commented-out code or TODO, no naive datetimes, eval, subprocess or SQL built from strings, no call to another server outside the files ruff.toml lists (per-file-ignores, one per third party), no get_jwt_identity or skipped tests, no blind pytest.raises(Exception), no unused noqa; CI fails on any finding, and .github/scripts/check_lint_rules.py plants a case for each rule; CI also runs ruff check ../.github/scripts, whose ruff.toml allows print and subprocess)
 mypy                             # Type check, strict, on app/, wait_for_services.py, wsgi.py, worker.py and export_schemas.py (mypy.ini; the tests and migrations are left out); CI fails on any finding, and check_lint_rules.py plants a case for strict mode
 ```
 

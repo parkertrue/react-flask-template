@@ -1,5 +1,5 @@
 """Sending email, through the in-memory mail server (outbox, in conftest.py)"""
-import smtplib
+import smtplib  # noqa: TID251
 import ssl
 
 import pytest

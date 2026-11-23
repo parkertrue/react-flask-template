@@ -1,5 +1,5 @@
 import json
-import smtplib
+import smtplib  # noqa: TID251
 
 import pytest
 from dramatiq import Message, Worker

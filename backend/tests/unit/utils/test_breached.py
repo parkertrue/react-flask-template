@@ -2,7 +2,6 @@
 against a faked urlopen, its deadline and decoding through a real socket"""
 import hashlib
 import io
-import socket
 import threading
 import time
 import urllib.error
@@ -89,7 +88,7 @@ def test_it_introduces_itself_by_the_app_s_name(app, api, monkeypatch):
 @pytest.mark.parametrize('error', [
     urllib.error.URLError('unreachable'),
     urllib.error.HTTPError(API, 503, 'Service Unavailable', {}, None),
-    socket.timeout('timed out'),
+    TimeoutError('timed out'),
     ConnectionResetError(),
 ], ids=['unreachable', 'a 503', 'timed out', 'reset'])
 def test_fails_open_and_logs_why(api, logged, error):

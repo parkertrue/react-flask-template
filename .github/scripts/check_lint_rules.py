@@ -30,6 +30,10 @@ PLANTED = (
     (APP, 'from flask_jwt_extended import get_jwt_identity\n\nget_jwt_identity()\n', 'TID251'),
     (APP, 'import subprocess\n\nsubprocess.run([])\n', 'TID251'),
     (APP, "import os\n\nos.system('x')\n", 'TID251'),
+    # Another server, called from a file ruff.toml does not list
+    (APP, 'import smtplib\n', 'TID251'),
+    (APP, 'import urllib.request\n', 'TID251'),
+    (APP, 'import requests\n', 'TID251'),
     # Relative imports, which tests/unit/test_import_rules.py cannot see
     (APP, 'from . import probe\n\nprobe()\n', 'TID252'),
     # Leftovers
@@ -89,6 +93,9 @@ def main():
     # And a clean file stays clean, so the checks above cannot all pass on noise
     if clean := codes(APP, "x = 'a'\n"):
         failures.append(f'a clean file reports {sorted(clean)}')
+    # A file ruff.toml lists may call another server
+    if clean := codes('app/utils/mail.py', 'import smtplib\n\nsmtplib.SMTP()\n'):
+        failures.append(f'app/utils/mail.py reports {sorted(clean)}')
     if clean := type_codes('x: int = 1\n'):
         failures.append(f'mypy reports {sorted(clean)} for a clean file')
     for failure in failures:
