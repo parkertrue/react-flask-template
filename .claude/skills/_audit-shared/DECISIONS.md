@@ -5,27 +5,15 @@ them. Each entry says what was chosen and why. A check reports an entry here
 only if its **Revisit when** condition has come true, or the code no longer
 matches the entry (then the entry is stale and that is the finding).
 
-Add an entry when a finding is deliberately kept as-is. Delete one when the
-code changes so it no longer applies.
+Add an entry when a finding is deliberately kept as-is, under the heading it
+fits. Delete one when the code changes so it no longer applies. Open work
+belongs in `OPEN-ISSUES.md`, not here.
 
 In a *Revisit when*, "a deployment", "a real server" and "production" mean
 one that serves real users and holds their data. A server the maintainer runs
 for testing doesn't count, even one that deploys every merge to `main`.
 
-## Accepted trade-offs
-
-**External services: one database user is not enough, and the bundled
-services are known by name.** In production the backend refuses to start
-when `DATABASE_URL`'s user holds more than row rights (`wait_for_services.py`),
-with no opt-out, so a provider that offers a single database user is
-unsupported (user's decision, 2026-10-21). TLS is required for any host but
-`db` and `redis`, the bundled services' names, so renaming those services
-means editing `config.py` too (`docs/deployment.md`, "External Database or Redis"). One gap
-stays: a `MIGRATION_DATABASE_URL` set on the backend itself wins over
-`DATABASE_URL`, and the app then runs as the schema's owner; only the
-compose file's `environment:` lists keep it on `migrate`.
-*Revisit when:* a deployment needs a provider with one user, or the backend
-is run by something other than the compose file.
+## Auth and accounts
 
 **Access token in localStorage.** The 15-minute access token is readable by
 any XSS; the refresh token stays in an HttpOnly cookie. Mitigated by the short
@@ -33,22 +21,33 @@ expiry, the CSP, and React's escaping. Keeps the client simple: no cookie for
 API calls, so no CSRF on them. See the comment in `frontend/src/auth/storage.ts`.
 *Revisit when:* the app renders third-party or user-supplied HTML.
 
-**A breached-password check that fails open** (user, 2026-11-09). Sign-up,
-a password reset and a password change check a new password against Have I Been Pwned's Pwned Passwords
-(`backend/app/utils/breached.py`), as NIST SP 800-63B requires, through its
-range API: 5 characters of the password's SHA-1 leave the server, padded, so
-the service learns nothing it could tie to the user. If the service is down
-or slow (2 s for the whole call, the name lookup included: it runs on a
-pool of 4 threads, so a call past the deadline holds no request thread or
-database connection), the password is accepted and `breach_check_failed` logged,
-since a third party's outage must not stop sign-up; a breached password can
-slip through meanwhile. Login, account deletion and an email change never
-check: they only compare. CodeQL's `py/weak-sensitive-data-hashing` flags the SHA-1 of the
-password (in `breached.py` and its test); both alerts were dismissed as false
-positives (user, 2026-11-09): SHA-1 is how the API names a password, the full
-hash never leaves memory or reaches storage, and stored passwords stay
-scrypt hashes. *Revisit when:* the service's outages show up often in the
-log, or the app holds data that justifies refusing sign-up while it is down.
+**One set of password rules, at login too** (user, 2026-11-09). Every
+password the app accepts (sign-up, login, a reset, account deletion, an
+email change, a password change) is one `Password` type: 15 to 128
+characters, NIST's minimum for a password that is the only factor, with no
+composition rules. Login applies the length too. *Revisit when:* the rules
+tighten on a deployment with real users, which then needs login to accept
+the old ones while a password change replaces them.
+
+**scrypt at Werkzeug's default cost.** Password hashes use `scrypt:32768:8:1`
+(N=2^15), below OWASP's N=2^17. Raising it costs about 4× the CPU and memory
+per hash (~128 MB), which has to be sized against the real server's CPU,
+memory limit and `PASSWORD_HASH_CONCURRENCY` (`OPEN-ISSUES.md`, Production
+to-dos). *Revisit when:* the app runs on its production hardware.
+
+**A breached-password check that fails open** (user, 2026-11-09). Sign-up, a
+password reset and a password change check a new password against Pwned
+Passwords' range API (`backend/app/utils/breached.py`), as NIST SP 800-63B
+requires: 5 characters of its SHA-1 leave the server, padded. If the service
+is down or slow (2 s for the whole call, on a pool of 4 threads, so it holds
+no request thread or database connection), the password is accepted and
+`breach_check_failed` logged, since a third party's outage must not stop
+sign-up. Login, account deletion and an email change only compare, so never
+check. CodeQL's `py/weak-sensitive-data-hashing` alerts on that SHA-1 (in
+`breached.py` and its test) were dismissed as false positives: SHA-1 is how
+the API names a password, the full hash never leaves memory, and stored
+passwords stay scrypt. *Revisit when:* the service's outages show up often in
+the log, or the app holds data that justifies refusing sign-up while it is down.
 
 **No refresh-token reuse detection.** A replayed, already rotated refresh token
 gets 401 `AUTH_TOKEN_REVOKED`, but does not revoke the rest of that user's
@@ -56,58 +55,450 @@ sessions. Revoking on reuse would also log out a second tab that lost the
 rotation race. *Revisit when:* the app holds data that justifies logging users
 out on a false positive.
 
-**No per-IP quota on the whole API.** Only the auth and account routes CLAUDE.md
-lists under `auth/` have Flask limits; users sharing an address (offices,
-carrier NAT) would lock each other out. nginx's per-IP `limit_req`/`limit_conn` on `/api` is the coarse
-backstop.
-
 **Sign-up proves the address first, and answers every address alike**
 (user, 2026-11-09). `POST /api/auth/register` takes an email alone, answers
-202 whatever the address, and queues one of two emails: a link to finish
-(24 hours, `utils/links.py`) or, for a registered address, a note saying so
-with a login link. No row exists until the link is used. The form therefore
-never tells a stranger which addresses have accounts, and a mistyped address
-leaves nothing behind. Each link works once, even after the account it made
-is deleted (its hash is kept in Redis for its lifetime); a link for an
-address that has an account since answers 409. The costs: sign-up takes two
-steps, and nobody can sign up while email is down or unconfigured (a local
-production run included) or while Redis is down, since finishing claims the
-link there. *Revisit when:* an app needs accounts without a verified email
-(an invitation flow, SSO), or the 24-hour window proves too short or too
-long.
+202 whatever the address, and queues either a link to finish (24 hours) or,
+for a registered address, a note saying so. No row exists until the link is
+used, so the form never tells a stranger which addresses have accounts, and a
+mistyped address leaves nothing behind. Each link works once, even after the
+account it made is deleted (its hash is kept in Redis for its lifetime). The
+costs: two steps, and nobody can sign up while email or Redis is down or
+email is unconfigured (a local production run included). *Revisit when:* an
+app needs accounts without a verified email (an invitation flow, SSO), or the
+24-hour window proves too short or too long.
+
+**A logout ends access at the device's next request, except while Redis is
+down** (user, 2026-11-19). Every access token names its session (`sid`), and
+the user loader checks in Redis (one ZSCORE per signed-in request) that it is
+still live, so logging out, ending a device from the account page, and "Log
+out all devices" all take effect at that device's next request (ASVS 5.0
+chapter 7). A password change or reset refuses older tokens through
+`password_state`, with no Redis at all. While Redis is unreachable the
+session check is skipped (fail open), so signed-in pages keep working;
+refresh and login still fail closed, so a session ended during an outage
+lasts at most its 15-minute access token. Refusing every signed-in request
+while Redis is down was weighed and dropped: it turns a Redis outage into an
+outage of the whole signed-in app. *Revisit when:* a session ended during a
+Redis outage must stop at once, or the per-request lookup shows in
+`upstream_response_time`.
+
+**A distributed lockout is still possible, for an hour at a time.** Login is
+limited per account and IP (5 failures a minute), so one attacker locks out
+only their own address, but the per-account cap (100 failures an hour, from
+any address) can still be filled by a botnet, keeping the owner out until
+the hour passes. The cap is what bounds distributed password guessing, so it
+stays. Recovery has the same weakness, for a day: a password reset's own
+per-address budget (3 an hour, 6 a day, from any address) bounds the mail one
+inbox can be sent, so a stranger who spends it leaves the owner's reset at
+429 until the day's window ends (sign-up and email changes no longer spend
+it, SEC-12). *Revisit when:* users report lockouts, or the app holds accounts
+worth targeting (then a CAPTCHA or an emailed unlock link instead of the hard
+cap, and a CAPTCHA once an address's reset budget runs low).
+
+**An undo link works for 7 days, whatever changed since** (user,
+2026-11-20). After an email change, the old address gets a link that moves
+the account back and ends every session. Its state names only the account
+(id and creation time), so an intruder who changed both the address and the
+password cannot outrun it. The cost: for those 7 days, whoever reads the old
+inbox can take the account back, including a mailbox the owner left because
+it was compromised, reclaimed by an employer or lost with a lapsed domain.
+*Revisit when:* users report accounts taken back from an old address, or the
+app holds data that justifies support-assisted recovery instead.
+
+**A token in a link travels in the URL fragment, and the page posts it
+after a click** (user, 2026-11-08). Every emailed link that carries a secret
+is `https://<host>/<page>#token=...` (`app_link`, `backend/app/utils/links.py`).
+Browsers send a fragment to no server and in no Referer. nginx's error log
+writes the whole request line for a 413, 502 or 504, so a token in a query
+string would land there whenever the backend restarts; lowering `error_log`
+to `crit` was dropped, since it loses the upstream errors an outage is
+diagnosed from. The page asks for one click before posting, since mail
+scanners open links and some run their scripts; sign-up's page asks for the
+password, which is that click. *Revisit when:* never for secrets; a link
+that carries no secret may use a query string.
+
+**The data export is one synchronous JSON response, with no password asked
+for** (user, 2026-11-08). `GET /api/account/export` reads every registered
+feature's rows in one request. Every feature caps a user's rows (notes: about
+300 KB at most), which bounds the response; a background export would add
+file storage, its cleanup and an emailed download link for no gain. A stolen
+session can already read every row through the other routes, so a password
+adds nothing. The logs are not in it: the privacy notice takes requests for
+them by email. *Revisit when:* a feature's per-user data can outgrow one
+response (file uploads, a long history), or the export holds anything the
+other routes never show (then ask for the password).
+
+**`email-validator` is called directly, not through Pydantic's
+`EmailStr`.** `EmailStr` accepts a display name (`Name <a@b.c>`), allows
+SMTPUTF8 local parts, and returns the Unicode form. `normalize_email` needs
+`allow_smtputf8=False` and the `ascii_email` form, which keeps one mailbox
+per account and is the login limit's key. *Revisit when:* Pydantic's email
+type gains those options.
+
+## Rate limits
+
+**No per-IP quota on the whole API.** Only the auth and account routes CLAUDE.md
+lists under `auth/` have Flask limits; users sharing an address (offices,
+carrier NAT) would lock each other out. nginx's per-IP `limit_req`/`limit_conn`
+on `/api` is the coarse backstop.
 
 **Rate limits fall back to per-worker memory while Redis is down.** Limits get
 looser (per worker, reset on restart) instead of every limited route failing.
 
-**A Redis outage still costs a few seconds once per reconnect window.** Every
-call a request makes to Redis (the token store and the job queue, so login,
-refresh, sign-up, logout and account deletion alike, and, since every access
-token's session is checked in Redis, any signed-in request) shares one
-breaker per worker process (`redis_unreachable`, `redis_service.py`): once a
-call fails to connect, each fails at once for `RECONNECT_INTERVAL_SECONDS`
-(5 s), then one call probes Redis again. The probe pays the 1 s lookup of the
-stopped container's name twice (the client's one retry, kept so a connection
-Redis dropped is replaced unseen); a rate-limited route adds Flask-Limiter's
-own probe, which backs off by itself and counts in memory meanwhile.
-Measured: login 503 in about 4 s at worst, refresh 3 s (PR #28, backend on
-`APP_ENV=production`); sign-up 2.2 s for the probe, then as fast as a sign-up
-with Redis up (E2E stack, 2026-11-16). A signed-in request that lands on the
-probe takes 2.0 s and answers 200, since the session check fails open; the
-others in the window are as fast as with Redis up (E2E stack and production
-config, 2026-11-19). The answer is the same 503 either way where Redis is
-required. A no-retry probe client would save about 1 s for a second client
-and more breaker code. *Revisit when:* a readiness check or alert exists for
-Redis, or users see these delays outside an outage.
-
 **Flask rate limits are off in E2E.** E2E registers dozens of accounts from
-one address, which register's `10 per hour` would block, so the E2E backend
-runs `IntegrationConfig` with limits off. The keying on the client IP
-(`TRUSTED_PROXY_COUNT` and nginx's `X-Forwarded-For`) is unit-tested with
-hand-made headers, and the Redis counters are integration-tested. CI's
-Platform smoke job runs the real load balancer → nginx → Flask path, in
-`behind-proxy` mode with the production config, and checks the address the
-backend logs; `tls` mode's path runs only in production. *Revisit when:* a
+one address, so the E2E backend runs `IntegrationConfig` with limits off. The
+keying on the client IP is unit-tested with hand-made headers, the Redis
+counters are integration-tested, and CI's Platform smoke job runs the
+load balancer → nginx → Flask path in `behind-proxy` mode with the production
+config; `tls` mode's path runs only in production. *Revisit when:* a
 deployment exists, or the proxy chain changes (a CDN hop, a second proxy).
+
+**nginx's per-IP limits are per nginx.** On a platform, each task runs its
+own nginx, so three tasks give one client three times the `limit_req`/
+`limit_conn` budget. The backend's own limits count in Redis and stay exact;
+exact limits at the edge belong to the load balancer's WAF. *Revisit when:* a
+deployment runs enough tasks that the multiplied budget matters.
+
+**nginx logs a 1-in-100 sample of refused requests.** A client over a rate
+limit gets its 429, and nginx writes an access line for one refusal in 100,
+picked by `request_id`; refusals leave the error log entirely
+(`limit_req_log_level info`). Logging every refusal let one client roll
+Docker's 30 MB over in about 4 seconds. Logging none was rejected too: nginx's
+429s never reach Flask, so nothing would show that a flood happened or where
+from. The cost: exact counts are lost, and a single 429 a real user got is
+likely not logged. `nginx.spec.ts` checks both halves. *Revisit when:* logs
+are shipped off the host (then log every refusal).
+
+## Outages and failures
+
+**A Redis outage still costs a few seconds once per reconnect window.** Every
+call a request makes to Redis (the token store, the job queue, and the
+session check on every signed-in request) shares one breaker per worker
+process (`redis_unreachable`): once a call fails to connect, each fails at
+once for `RECONNECT_INTERVAL_SECONDS` (5 s), then one call probes again. The
+probe pays the 1 s lookup of the stopped container's name twice (the
+client's one retry, kept so a connection Redis dropped is replaced unseen),
+and a rate-limited route adds Flask-Limiter's own probe. Measured: a login on
+the probe answers 503 in about 4 s at worst, a signed-in request 200 in 2 s;
+the rest of the window is as fast as with Redis up. A no-retry probe client
+would save about 1 s for more breaker code. *Revisit when:* a readiness check
+or alert exists for Redis, or users see these delays outside an outage.
+
+**`/api/health` is liveness only.** It answers 200 while MySQL or Redis is
+down; the routes that need them answer 503 instead. The backend does not
+start serving until `wait_for_services.py` has reached MySQL and Redis and
+checked its grants, and a load balancer that drops every task during a
+database outage turns 503s into 502s. *Revisit when:* a deploy needs to catch
+a commit that starts but cannot serve (then a smoke request after the health
+check, in `deploy.sh`), or a platform must stop routing to a task that lost
+its database.
+
+**A write the client was told failed may still have committed.** When a
+commit stalls inside MySQL, the query timeout or nginx's 60s gives up and the
+client gets a 503 or 504, but MySQL can finish the commit later, so a retry
+repeats the write (a duplicate note, or a 409 for an account that was in fact
+created). Plain CRUD takes this. Where a duplicate does harm (payments,
+orders, sent messages), use an idempotency key stored with the row under a
+unique (owner, key) index in the same transaction; a key kept only in Redis
+would not catch this case. Two more cases:
+- *A refresh.* A stall past 60s during `/auth/refresh` can rotate the token
+  in a response no one receives, and the device is signed out at its next
+  refresh. A grace window for the previous token would weaken one-time
+  rotation.
+- *Account deletion* revokes every session before it deletes the `users` row,
+  so a stalled delete has already signed the user out, and the account may or
+  may not be gone; nothing is half deleted, since the row and its cascade go
+  in one statement.
+
+*Revisit when:* a feature's writes must never repeat, users report sign-outs
+after slow responses or refresh moves behind a shorter timeout, or deletion
+gains a step outside that statement (files in object storage, a third-party
+account), which must then run only after the commit.
+
+## Data stores
+
+**MySQL only.** The template runs on MySQL 8.4, bundled or managed. Another
+engine would be a project of its own: the driver and its connect args, the
+migrations, the MySQL-only integration tests, and case-insensitive email
+matching, which MySQL's collation gives for free. *Revisit when:* a
+deployment needs a provider or host without MySQL.
+
+**External services: one database user is not enough, and the bundled
+services are known by name.** In production the backend refuses to start
+when `DATABASE_URL`'s user holds more than row rights, with no opt-out, so a
+provider that offers a single database user is unsupported (user,
+2026-10-21). TLS is required for any host but `db` and `redis`, so renaming
+those services means editing `config.py` too. One gap stays: a
+`MIGRATION_DATABASE_URL` set on the backend itself wins over `DATABASE_URL`,
+and the app then runs as the schema's owner; only the compose files'
+`environment:` lists keep it on `migrate`. *Revisit when:* a deployment needs
+a provider with one user, or the backend is run by something other than the
+compose file.
+
+**No TLS between containers on one host.** The bundled MySQL and Redis
+traffic stays on the `internal` network, and anyone who can sniff that bridge
+already has root on the host. Off-host (any host but `db` or `redis`),
+`ProductionConfig` requires TLS. *Revisit when:* the bundled services are
+spread across hosts, since an overlay network keeps the names `db` and
+`redis`, so `ProductionConfig` would not ask for TLS.
+
+**Encryption at rest is the host's job.** The MySQL volume, Redis's files
+and backups are protected by encrypting the disk they sit on (LUKS or the
+OS's equivalent, a cloud provider's default) and backups before they leave
+the host. The app encrypts no columns: its key would sit in the same
+environment as the database URL, guarding only against a stolen disk or
+backup, which disk encryption already covers. *Revisit when:* a field must
+stay unreadable to whoever runs the database (then column encryption with a
+key held outside the app's environment).
+
+**No production data in dev, scrubbed or not.** Scrubbed data that can still
+be linked to a person is still personal data under GDPR, a developer's
+machine is less protected than the server, note content is free text no
+scrubber cleans reliably, and every new column of personal data would have
+to join the scrubber's list. If dev needs volume or edge cases, generate them
+(a dev-only seed command that refuses production); one user's bug is
+reproduced on the server, with their consent. *Revisit when:* dev needs
+something only real data shows.
+
+## Deploy and infrastructure
+
+**One backend container, at a fixed address.** nginx connects to the
+backend's fixed address on the edge network, not its name, so a recreated
+backend is reached the moment it listens; by name, Docker's DNS could fail
+mid-swap and leave nginx without it for about 30s. Two containers cannot
+share the address, so `--scale backend=N` is out; scale with
+`WEB_CONCURRENCY` and the CPU limit. *Revisit when:* one backend container is
+no longer enough (then several fixed addresses in the upstream, or a reload
+of nginx after every deploy).
+
+**A deploy is not zero-downtime.** `deploy.sh` stops the old backend before
+the new one starts, so the API answers a JSON 502 or 504 until it listens
+(8.5 s on a 4 GB VM), and connections are refused for about a second while
+nginx is replaced. A commit that changes the bundled `db` or `redis`
+restarts it under the running app, which answers 503 meanwhile. *Revisit
+when:* a deploy's API gap matters to users (then two backends, started one
+after the other).
+
+**Deploys build on the server, not in CI.** The images that run are a second
+build of the tree CI tested: branch protection ran every check on it, and the
+lockfiles pin what the build installs. A registry fed by CI would mean public
+images (distribution, see "Images are run, not distributed") or a per-package
+setup and registry login on every server. The cost: servers need internet
+access and memory for the frontend build, and a base image's fix arrives only
+with the next deployed commit (`build --pull`); a rollback reuses its images.
+*Revisit when:* an image must be byte for byte the one tested, servers are too
+small to build, a base-image fix has to ship with no commit, or deploys move to
+a platform that pulls from a registry.
+
+**The bundled MySQL and Redis images change only with a tag bump.**
+`deploy.sh` doesn't pull `db`'s and `redis`'s images, so an upstream rebuild
+of a pinned tag never restarts them under the running app; a commit that
+changes their tag (Dependabot) or settings does. Most real deployments use
+managed services, which their providers patch. *Revisit when:* a reachable
+CVE in either is fixed by a same-tag rebuild.
+
+**Deploys trust GitHub's `main`.** `deploy.sh` deploys any commit on
+`origin/main`, and `--latest` on a timer does so unattended, so whoever can
+push or merge to `main` (a stolen GitHub session included) runs code on the
+server as the deploy user. Branch protection is the only gate. A signature
+check on the server would only help with commits signed by a key GitHub never
+holds, so every merge would have to be made and signed locally. *Revisit
+when:* the timer runs on a host with real data (then signed merges and
+`git verify-commit` against an `allowed_signers` file, or a deploy that waits
+for a person's approval).
+
+**PRs need not be up to date with `main` to merge** (user, 2026-11-19).
+Branch protection requires the status checks but leaves "Require branches to
+be up to date before merging" off. On, every merge put every other open PR
+behind, each needing a rebase and a ten-minute CI run. Git still refuses a
+conflicting PR, and CI runs on `main` after every merge and nightly. The risk
+accepted: two PRs that each pass alone can break together, and the deploy
+timer can ship `main` before its CI reports; `deploy.sh` rolls back a release
+that does not start. A merge queue is offered only to organisation-owned
+repositories. *Revisit when:* several people merge in parallel, or the
+repository moves to an organisation (then use a merge queue).
+
+**`--provenance=false` stays a flag.** Without it, every rebuild gets a new
+image ID and a hand-run `up -d` replaces containers though nothing changed.
+`provenance: false` under `build:` is honored only since Compose 5.5.1, and
+some versions refuse the whole file over it (GitHub's `ubuntu-24.04` runner,
+2026-11-06), which would stop the stack and `deploy.sh`; the flag is accepted
+everywhere. *Revisit when:* every Compose a deployment could run, CI's runner
+included, accepts and honors the key.
+
+**No IPv6 at the edge.** nginx publishes 80 and 443 on IPv4 only
+(`0.0.0.0`, `check_compose.py`), so an IPv6 visitor falls back to IPv4 and a
+server publishes no AAAA record. Published on `[::]`, Docker's proxy would
+relay every IPv6 visitor from the `edge` gateway's address, one rate-limit
+bucket a stranger's wrong passwords could lock. Real IPv6 needs IPv6 on
+`edge` and per-address limits keyed on the visitor's /64. Behind a
+dual-stack load balancer (`behind-proxy`) the limits key on a single IPv6
+address today: the per-account login limits hold, the per-address ones can be
+dodged. *Revisit when:* a deployment needs IPv6 at nginx, or runs behind a
+dual-stack load balancer (then the /64 keying, in nginx and in Flask).
+
+**No nginx healthcheck.** Compose never restarts an unhealthy container and
+nothing depends on nginx, so a healthcheck would do nothing. Without one,
+`up --wait` reports a crash-looping nginx healthy; `deploy.sh` catches that by
+checking `/api/health` through nginx. *Revisit when:* a monitor or
+orchestrator acts on container health.
+
+**gixy-ng skips `hsts_header` and `try_files_is_evil_too`.** HSTS is
+meaningless on the port-80 redirect server (RFC 6797 8.1) and is asserted
+over HTTPS by `e2e/nginx.spec.ts`; the `try_files` warning is a performance
+opinion that doesn't matter for a few static files. See the `nginx` job in
+`.github/workflows/ci.yml`.
+
+**Docker Bench warnings the stack has on purpose** (CIS Docker 1.6.0, test
+VM, 2026-11-05). 4.1: `db` and `redis` start as root, but run MySQL and Redis
+as their own users, and nginx's master stays root to bind 80 and 443 and read
+the key, its workers not. 5.4: nginx adds `DAC_READ_SEARCH`, to read the
+mode-600 key whoever owns it on the host. 5.8, 5.9, 5.14: nginx publishes 80
+and 443 on every IPv4 address; it is the edge. 4.6: health checks live in the
+compose file, and a platform takes its own. 4.5: Docker Content Trust is off;
+the images are built on the server, never pulled. 5.13 and capabilities for
+`db` and `redis`: writable root filesystems and Docker's default
+capabilities, since their processes are not root and the official
+entrypoints write and `chown` on first start. Sections 1-3 are the host's.
+*Revisit when:* the images or their users change, or a newer CIS Docker
+benchmark adds a container check.
+
+**Unreachable CVEs in the images are low.** A scanner's finding in an image's
+OS package (libexpat or libtiff in `nginx:*-alpine`; in the MySQL image, the
+gosu binary, MySQL Shell's Python packages, DTLS-only OpenSSL CVEs) counts
+only if this configuration can reach it: a loaded module uses it, or visitor
+input reaches it. gosu runs once at start with no network, mysqlsh is never
+run, and MySQL speaks TLS over TCP only. Unreachable ones are fixed by the
+upstream image's rebuilds (`build --pull`) or a tag bump, not by
+`apk upgrade` in a Dockerfile, which makes builds unrepeatable (hadolint
+DL3017). The libraries the stack uses (OpenSSL, musl, zlib, pcre2) are judged
+per CVE: a bug in compiling a regex reaches only the config's patterns, one
+in matching reaches visitor input. *Revisit when:* an nginx module that uses
+such a library is enabled (XSLT, image filter), the CVE is in MySQL's TLS or
+authentication path, or the compose file starts running mysqlsh.
+
+**Generic server operations are out of scope.** The template documents what
+depends on how it is built (restarts, its MySQL volume's dump and restore,
+what its init script and secrets do on rotation, `deploy.sh`), and leaves
+what any Docker host needs to the tools made for it: alerts and uptime
+checks, host metrics, log shipping, scheduled and off-host backups,
+point-in-time recovery (a managed database), host hardening and its audits
+(Lynis, Docker Bench, CIS). `docs/deployment.md`, "Operating in Production",
+says what is not included and which tool to reach for; audits report a
+missing one only where those docs fail to name it. *Revisit when:* a gap's
+answer comes to depend on how this template is built.
+
+**Keeping and shipping logs belongs to the platform.** The app and nginx log
+to stdout, which a managed platform's log service ships off the host. On the
+bundled Compose deployment, Docker's 3 × 10 MB per container is all there
+is: it caps by size, not age, and goes with its container, so the logs reach
+back to the last deploy at most. nginx's short access lines, page rate limit
+and refusal sampling make rolling it over slow for one client (about 13
+minutes flooding one zone) but not impossible for many. Keeping logs past a
+deploy is generic server operations: "Not Included" names the tools
+(journald in an untracked `docker-compose.override.yml`, Loki, Fluent Bit,
+CloudWatch) rather than the template building one (user, 2026-11-05). The
+docs say why it matters here: `account_deleted` events are the only record of
+which accounts a restore brings back. *Revisit when:* keeping those events
+past a deploy comes to need something only this template can provide.
+
+**Email: SMTP to a managed provider, plain text, sent by the worker alone**
+(user, 2026-11-09). `backend/app/utils/mail.py` speaks SMTP, which every
+provider accepts, so no provider's API or webhooks are wired in and the app
+does not act on bounces or complaints. Production requires TLS. Emails are
+plain text: every client shows it, with no tracking, remote images or markup.
+Only the worker holds the mail server's password. Nothing caps the app's
+outgoing mail as a whole: the limits on whatever queues an email bound one
+requester, and the provider's sending limits the rest. *Revisit when:* a
+provider warns about or suspends the account over bounces or complaints
+(then handle its bounce webhook and stop mailing those addresses), an email
+needs HTML, or a flood of requests gets past the per-requester limits.
+
+**Background jobs: Dramatiq, with the worker on a Redis user of its own that
+may run KEYS** (user, 2026-11-09). RQ was passed over because a message names
+any importable function, so a write to Redis would run code in the worker,
+which holds `SECRET_KEY` and the database password; Celery for its weight.
+Dramatiq runs only declared actors with JSON arguments, and each message is
+signed with `SECRET_KEY` and checked first (`SignedMessages`), so a Redis
+password alone can neither run a job nor choose its arguments; a replayed
+message only repeats an email the app asked for. The broker's upkeep calls
+`KEYS`, which `-@dangerous` refuses, so the worker connects as `worker` (only
+`dramatiq` and `dramatiq:*`, plus `+keys`) and the app's broker never runs
+the upkeep (`maintenance_chance=0`). `KEYS` reveals no more than `SCAN`,
+which both users have; it blocks Redis a few milliseconds per hundred
+thousand keys, on about one worker call in a hundred. *Revisit when:*
+Dramatiq's upkeep stops calling `KEYS` (drop `+keys`), or the keyspace
+reaches millions of keys.
+
+## Frontend
+
+**Pages load data with TanStack Query hooks and submit forms from
+`onSubmit`: no React Router loaders or actions, no React form actions, no
+server rendering.**
+- *Loaders and actions.* A loader would fire before `ProtectedRoute`
+  renders, so a signed-out visit would send an unauthenticated request and
+  land on the `errorElement` instead of `/login`. Using them means moving
+  both guards into loaders (`throw redirect(...)`) and rebuilding the
+  "Loading..." live regions on `useNavigation`; a loader would fill the same
+  cache (`queryClient.ensureQueryData`), not replace it. A route `action`
+  re-runs its loader, so the two come together.
+- *React form actions* (`<form action>`, `useActionState`) work with these
+  forms (tried on `LoginPage`, 2026-11-07), but saved three lines, split
+  validation (in `onSubmit`, to focus the first invalid field) from
+  submitting, and left the last error showing during a retry. Fields stay in
+  state for live error clearing and the note counter.
+- *Server rendering* (Next.js, React Router framework mode) would put a Node
+  server where nginx serves static files, and move sign-in to cookie
+  sessions. Public pages that need search indexing would take React
+  Router's build-time prerendering instead.
+
+*Revisit when:* a page needs its data before first paint, forms read
+`FormData` instead of state, or a feature needs `useOptimistic`.
+
+**TanStack Query's retries and refetches are off** (`api/queryClient.ts`).
+A query is tried once: the api client already refreshes an expired token,
+and a 503 or a network error shows at once rather than after three silent
+tries. Nothing refetches on window focus or reconnect by default: an infinite
+list refetches every page it has loaded, and would move the rows a user is
+reading or editing. A page refetches when it mounts. *Revisit when:* a page
+needs fresher data than a visit gives.
+
+**Caching: nothing beyond the defaults until a feature needs it** (user,
+2026-11-08).
+- *Frontend.* Every query keeps a `staleTime` of 0. A longer one hides
+  changes made in another tab or device. The account query alone refetches
+  on window focus, since an email change usually completes in the tab its
+  link opens; the account page and navbar show the address it answers
+  (`updateEmail`). Prefetching spends a request whether used or not.
+- *HTTP.* Every API response is `no-store`: it carries tokens and private
+  data, which an ETag or `private, no-cache` would let the browser keep on
+  disk after logout. A public, non-user route sets its own header, which
+  `no_store`'s `setdefault` leaves alone. nginx already caches `/assets/` for
+  a year and revalidates HTML.
+- *Backend.* Every read is a primary-key lookup or an index page, which
+  MySQL's buffer pool serves from memory. A Redis cache is for a costly read:
+  its keys need their own prefix added to the `app` ACL user in every compose
+  file (`check_compose.py`) and `test_redis_acl.py`, and each entry must be
+  dropped when its data changes.
+- Every cache holding a user's data is emptied when the session ends or
+  changes account, as `AuthProvider` does for the query cache.
+
+*Revisit when:* a feature lets data change outside the tab that shows it,
+adds a public route, or adds a read costly enough to show in
+`upstream_response_time`.
+
+**`ConfirmDialog` keeps the native `<dialog>` defaults.** A click on the
+backdrop does not close it, and Tab from its last button passes through the
+browser's toolbar before wrapping back. Both are how `showModal()` behaves in
+every browser; overriding them means hand-written focus trapping and click
+handling, which CLAUDE.md's prefer-the-built-in rule argues against.
+
+**A pasted note is cut to its limit without a message.** The note input uses
+the native `maxLength`, so pasting more than 256 characters keeps the first
+256, and the counter reading "0 characters remaining" is the only sign. An
+over-limit error instead means dropping `maxLength` and checking on submit,
+for every limited field. *Revisit when:* users report losing pasted text, or
+a field's limit is one people often reach.
 
 **User text stored verbatim.** No server-side sanitizing; output escaping is
 the render layer's job (React escapes text). Sanitizing on input corrupts data
@@ -116,694 +507,111 @@ and still misses other output contexts.
 **No CORS.** The browser only calls a relative `/api`, same-origin in every
 environment. Adding CORS would only widen what can call the API.
 
-**gixy-ng skips `hsts_header` and `try_files_is_evil_too`.** HSTS is
-meaningless on the port-80 redirect server (RFC 6797 8.1) and is asserted
-over HTTPS by `e2e/nginx.spec.ts`; the `try_files` warning is a performance
-opinion that doesn't matter for a few static files. See the `nginx` job in
-`.github/workflows/ci.yml`.
+## Tooling and dependencies
 
-**Dev keeps a debug toggle.** `.env.dev` turns Flask debug on; `FLASK_DEBUG=0
-./run_dev.sh` turns it off for one run. Production forces it off in
-`ProductionConfig`.
+**Library choices kept on purpose.** Each was weighed against the
+alternative named; *Revisit when* is per item.
+- *axios, not a `fetch` wrapper.* The api client relies on its interceptors,
+  `error.config` for retrying the original request, JSON and non-2xx
+  handling, and the `err.response.{status,data}` shape that
+  `getErrorMessage`, `AccountPage` and the tests read. It costs 23 KB
+  gzipped. *Revisit when:* the client needs streaming or `AbortSignal` beyond
+  what axios offers, or a major release changes the interceptor API.
+- *ua-parser names a session's device* (user, 2026-11-20). About 1.1 MB with
+  its `ua-parser-builtins` regexes, about 1 ms a parse; a hand-written regex
+  would name devices worse as user agents change. The regexes release
+  monthly, so Dependabot bumps it monthly. *Revisit when:* the account page
+  stops naming devices, or reduced User-Agent strings leave too little to
+  parse.
+- *The requirements check stays a test, not deptry.*
+  `tests/unit/test_requirements.py` checks that `requirements.in` lists every
+  package the backend imports; deptry needs a `pyproject.toml` section the
+  backend doesn't otherwise have. *Revisit when:* an unused package slips
+  into `requirements.in`, or the backend gets a `pyproject.toml`.
+- *Python import contracts stay a custom test, not import-linter.*
+  `tests/unit/test_import_rules.py` does what its `layers` and `protected`
+  contracts do and finds new features by itself; import-linter (2.15) skips
+  packages without an `__init__.py`, so it would need five empty ones, a
+  scaffold step per feature, and five dev packages. *Revisit when:* the
+  feature packages get `__init__.py` for another reason, or the rules outgrow
+  the test (more layers, per-feature exceptions).
+- *Frontend folder rules stay a custom ESLint rule, not
+  `eslint-plugin-boundaries`.* `relative-within-folder` (about 25 lines) and
+  the `@/` patterns enforce the one-way imports; `boundaries` would need
+  `eslint-plugin-import`'s resolvers for the `@/` alias, and the planted
+  tests would stay anyway. *Revisit when:* the rules outgrow the custom rule.
+- *The color guard stays a Vitest test, not stylelint.*
+  `styles/__tests__/stylesheets.test.ts` also refuses unused and undefined
+  tokens, which stylelint does not cover, and stylelint would add a CLI, a
+  config and a CI step. *Revisit when:* the CSS needs rules a stylelint
+  preset already has, or the hand-written check misses a case.
+- *pytest-cov stays.* Plain `coverage run` would save one small package for a
+  rewrite of `run_tests.sh`'s flags. *Revisit when:* pytest-cov lags a pytest
+  major release.
+- *The JSON log formatter stays hand-written.* `JsonFormatter` is a few
+  lines; `python-json-logger` would add a dependency for nothing the app
+  needs. *Revisit when:* a log service needs a specific schema (Elastic ECS,
+  Datadog), lines need tracing ids, or the formatter grows past about 40
+  lines.
+- *The API's types come from JSON Schema, not OpenAPI*
+  (`export_schemas.py`, `npm run api-types`). Pydantic writes JSON Schema
+  itself, nothing reads an OpenAPI document, and openapi-typescript requires
+  TypeScript 5. The types cover bodies, not routes. *Revisit when:* the API
+  needs published docs or a typed client per route.
+- *No `engines` field, the `react-router-dom` package, unhashed Python
+  locks.* CI and Docker pin one Node major (`check_versions.py`), the shim
+  costs nothing at runtime, and Dependabot plus exact pins cover the locks.
+  *Revisit when:* a contributor hits a Node mismatch, React Router drops the
+  shim, or a supply-chain incident touches PyPI.
 
-**A logout ends access at the device's next request, except while Redis is
-down** (user, 2026-11-19). Every access token names its session (`sid`), and
-the user loader checks in Redis that the session is still live, one ZSCORE
-per signed-in request: logging out, logging a device out from the account
-page, and "Log out all devices" all end that device's access at its next
-request, as users of a sessions list expect (ASVS 5.0 chapter 7). A password
-change or reset also refuses every older token through its
-`password_state`, with no Redis at all. While Redis is unreachable the
-session check is skipped and access tokens work (fail open), so an outage
-leaves signed-in pages working; refresh and login still fail closed, so a
-session ended during an outage lasts at most until its 15-minute access
-token expires. The alternative, refusing every signed-in request while Redis
-is down, was weighed and dropped: it turns a Redis outage into an outage of
-the whole signed-in app.
-*Revisit when:* a session ended during a Redis outage must stop at once, or
-the per-request lookup shows in `upstream_response_time`.
-
-**PRs need not be up to date with `main` to merge** (user, 2026-11-19).
-Branch protection requires the eleven status checks but leaves "Require
-branches to be up to date before merging" off, GitHub's default. On, every
-merge put every other open PR behind, and each needed a rebase and a full CI
-run (about ten minutes) before it could merge, so a week's Dependabot PRs
-became a chain. Git still refuses a PR that conflicts with `main`, and
-Dependabot rebases those itself; CI runs on `main` after every merge and
-nightly. The risk accepted: two PRs that each pass alone can break together,
-and the deploy timer ships `main` within minutes, before its CI reports;
-`deploy.sh` rolls back a release that does not start. A merge queue would
-test each PR on top of the last, but GitHub offers it only to
-organisation-owned repositories.
-*Revisit when:* several people merge in parallel, or the repository moves to
-an organisation (then use a merge queue).
-
-**No nginx healthcheck.** Compose uses healthchecks only to order startup and
-never restarts an unhealthy container, and nothing depends on nginx, so a
-healthcheck would do nothing. Without one, `up --wait` reports nginx healthy
-the moment it starts, even one crash-looping on an unreadable key (seen on
-the test VM, 2026-11-05); `deploy.sh` catches that, since it checks
-`/api/health` through nginx. *Revisit when:* a monitor or orchestrator acts
-on container health.
-
-**Docker Bench warnings the stack has on purpose** (run on the test VM,
-2026-11-05, CIS Docker 1.6.0). 4.1: `db` and `redis` start as root, but
-their entrypoints run MySQL and Redis as their own users (uid 999), and
-nginx's master stays root to bind 80 and 443 and read the key, its workers
-not. 5.4: nginx adds `DAC_READ_SEARCH`, to read the mode-600 key whoever
-owns it on the host. 5.8, 5.9, 5.14: nginx publishes the privileged ports 80
-and 443 on every IPv4 address; it is the edge. 4.6: health checks live in
-the compose file, and a platform takes its own (ECS ignores an image's
-`HEALTHCHECK`). 4.5: Docker Content Trust is off; the images are built on
-the server, never pulled from a registry. 5.13 and capabilities for `db` and
-`redis`: their root filesystems are writable and they keep Docker's default
-capabilities, since their long-running processes are not root and so hold
-none, and the official entrypoints write and `chown` on first start.
-Sections 1-3 are the host's (`docs/deployment.md`, The Host). *Revisit
-when:* the images or their users change, or a newer CIS Docker benchmark
-adds a container check.
-
-**Unreachable CVEs in base-image OS packages are low.** A scanner flagging an
-Alpine library in the nginx or backend image (e.g. libexpat or libtiff in
-`nginx:*-alpine`) is a finding only if this configuration can reach it:
-a loaded module uses it, or visitor input reaches it. Unreachable ones are
-fixed by the upstream image's regular rebuilds, picked up with
-`docker compose build --pull`, not by `apk upgrade` in the Dockerfile, which
-makes builds unrepeatable and fails hadolint (DL3017). The libraries the
-stack does use (OpenSSL, musl, zlib, and pcre2, which nginx's log maps and
-`location` regexes run on every request) are judged per CVE: a bug in
-compiling a pattern only reaches the patterns in the config, while a bug in
-matching one reaches visitor input. *Revisit when:* an nginx module that
-uses one is enabled (XSLT, image filter), or the CVE is reachable in a
-library the stack uses.
-
-**Unreachable CVEs in the `db` and `redis` images are low too.** The same
-rule covers them. In the MySQL image, the gosu binary (its Go stdlib), the
-bundled MySQL Shell's Python packages, and DTLS-only OpenSSL CVEs are
-unreachable: gosu runs once at start with no network, mysqlsh is never run,
-and MySQL speaks TLS over TCP only. They are fixed by bumping the pinned tag
-once upstream ships one. *Revisit when:* the CVE is in the server's TLS or
-authentication path, or the compose file starts running mysqlsh.
-
-**The backend image ships `ordered-set` and `ua-parser-builtins` without
-their license files.** `ordered-set` is MIT (a Flask-Limiter dependency) and
-`ua-parser-builtins` is Apache-2.0 (`ua-parser`'s User-Agent regexes), and
-neither wheel has a license file in `.dist-info`, unlike every other
-installed package. MIT's notice condition and Apache-2.0's §4(a) apply to
-copies handed to others, and the backend image only runs on the
-operator's own server. The frontend's notices do ship
-(`third-party-licenses.txt`), since every visitor receives the bundle.
-*Revisit when:* images are pushed anywhere others can pull them, or shipped
-to anyone else to run.
-
-**Images are run, not distributed.** The MySQL image, and the Debian and
-Alpine userlands under the backend and nginx images, contain GPL and LGPL
-code. Running them on the operator's own servers creates no duty; only
-handing the built images to someone else would bring source-offer duties.
-`deploy.sh` builds them on the server and pushes them nowhere; pushing them
-to a private registry for one's own deploys (a platform's, such as ECR) is
-not distribution either. *Revisit when:* images are pushed anywhere others
-can pull them, or shipped to anyone else to run.
-
-**Redis 8 is used unmodified under its tri-license.** Redis 8 is licensed
-under RSALv2, SSPLv1 or AGPLv3, at the user's choice. The stack runs the
-`redis:8.10-alpine` image unmodified as a private store that users never
-reach, which none of the three restricts. *Revisit when:* Redis is modified or offered to
-customers as a service, or a lawyer prefers Valkey (BSD-3-Clause).
-
-**The template's copyright is its owner's.** The first commit came from a
-university email address, but the template has always been the owner's
-personal project, made outside any university employment, grant or course,
-so `LICENSE` names the owner alone. *Revisit when:* the university raises a
-claim.
-
-**The template is MIT-0.** An app built from the template keeps much of its
-code, so under MIT every derived app would have to carry the template's
-notice. MIT-0 drops that condition, so README's step 6 can tell a new app to
-replace `LICENSE` outright (LEGAL-19). *Revisit when:* the owner wants
-attribution from derived apps.
-
-**Legal placeholders are not enforced at build.** Nothing stops a
-production image from serving the placeholder `OPERATOR` values in
-`frontend/src/appInfo.ts`, `contact@example.com` in `security.txt`, or the
-"Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before launch" list is
-the only safeguard: a build check would have to tell the production image
-apart from the test stack's, which serves the same placeholders on purpose
-(LEGAL-21). *Revisit when:* the first real deployment is prepared.
-
-**One set of password rules, at login too, raised with no migration**
-(user, 2026-11-09). Every password the app accepts (sign-up, login, a
-reset, account deletion, an email change, a password change) is one `Password` type: 15 to 128 characters, NIST's minimum for a
-password that is the only factor, with no composition rules. Login applies
-the length too, so an account whose password predates the rule (8
-characters were enough before 2026-11-09) cannot log in; no real account
-existed, and the test accounts were deleted. *Revisit when:* the rules
-tighten again on a deployment with real users, which then needs login to
-accept the old ones while a password change replaces them.
-
-**scrypt at Werkzeug's default cost.** Password hashes use `scrypt:32768:8:1`
-(N=2^15), below OWASP's N=2^17. Raising it costs about 4× the CPU and memory
-per hash (~128 MB), which has to be sized against the real server's CPU,
-memory limit and `PASSWORD_HASH_CONCURRENCY`. *Revisit when:* the app runs on
-its production hardware.
-
-**A distributed lockout is still possible, for an hour at a time.** Login is
-limited per account and IP (5 failures a minute), so one attacker locks out
-only their own address, but the per-account cap (100 failures an hour, from
-any address) can still be filled by a botnet, keeping the owner out until
-the hour passes. The cap is what bounds distributed password guessing, so it
-stays. *Revisit when:* users report lockouts, or the app holds accounts worth
-targeting (then add a CAPTCHA or an emailed unlock link instead of the hard
-cap).
-
-Recovery has the same weakness, for a day: a password reset has its own
-per-address budget (3 an hour, 6 a day, from any address), which bounds the
-mail one inbox can be sent. A stranger who spends it on someone's address
-(five resets over a few hours) leaves the owner's own reset at 429 until the
-day's window ends. Sign-up requests and email changes no longer spend it
-(SEC-12, 2026-11-23). The remedy, when revisited, is the same CAPTCHA, shown
-once an address's budget runs low rather than refusing it.
-
-**An undo link works for 7 days, whatever changed since** (user,
-2026-11-20). After an email change, the old address gets a link that moves
-the account back and ends every session. Its state names only the account
-(id and creation time), so it still works after the address or the password
-changes again: an intruder who changed both cannot outrun it. The cost: for
-those 7 days, whoever reads the old inbox can take the account back,
-including a mailbox the owner left because it was compromised, taken back by
-an employer or lost with a lapsed domain, and then reset the password there.
-Users who change their address because they are losing the old one should
-do it before they lose it. *Revisit when:* users report accounts taken back
-from an old address, or the app holds data that justifies support-assisted
-recovery instead.
+**Ruff's `select` lists every rule in full.** Ruff's own default set is far
+wider than pyflakes (`I`, `SIM`, `B`, `RUF`, `UP` and about 30 more
+families) and changes between releases, so `extend-select` would turn on
+whatever the installed ruff defaults to. *Revisit when:* the repo chooses to
+adopt ruff's defaults.
 
 **No mutation-testing tool.** New tests are mutation-checked by hand (CLAUDE.md
 Test Architecture). *Revisit when:* the suites grow past what spot checks can
 cover; mutmut and Stryker are the candidates (SOURCES.md, Testing).
 
-**`ConfirmDialog` keeps the native `<dialog>` defaults.** A click on the
-backdrop does not close it (only Cancel, Escape or the confirm button do),
-and Tab from its last button passes through the browser's own toolbar before
-wrapping back into it. Both are how `showModal()` behaves in every browser;
-overriding them means hand-written focus trapping and click handling, which
-CLAUDE.md's prefer-the-built-in rule argues against.
+**Dev keeps a debug toggle.** `.env.dev` turns Flask debug on; `FLASK_DEBUG=0
+./run_dev.sh` turns it off for one run. Production forces it off in
+`ProductionConfig`.
 
-**A pasted note is cut to its limit without a message.** The note input uses
-the native `maxLength`, so pasting more than 256 characters keeps the first
-256; the live counter then reads "0 characters remaining", which is the only
-sign. Showing an
-over-limit error instead means dropping `maxLength` and checking on submit,
-for every limited field. Chosen while planning PR #25. *Revisit when:* users
-report losing pasted text, or a field's limit is one people often reach.
+## Licensing
 
-**`/api/health` is liveness only.** It answers 200 while MySQL or Redis is
-down; the routes that need them answer 503 instead. Compose orders startup
-on it, `deploy.sh` rolls back when it fails through nginx, and a platform's
-load balancer routes on it. A readiness check would add little to any of
-them: the backend does not start serving until `wait_for_services.py` has
-reached MySQL and Redis and checked its grants, and a load balancer that
-drops every task during a database outage turns 503s into 502s. *Revisit
-when:* a deploy needs to catch a commit that starts but cannot serve (then
-a smoke request after the health check, in `deploy.sh`), or a platform must
-stop routing to a task that lost its database.
+**The template is MIT-0, and its copyright is its owner's.** Under MIT every
+app built from the template would have to carry its notice; MIT-0 drops that,
+so README's step 6 can tell a new app to replace `LICENSE` outright. The
+first commit came from a university email address, but the template has
+always been the owner's personal project, made outside any university
+employment, grant or course, so `LICENSE` names the owner alone. *Revisit
+when:* the owner wants attribution from derived apps, or the university
+raises a claim.
 
-**`email-validator` is called directly, not through Pydantic's
-`EmailStr`.** `EmailStr` accepts a display name (`Name <a@b.c>`), allows
-SMTPUTF8 local parts, and returns the Unicode `normalized` form.
-`normalize_email` needs `allow_smtputf8=False` and the `ascii_email` form,
-which keeps one mailbox per account and is the login limit's key.
-*Revisit when:* Pydantic's email type gains those options.
+**Images are run, not distributed.** The MySQL image, and the Debian and
+Alpine userlands under the backend and nginx images, contain GPL and LGPL
+code; Dramatiq is LGPL-3.0, installed unmodified. Two backend packages,
+`ordered-set` (MIT) and `ua-parser-builtins` (Apache-2.0), ship no license
+file in their wheels. Running all of it on the operator's own servers
+creates no duty: source offers and notices apply to copies handed to others.
+`deploy.sh` builds the images on the server and pushes them nowhere, and a
+private registry for one's own deploys is not distribution either. The
+frontend's notices do ship (`third-party-licenses.txt`), since every visitor
+receives the bundle. *Revisit when:* images are pushed anywhere others can
+pull them, shipped to anyone else to run, or Dramatiq is patched.
 
-**No `engines` field, the `react-router-dom` shim, unhashed Python locks.**
-CI and Docker pin one Node major (`check_versions.py`), the shim costs
-nothing at runtime, and Dependabot plus exact pins cover the locks.
-*Revisit when:* a contributor hits a Node mismatch, React Router drops the
-shim, or a supply-chain incident touches PyPI.
+**Redis 8 is used unmodified under its tri-license** (RSALv2, SSPLv1 or
+AGPLv3). The stack runs `redis:8.10-alpine` unmodified as a private store
+users never reach, which none of the three restricts. *Revisit when:* Redis
+is modified or offered to customers as a service, or a lawyer prefers Valkey
+(BSD-3-Clause).
 
-**A write the client was told failed may still have committed.** When a
-commit stalls inside MySQL (a hung server), the query timeout or
-nginx's 60s gives up and the client gets a 503 or 504, but MySQL can finish
-the commit later. Retrying then repeats the write: a duplicate note, or a 409
-for an account that was in fact created. This is the general ambiguous-failure
-problem, and plain CRUD creates take it. Where a duplicate does harm
-(payments, orders, sent messages), use an idempotency key: the client sends
-an `Idempotency-Key` per submit and reuses it on retry; the table stores it
-with a unique index on (owner, key), written in the same transaction as the
-row; a repeat returns the existing row. A key kept only in Redis would not
-catch this case. *Revisit when:* a feature's writes must never repeat.
-
-The same goes for a refresh. If the backend stalls past nginx's 60s during
-`/auth/refresh`, the client gets a 504, but the backend can still finish the
-rotation: the old token is revoked and the new cookie goes out in a response
-no one receives. The client's next refresh then gets 401
-`AUTH_TOKEN_REVOKED`, and that device is signed out. It takes a stall of over
-a minute landing on a refresh, and the cost is one login. Accepting the
-previous token for a grace window after rotation would avoid it, but it
-weakens one-time rotation (a stolen token could be replayed inside the
-window) and complicates the Lua script. *Revisit when:* users report
-sign-outs after slow responses, or refresh moves behind a shorter timeout.
-
-Account deletion is the third case. It revokes every session before it
-deletes the `users` row, so a delete that stalls in MySQL and answers 503
-has already signed the user out everywhere, and MySQL may still commit the
-delete afterwards: the user logs in again to find the account gone, or still
-there if MySQL never committed it. Either way nothing is half deleted, since
-the row and its cascade go in one statement. The recovery audit drilled it
-(2026-10-16). *Revisit when:* deletion gains a step outside that statement
-(files in object storage, a third-party account), which then needs to run
-only after the commit.
-
-**The requirements check stays a test, not deptry.**
-`tests/unit/test_requirements.py` checks that `requirements.in` lists every
-package the backend imports. deptry (0.25.1) would do the same and also
-find listed packages nothing imports, but it needs a `pyproject.toml`
-section the backend doesn't otherwise have. *Revisit when:* an unused
-package slips into `requirements.in`, or the backend gets a
-`pyproject.toml`.
-
-**Python import contracts stay a custom test, not import-linter.**
-`tests/unit/test_import_rules.py` does what import-linter's `layers` (with
-`exhaustive = true`) and `protected` contracts do, and finds new features by
-itself. import-linter (tried, version 2.15) skips packages without an
-`__init__.py`, so adopting it means five empty `__init__.py` files, a
-scaffold step to list each feature in the contract, and five dev packages
-(about 10 MB). *Revisit when:* the feature packages get `__init__.py` for
-another reason, or the rules outgrow the test (more layers, per-feature
-exceptions).
-
-**Frontend folder rules stay a custom ESLint rule, not
-`eslint-plugin-boundaries`.** `eslint.config.js`'s `relative-within-folder`
-rule (about 25 lines) and the `@/` patterns enforce the one-way imports, and
-`src/__tests__/eslintRules.test.ts` plants violations of each. `boundaries`
-would declare the same rules more declaratively, but it resolves paths
-through `eslint-plugin-import`'s resolvers, so the `@/` alias needs two or
-three more dev packages, and the planted tests would stay anyway, since
-config fails silently. *Revisit when:* the rules outgrow the custom rule
-(more layers, per-feature exceptions), as for import-linter above.
-
-**Ruff's `select` lists every rule in full.** Ruff's own default set (checked on
-0.16) is far wider than pyflakes and syntax errors (`I`, `SIM`, `B`, `RUF`,
-`UP` and about 30 more families), and it changes between releases, so
-`extend-select` would turn on whatever the installed ruff defaults to.
-*Revisit when:* the repo chooses to adopt ruff's defaults.
-
-**axios stays.** The api client relies on what axios provides: request and
-response interceptors, `error.config` for retrying the original request,
-JSON and non-2xx handling, and the `err.response.{status,data}` shape that
-`getErrorMessage`, `AccountPage` and 8 test files read. A `fetch` wrapper
-would hand-write all of it. It costs 23 KB gzipped in the bundle; its 27
-lockfile packages (all MIT) are mostly Node-only and not bundled. *Revisit
-when:* the client needs streaming or `AbortSignal` beyond what axios offers,
-or a major axios release changes the interceptor API.
-
-**ua-parser names a session's device** (user, 2026-11-20).
-`app/utils/devices.py` turns a User-Agent into "Firefox on Windows" through
-`ua-parser` and its `ua-parser-builtins` regexes: about 1.1 MB, Apache-2.0,
-no other dependency, about 1 ms per parse (2.9 ms worst at the 512-character
-cap). A hand-written regex would be about 20 lines, but would name devices
-worse as user agents change. The regexes release monthly, so Dependabot
-proposes a bump monthly. *Revisit when:* the account page stops naming
-devices, or browsers' reduced User-Agent strings leave too little to parse,
-so a few lines of string matching name devices as well.
-
-**Pages load data with TanStack Query hooks and submit forms from
-`onSubmit`: no React Router loaders or actions, no React form actions, no
-server rendering.**
-- *React Router loaders and actions.* `AccountPage` and `useNotes` fetch as
-  they render (`useQuery`, `useInfiniteQuery`), while the app already uses
-  `createBrowserRouter`. A loader would fire before `ProtectedRoute`
-  renders, so a signed-out visit would send an unauthenticated request and
-  land on the `errorElement` instead of `/login`. Using loaders means moving
-  both guards into loaders (`throw redirect(...)`) and rebuilding the
-  "Loading..." live regions on `useNavigation`; a loader would then fill the
-  same cache (`queryClient.ensureQueryData`), not replace it. A route
-  `action` (`<Form>`, `useFetcher`) sits beside its loader and re-runs it,
-  so the two come together.
-- *React form actions* (`<form action>`, `useActionState`) work with these
-  forms: values held in state survive React's form reset (checked in
-  Chromium on `LoginPage`, 2026-11-07). But they saved three lines there,
-  split validation (in `onSubmit`, which needs the form to focus the first
-  invalid field) from submitting (cancelling the submit is what stops the
-  action), and left the last error showing during a retry unless hidden by
-  hand. The action read React state, not its `FormData`: fields stay in
-  state for live error clearing and the note counter.
-- *Server rendering* (Next.js, React Router framework mode) is out of scope:
-  it would put a Node server where nginx serves static files, and move
-  sign-in from a stored access token to cookie sessions. Public pages that
-  need search indexing would take React Router's build-time prerendering
-  instead, still with no server at runtime.
-
-*Revisit when:* a page needs its data before first paint (loaders and
-actions), or forms read `FormData` instead of state, or a feature needs
-`useOptimistic` (form actions).
-
-**TanStack Query's retries and refetches are off** (`api/queryClient.ts`).
-A query is tried once: the api client already refreshes an expired token,
-and a 503 or a network error shows at once rather than after three silent
-tries with backoff. Nothing refetches on window focus or reconnect: an
-infinite list refetches every page it has loaded, and would move the rows a
-user is reading or editing. A page refetches when it mounts, showing the
-cached data meanwhile. *Revisit when:* a page needs fresher data than a
-visit gives.
-
-**The data export is one synchronous JSON response, with no password asked
-for** (user, 2026-11-08). `GET /api/account/export` reads every registered
-feature's rows in one request. Large services build an export in the
-background and email a link. Every feature here caps a user's rows (the
-notes example: 1000 of 256 characters, about 300 KB), which bounds the
-response, and the background route would add storage for the finished
-file, its cleanup and an emailed download link for no gain. Account deletion asks for the
-password because it cannot be undone; the export does not, since a stolen
-session can already read every row through the other routes. The logs are
-not in it: the privacy notice takes requests for them by email.
-*Revisit when:* a feature's per-user data can outgrow one response (file
-uploads, a long history), or the export holds anything the other routes
-never show, which should then ask for the password. The worker, email and
-signed links then cover the queue and the emailed link; what's new is
-storing the file and deleting it.
-
-**Background jobs: Dramatiq, with the worker on a Redis user of its own that
-may run KEYS** (user, 2026-11-09). The `worker` service runs the jobs
-requests queue (`backend/app/utils/jobs.py`). RQ was passed over because a
-message names any importable function (its callbacks too), so a write to
-Redis would run code in the worker, which holds `SECRET_KEY` and the
-database password; Celery for its weight. Dramatiq runs only declared
-actors, with JSON arguments, and the app signs each message with
-`SECRET_KEY` (`Job.send`), which the worker checks before anything else
-(`SignedMessages`): a Redis password alone can neither run a job nor choose
-its arguments, which matters since the email change's jobs mint links that
-move an account. A copy of a message the app signed only repeats an email
-the app asked for. Its Redis broker's upkeep (requeuing a dead worker's
-messages, dropping expired failed ones) calls `KEYS`, which `-@dangerous`
-refuses, so the worker connects as `worker`, which may touch only `dramatiq`
-and `dramatiq:*` and holds `+keys`, and the app's broker never runs the
-upkeep (`maintenance_chance=0`): the `app` user keeps no dangerous command,
-and a stolen worker password reaches the queue alone. `KEYS` reveals no more
-than `SCAN`, which both users have and whose output Redis does not filter by
-key pattern; it blocks Redis while it walks every key, a few milliseconds
-per hundred thousand, on about one worker call in a hundred. Dramatiq is
-LGPL-3.0: installed unmodified by pip and run on the operator's own servers,
-it asks nothing of the app (as with the images' GPL code); a patched copy of
-its Lua script would. *Revisit when:* Dramatiq's upkeep stops calling `KEYS`
-(drop `+keys`), the keyspace reaches millions of keys, or the app is
-distributed to others.
-
-**Email: SMTP to a managed provider, plain text, sent by the worker alone**
-(user, 2026-11-09). `backend/app/utils/mail.py` speaks SMTP, which every
-provider accepts, so no provider's API, library or webhooks are wired in:
-the app does not act on bounces or complaints. Production requires TLS.
-Emails are plain text: every client shows it, and it carries no tracking,
-remote images or markup to sanitize. Only the worker holds the mail
-server's password (`check_compose.py`). Nothing caps the app's outgoing
-mail as a whole: the limits on whatever queues an email bound one
-requester, and the provider's sending limits the rest.
-*Revisit when:* a provider warns about or suspends the account over
-bounces or complaints (handle its bounce webhook and stop mailing those
-addresses), an email needs HTML, or a flood of requests gets past the
-per-requester limits.
-
-**A token in a link travels in the URL fragment, and the page posts it
-after a click** (user, 2026-11-08). Every emailed link that carries a
-secret (sign-up, password reset, email change, invitations) is
-`https://<host>/<page>#token=...` (`app_link`, `backend/app/utils/links.py`). Browsers send a fragment to no
-server and in no Referer, so no log, proxy or CDN sees it. nginx's access
-log drops query strings, but its error log writes the whole request line
-for a 413, 502 or 504, so a token in a query string would land there
-whenever the backend restarts. Lowering `error_log` to `crit` was weighed
-and dropped: it loses the upstream errors an outage is diagnosed from.
-The page asks for one click before posting the token, since mail
-scanners open links and some run their scripts, which would spend a
-single-use token or confirm a change the user never saw; sign-up's page
-asks for the password, which is that click. *Revisit when:*
-never for secrets; a link that carries no secret may use a query string.
-
-**Caching: nothing beyond the defaults until a feature needs it** (user,
-2026-11-08). Weighed for a standard app, not just the example feature:
-- *Frontend.* Every query keeps TanStack Query's `staleTime` of 0, so a
-  page shows its cached data and refetches on mount. A longer `staleTime`
-  hides changes made on another device or in another tab; `Infinity` on the
-  account query was weighed and dropped, since an email change usually completes
-  in the tab its verification link opens. The account query instead refetches on window
-  focus (overriding the default for that query alone; infinite lists keep
-  it off, entry above), and the account page shows the address it answers,
-  the navbar's too (`updateEmail`, which keeps the cache: the account is
-  the same).
-  Prefetching (the next notes page, a page's data on hover) spends a
-  request whether or not it is used.
-- *HTTP.* Every API response is `no-store` (`app/__init__.py`): it carries
-  tokens and private data, which an ETag or `private, no-cache` would let
-  the browser keep on disk after logout. A public, non-user route (a
-  catalog, public posts) is where `Cache-Control: public` or an ETag pays
-  off: the route sets its own header, which `no_store`'s `setdefault`
-  leaves alone. nginx already caches `/assets/` for a year and revalidates
-  HTML.
-- *Backend.* Every read is a lookup by primary key or a page of an index,
-  which MySQL's buffer pool already serves from memory. A Redis cache is for
-  a costly read (an aggregate, a slow external API): its keys need their own
-  prefix added to the `app` ACL user's key patterns (`~refresh_tokens:*`,
-  `~LIMITS:*`) in every compose file (`check_compose.py`) and
-  `test_redis_acl.py`, and each entry must be dropped when its data changes.
-- Every cache holding a user's data is emptied when the session ends or
-  changes account, as `AuthProvider` does for the query cache.
-
-*Revisit when:* a feature lets data change outside the tab that shows it
-(as an email change does the account query), adds a public route, or adds a read
-costly enough to show in `upstream_response_time`.
-
-**pytest-cov stays.** `coverage run -m pytest` plus `coverage report` could
-replace it, but that saves one small dev package in exchange for rewriting
-`run_tests.sh`'s `--cov`/`--cov-append`/`--cov-fail-under` flags. *Revisit
-when:* pytest-cov lags a pytest major release.
-
-**The JSON log formatter stays hand-written.** `app/utils/log.py`'s
-`JsonFormatter` is a few lines. `python-json-logger`, the usual library for
-this, would replace it with a dependency and its configuration and save
-nothing the app needs today. *Revisit when:* a log service needs a specific
-schema (Elastic ECS, Datadog's reserved fields), every line needs tracing ids
-(OpenTelemetry), or the formatter grows past about 40 lines.
-
-**The color guard stays a Vitest test, not stylelint.**
-`styles/__tests__/stylesheets.test.ts` refuses a color written outside
-`tokens.css`, and a token that is unused or never defined. stylelint covers
-only the first half (`color-named`, `color-no-hex`,
-`function-disallowed-list`), and would add a CLI, a config and a CI step.
-*Revisit when:* the CSS needs rules a stylelint preset already has
-(ordering, specificity, property bans), or the hand-written check misses a
-case.
-
-**Keeping and shipping logs belongs to the platform.** The app and nginx log
-to stdout, so any platform can take the lines: a managed platform's log
-service (CloudWatch, Cloud Logging) ships each line off the host as it is
-written and keeps it for a set period. The template builds no log shipping of
-its own, which would tie it to the self-hosted Docker path. On the bundled
-Compose deployment, Docker's 3 × 10 MB per container is all there is: it caps
-by size, not age, and enough traffic can push older lines out. It also goes
-with its container, and every deploy replaces the backend and nginx, so the
-logs reach back to the last deploy at most. nginx cuts the
-client's text in each access line short, rate-limits the page as well as the
-API per address, and logs only a sample of what it refuses (below), which
-makes that slow for one client but not impossible for many. Measured on
-2026-10-18: one client sending ~4200 requests a second with 4 KB headers
-wrote 51 KB for 4000 requests, where it wrote 11.2 MB (an access line and an
-error-log line per refusal) before the sampling. Its served lines and the
-sampled refusals, about 770 bytes each, roll 30 MB over in about 13 minutes
-on one zone, and (by the same numbers) about 8 if it floods the page and the API together.
-Keeping logs past a deploy, or shipping them, is generic server operations
-(below): any Compose app that replaces its containers needs the same
-logging driver or agent, so "Not Included" names them (journald in an
-untracked `docker-compose.override.yml`, Loki, Fluent Bit, CloudWatch)
-rather than the template building one (user, 2026-11-05). What the docs
-cover is why it matters here: every deploy erases the backend's and nginx's
-logs, and their `account_deleted` events are the only record of which
-accounts a restore brings back. *Revisit when:* keeping those events past
-a deploy comes to need something only this template can provide.
-
-**nginx logs a 1-in-100 sample of refused requests.** A client over a rate
-limit gets its 429, and nginx writes an access line for one refusal in 100,
-picked by `request_id` (`split_clients` in `nginx.conf`); refusals leave the
-error log entirely (`limit_req_log_level info`). Logging every refusal let one
-client roll Docker's 30 MB over in about 4 seconds, erasing everything older,
-the flood's own start and other users' requests included; the error-log
-lines also kept the whole query string and Referer, which the access log
-cuts at the query.
-Logging none was rejected too: nginx's 429s never reach Flask, so no
-`rate_limited` event would show that a flood happened or where it came from.
-The sample keeps the flood's address, timing and paths (multiply by 100 for
-its size). The cost: exact counts are lost, and a single 429 a real user got
-is likely not logged. `nginx.spec.ts` checks both halves. *Revisit when:* logs
-are shipped off the host (then log every refusal).
-
-**One backend container, at a fixed address.** nginx connects to the
-backend's fixed address on the edge network, not to its name, so a recreated
-backend is reached the moment it listens: looked up by name, Docker's DNS
-could answer "server failure" mid-swap, and nginx then left a healthy backend
-unreachable for about 30s. Two containers cannot share the address, so
-`--scale backend=N` is out; scale one container with `WEB_CONCURRENCY` and
-its CPU limit instead. A managed platform's load balancer does this job there.
-*Revisit when:* one backend container is no longer enough (then several
-fixed addresses in the upstream, or a reload of nginx after every deploy).
-
-**A deploy is not zero-downtime.** With one backend, `deploy.sh` stops the old
-one before the new one starts: the old nginx keeps serving the page, but the
-API answers a JSON 502 or 504 until the new backend listens (measured on a
-4 GB VM: 8.5 s), and connections are refused for about a second while nginx
-itself is replaced. A commit that changes the bundled `db` or `redis` (its
-image, command or values) restarts it under the running app, which answers
-503 meanwhile. *Revisit when:* a deploy's API gap matters to users (then
-two backends, as above, started one after the other).
-
-**nginx's per-IP limits are per nginx.** On a platform, each task runs its
-own nginx beside its backend, so three tasks give one client three times the
-budget of `limit_req`/`limit_conn`. The backend's own limits (the auth
-and account routes) count in Redis and stay exact. Exact
-limits at the edge belong to the load balancer's WAF. *Revisit when:* a
-deployment runs enough tasks that the multiplied budget matters.
-
-**No IPv6 at the edge.** nginx publishes 80 and 443 on IPv4 only
-(`0.0.0.0`, `check_compose.py`), so an IPv6 visitor is refused and the
-browser falls back to IPv4; a server publishes no AAAA record. Published on
-`[::]` as well, Docker's proxy would relay every IPv6 visitor from the
-`edge` gateway's address (seen on the test VM, 2026-11-05), giving them all
-one rate-limit bucket that a stranger's wrong passwords could lock. Real
-IPv6 needs IPv6 on `edge`, which a host with IPv6 switched off cannot
-create, and per-address limits keyed on the visitor's /64, since most hold
-a whole /64 and could rotate through it. Behind a dual-stack load balancer
-(`behind-proxy`) IPv6 visitors already arrive with their own address in
-`X-Forwarded-For`, so there the limits key on a single IPv6 address today:
-the per-account login limits hold, the per-address ones can be dodged.
-*Revisit when:* a deployment needs IPv6 at nginx, or runs behind a
-dual-stack load balancer (then the /64 keying, in nginx and in Flask).
-
-**`--provenance=false` stays a flag.** Without it, every rebuild gets a new
-image ID and a hand-run `up -d` replaces the app containers though nothing
-changed. On Docker Engine 29 with Compose 5.6.1 (the test VM, 2026-11-05)
-the flag keeps an unchanged image's ID, and so does `provenance: false`
-under `build:`. But that key is honored only since Compose 5.5.1
-(docker/compose#14112): 5.0 ignores it, and some versions in use refuse the
-whole file over it (GitHub's `ubuntu-24.04` runner, 2026-11-06: "additional
-properties 'provenance' not allowed"), which would stop the stack and
-`deploy.sh` from starting at all. The flag is accepted everywhere it exists.
-*Revisit when:* every Compose a deployment could run, CI's runner included,
-accepts and honors the key.
-
-**Deploys build on the server, not in CI.** `deploy.sh` builds the
-commit it deploys on the server itself, so the images that run are a second
-build of the tree CI tested, not the images it tested: branch protection ran
-every check on that same tree, and the lockfiles pin what the build
-installs. A registry fed by CI would mean either public images (GitHub makes
-a public repository's packages public: distribution, see "Images are run,
-not distributed") or a manual, per-package setup and a registry login on
-every server. The cost is building on the server (internet access, memory
-for the frontend build, a few minutes per deploy while the old version
-serves). The build pulls its base images (`build --pull`), so a base
-image's security patch reaches the server with the next deployed commit;
-nothing rebuilds on a schedule, and a rollback, or a redeploy of a commit
-whose images are still there, reuses its images. *Revisit when:* an image must be byte for
-byte the one tested, servers are too small to build, a base-image fix has to
-ship with no commit to carry it, or deploys move to a platform that pulls
-from a registry.
-
-**The bundled MySQL and Redis images change only with a tag bump.**
-`deploy.sh` doesn't pull `db`'s and `redis`'s images: upstream rebuilds of a
-pinned tag are not taken, so they are recreated only by a commit that
-changes their tag (Dependabot's `docker-compose` entry) or their settings.
-Pulling would restart MySQL or Redis under the running app whenever
-upstream rebuilt the tag, and most real deployments replace both with
-managed services, whose providers patch them. *Revisit when:* a reachable
-CVE in either is fixed by a same-tag rebuild.
-
-**Deploys trust GitHub's `main`.** `deploy.sh` deploys any commit on
-`origin/main`, and `--latest` on a timer does so unattended, so whoever can
-push or merge to `main` (a stolen GitHub session or token included) runs
-code on the server as the deploy user, who can control the host through
-Docker. Branch protection and its required checks are the only gate. A
-signature check on the server would only help with commits signed by a key
-GitHub never holds: merges made in GitHub's UI, Dependabot's included, are
-signed by GitHub's own key, which a stolen session uses too, so every merge
-would have to be made and signed locally. *Revisit when:* the timer runs on
-a host with real data (then signed merges and `git verify-commit` against an
-`allowed_signers` file on the server, or a deploy that waits for a person's
-approval).
-
-**Generic server operations are out of scope.** The template documents what
-depends on how it is built (restarts, its MySQL volume's dump and restore,
-what its init script and secrets do on rotation, `deploy.sh`), and leaves
-what any Docker host needs to the tools made for it: alerts and uptime
-checks, host metrics, log shipping, scheduled and off-host backups,
-point-in-time recovery (a managed database), host hardening and its audits
-(Lynis, Docker Bench, CIS). `docs/deployment.md`, "Operating in
-Production", says what is not included and which tool to reach for; audits
-report a missing one only where those docs fail to name it. *Revisit when:*
-a gap's answer comes to depend on how this template is built.
-
-**Encryption at rest is the host's job.** The MySQL volume, Redis's files
-and backups are protected by encrypting the disk they sit on: full-disk
-encryption (LUKS or the OS's equivalent) on a self-hosted server, the
-provider's default encryption on a cloud disk or managed database, and
-backups encrypted before they leave the host. The app encrypts no columns:
-its key would sit in the same environment as the database URL, so it would
-only guard against a stolen disk or backup, which disk and backup
-encryption already cover. The cost on a self-hosted server is that every
-boot waits for the passphrase (or a TPM or network unlock), so an
-unattended reboot leaves the app down until someone unlocks the disk.
-*Revisit when:* a field must stay unreadable to whoever runs the database,
-such as under a compliance rule (then column encryption with a key held
-outside the app's environment).
-
-**MySQL only.** The template runs on MySQL 8.4, bundled or managed. Another
-engine would be a project of its own: the driver and its connect args (query
-timeouts, the UTC session time zone), the migrations, the MySQL-only
-integration tests, and case-insensitive email matching, which MySQL's
-collation gives for free and Postgres would need `citext` or a lower-cased
-unique index for. *Revisit when:* a deployment needs a provider or host
-without MySQL.
-
-**No TLS between containers on one host.** It is not needed while every
-service shares one host: the bundled MySQL and Redis traffic stays on the
-`internal` network, and anyone who can sniff that bridge already has root
-on the host. Off-host (any host but `db` or `redis`), `ProductionConfig`
-requires it. *Revisit when:* the bundled services are spread across hosts,
-since an overlay network keeps the names `db` and `redis`, so
-`ProductionConfig` would not ask for TLS.
-
-**No production data in dev, scrubbed or not.** The docs cover
-production's own dumps and restores ("Backups and Restoring") and nothing
-that copies one elsewhere. Scrubbed data that can still be linked to a
-person is still personal data under GDPR, and a developer's machine is
-less protected than the server. Note content is free text that no scrubber
-cleans reliably, so a safe copy keeps only the data's shape (counts,
-lengths, timestamps), which generated data gives without the risk.
-Scrubbing would also have to run on the server, so that raw data never
-leaves it, and every new column of personal data would have to join its
-list, where a miss ships real data silently. If dev needs volume or edge
-cases, generate them (a dev-only seed command that refuses production).
-One user's bug is reproduced on the server, with their consent, as a
-support case. *Revisit when:* dev needs something only real data shows,
-which generated data cannot.
-
-**The API's types come from JSON Schema, not an OpenAPI document**
-(`backend/export_schemas.py`, `npm run api-types`). Pydantic writes JSON
-Schema itself, and json-schema-to-typescript turns it into the frontend's
-types; nothing in the stack would read an OpenAPI document, and
-openapi-typescript, the usual generator from one, requires TypeScript 5
-while the frontend is on 6. The types cover bodies, not routes: which URL
-takes and returns which model is still written in each service module.
-*Revisit when:* the API needs published docs or a typed client per route,
-which the same models can feed as an OpenAPI document.
-
-## Known gaps (open work, not new findings)
-
-A check mentions these only when its findings bear on one (for example, a
-docs check that finds the certificate steps wrong). They are not new
-findings.
-
-- **Account security beyond the basics:** no multi-factor login (ASVS 5.0
-  chapter 6, Authentication).
-- **Certificate renewal waits for a real deployment.** The Let's
-  Encrypt steps still edit the tracked `docker-compose.yml` and the shared
-  nginx template (which breaks CI and the test stack if followed, and leaves
-  a `deploy.sh` clone dirty), and renewal is manual. The planned DNS-01
-  renewal needs a real domain, which the test server will not get (user,
-  2026-11-05), so it gets written and tried on the first real deployment
-  rather than on paper; until then the docs and recovery checks don't
-  report it. A CDN is not set up either.
+**Legal placeholders are not enforced at build.** Nothing stops a production
+image from serving the placeholder `OPERATOR` values in
+`frontend/src/appInfo.ts`, `contact@example.com` in `security.txt`, or the
+"Placeholder" banner on the legal pages. `docs/personal-data.md`'s "Before
+launch" list is the only safeguard: a build check would have to tell the
+production image apart from the test stack's, which serves the same
+placeholders on purpose. *Revisit when:* the first real deployment is
+prepared.

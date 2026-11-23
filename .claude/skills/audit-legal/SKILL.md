@@ -40,8 +40,8 @@ as RULES.md.
   private; the app sends transactional email only and calls one
   outside API (Pwned Passwords, 5 characters of a hash); there is no
   payment or analytics yet. A risk that only arrives with such a feature is
-  **low** with its trigger named in the Fix. Known gaps in DECISIONS.md
-  (its "Known gaps" section) are not new findings, but say when the law makes one more urgent than recorded.
+  **low** with its trigger named in the Fix. Open issues in OPEN-ISSUES.md
+  are not new findings, but say when the law makes one more urgent than recorded.
 
 ### Severity for legal findings
 

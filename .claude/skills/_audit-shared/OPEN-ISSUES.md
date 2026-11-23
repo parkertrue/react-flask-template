@@ -30,8 +30,9 @@ real users' data. `docs/deployment.md` has the detail of each.
   up renewal without downtime that keeps the clone clean, for example
   Certbot's DNS-01 challenge with your DNS host's plugin and a deploy hook
   that copies the certificate into `nginx/certs/` and reloads nginx. Use
-  Let's Encrypt's staging server while trying it. `DECISIONS.md` records
-  that this waits for a real deployment.
+  Let's Encrypt's staging server while trying it. This waits for a real
+  deployment, since it needs a real domain: until then audits report the
+  certificate steps only where they are wrong, not where one is missing.
 - **Email.** Sign up with a mail provider, set up the sending domain
   (SPF, DKIM, DMARC) and set `EMAIL_URL` and `EMAIL_FROM` ("Sending
   Email"). Send one email end to end, ask for the provider's production
@@ -72,5 +73,8 @@ real users' data. `docs/deployment.md` has the detail of each.
   ranges (`TRUSTED_PROXY_COUNT` stays 1). CloudFront has dozens of them:
   check whether listing them is workable or whether it wants another
   header.
+- **Multi-factor login (low).** The app has passwords alone (ASVS 5.0
+  chapter 6). Decide whether the app's data needs a second factor (TOTP or
+  passkeys) before real users sign up.
 - **Before launch.** The legal pages and the "Before launch" list in
   `docs/personal-data.md`.
