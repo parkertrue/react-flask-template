@@ -276,6 +276,14 @@ stays. *Revisit when:* users report lockouts, or the app holds accounts worth
 targeting (then add a CAPTCHA or an emailed unlock link instead of the hard
 cap).
 
+Recovery has the same weakness, for a day: a password reset has its own
+per-address budget (3 an hour, 6 a day, from any address), which bounds the
+mail one inbox can be sent. A stranger who spends it on someone's address
+(five resets over a few hours) leaves the owner's own reset at 429 until the
+day's window ends. Sign-up requests and email changes no longer spend it
+(SEC-12, 2026-11-23). The remedy, when revisited, is the same CAPTCHA, shown
+once an address's budget runs low rather than refusing it.
+
 **An undo link works for 7 days, whatever changed since** (user,
 2026-11-20). After an email change, the old address gets a link that moves
 the account back and ends every session. Its state names only the account

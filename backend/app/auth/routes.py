@@ -109,12 +109,17 @@ def account_password_limit(
         '100 per hour', scope='account-password', key_func=key_func, deduct_when=deduct_when)
 
 
-# Emails to one address, whichever form asks for them: sign-up, a password
-# reset and an email change's new address share 3 an hour and 6 a day, so no
-# one can flood an inbox through the app, alternating them or not. The 429 tells nothing: it
-# comes as soon for an address with an account as for one without.
+# Emails to one address: sign-up and an email change's new address share 3 an
+# hour and 6 a day, so no one can flood an inbox through the app, alternating
+# them or not. The 429 tells nothing: it comes as soon for an address with an
+# account as for one without.
 emails_to_address_limit = limiter.shared_limit(
     '3 per hour;6 per day', scope='emails-to-address', key_func=_request_email_key)
+
+# A password reset's emails to one address, in a budget of their own, so a
+# stranger's sign-up requests cannot use up the owner's way back in (a
+# stranger's resets still can: DECISIONS.md, "A distributed lockout")
+password_reset_emails_limit = limiter.limit('3 per hour;6 per day', key_func=_request_email_key)
 
 
 def _login_email_and_ip_key() -> str:
@@ -339,7 +344,7 @@ def complete_registration() -> ResponseReturnValue:
 
 @auth_bp.route('/password-reset', methods=['POST'])
 @limiter.limit('10 per hour')
-@emails_to_address_limit
+@password_reset_emails_limit
 def request_password_reset() -> ResponseReturnValue:
     """A password reset's first step: email the account a link to choose a
     new password.
