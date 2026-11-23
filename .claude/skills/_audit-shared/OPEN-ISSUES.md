@@ -1,10 +1,10 @@
 # Open issues
 
 What is still open in this app: audit findings, problems noticed during
-work, and work asked for, all as issues alike. The template ships two
-groups, getting started and the production to-dos every deployment works
-through; add groups as the work needs them (a feature, dependencies
-waiting on a release, discussions). **Keep it current:**
+work, and work asked for, all as issues alike. The template ships one
+group, the production to-dos every deployment works through; add groups as
+the work needs them (a feature, dependencies waiting on a release,
+discussions). **Keep it current:**
 - Delete an issue once it is done. Git history and the PRs hold the rest.
 - Add an issue the moment it comes up, in the group where it fits. Merge it
   into an existing issue when the two should be fixed together.
@@ -17,42 +17,6 @@ Every audit checks its findings against this file and `DECISIONS.md`
 and the report's recording plan says which issue each new finding joins or
 starts. Severity, where an audit gave one: blocker > high > medium > low >
 nit.
-
-## Getting started
-
-- **Set up your handoff doc.** Create `temp/HANDOFF.md` (`temp/` is
-  gitignored) for what is yours alone and would mean nothing to anyone
-  else: how your machine differs (OS, shell quirks, tool versions), your
-  servers and how to reach them, the current state (branch, last merge,
-  test counts on `main`), and how you like to work. Issues never go there:
-  every open issue is in this file. A start:
-
-  ```markdown
-  # Handoff
-
-  Read this, then `.claude/skills/_audit-shared/OPEN-ISSUES.md`, before
-  starting.
-
-  ## State
-  ## How I work
-  ## This machine
-  ## Servers
-  ```
-
-  A new chat then starts with *"Read temp/HANDOFF.md and let's continue."*
-  Bring its State up to date before ending a session. Delete this issue
-  once the doc exists.
-- **Plan the app.** Decide what it does, who uses it and its first
-  feature, and add an issue here for each piece of work that comes out of
-  it. Then follow README's "Starting a New App From This Template", which
-  replaces the notes example with that first feature.
-
-## Dependencies
-
-Upgrades waiting on a release or a date; Dependabot proposes the rest
-(`.github/dependabot.yml`).
-
-None open.
 
 ## Production to-dos
 
