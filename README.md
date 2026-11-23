@@ -55,6 +55,22 @@ cd ../frontend
 npm install
 ```
 
+If you work with Claude Code, also create `temp/HANDOFF.md` (`temp/` is gitignored) for what is yours alone and would mean nothing to anyone else: how your machine differs (OS, shell quirks, tool versions), your servers and how to reach them, the current state (branch, last merge, test counts on `main`), and how you like to work. Issues never go there: every open issue is in `.claude/skills/_audit-shared/OPEN-ISSUES.md`. A start:
+
+```markdown
+# Handoff
+
+Read this, then `.claude/skills/_audit-shared/OPEN-ISSUES.md`, before
+starting.
+
+## State
+## How I work
+## This machine
+## Servers
+```
+
+A new chat then starts with *"Read temp/HANDOFF.md and let's continue."* Bring its State up to date before ending a session.
+
 ### Every Day
 
 Run each in its own terminal:
@@ -185,6 +201,8 @@ A feature's background jobs plug in through its own blueprint, as its data expor
 
 CI's Scaffold job deletes the examples and edits exactly these files (`.github/scripts/remove_examples.py`), renames the app (step 5), then runs lint and the unit suites, so shared code can't come to depend on an example or the template's name. Changing a wiring point means changing the script with it.
 
+**Before you start:** decide what the app does, who uses it and its first feature, and add an issue to `.claude/skills/_audit-shared/OPEN-ISSUES.md` for each piece of work that comes out of it. The steps below replace notes with that first feature.
+
 **Steps:**
 
 1. Rename the Compose projects (`name:` at the top of each compose file: `app_dev`, `app_test`, `app`) and the databases in `.env.dev` and `.env.test` (`appdb_dev`, `appdb_test`). Two apps built from this template then never share containers or volumes, and your dev and test stacks start with empty databases.
@@ -205,7 +223,7 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
 
    Upgrade first: Alembic only writes a migration against an up-to-date database. In the generated file, keep only the `op.drop_table(...)` lines in `downgrade()`: MySQL will not drop an index that a foreign key uses, and dropping the table drops its indexes anyway. Then run `./run_tests.sh integration`, whose `test_migrations.py` checks that the migrations match the models and undo cleanly.
 5. Name the app, without using anyone else's trademark, in three places: `APP_NAME` in `frontend/src/appInfo.ts`, the `<title>` in `frontend/index.html`, and `APP_NAME` in `backend/app/config.py`, which the backend introduces itself by (a test checks that the three match, and that no other code or test writes the name). Describe it in `APP_TAGLINE` beside the name. Put the name in the sender of the emails the app sends: `EMAIL_FROM` in `.env.dev` and `.env.test`, and in your `.env.prod`. Replace the placeholder icon, `frontend/public/favicon.svg`.
-6. Rewrite this README, `docs/` and `CLAUDE.md` for your app, and choose its license: replace `LICENSE` and the `license` field in `frontend/package.json`, then run `npm install` in `frontend/` so `package-lock.json` matches (the template is MIT-0, so your app owes it no notice). Delete `.claude/skills/audit-scaffold/`, which acts out these steps on the template, and remove it from `/audit`'s `periodic` tier and Docker order (`.claude/skills/audit/SKILL.md`); keep the other audits in `.claude/skills/` and update their references to notes and to `audit-scaffold`, or delete them. Keep `.claude/skills/_audit-shared/OPEN-ISSUES.md` as your app's list of open work, starting with its getting-started issues, and `DECISIONS.md` beside it as its accepted trade-offs.
+6. Rewrite this README, `docs/` and `CLAUDE.md` for your app, and choose its license: replace `LICENSE` and the `license` field in `frontend/package.json`, then run `npm install` in `frontend/` so `package-lock.json` matches (the template is MIT-0, so your app owes it no notice). Delete `.claude/skills/audit-scaffold/`, which acts out these steps on the template, and remove it from `/audit`'s `periodic` tier and Docker order (`.claude/skills/audit/SKILL.md`); keep the other audits in `.claude/skills/` and update their references to notes and to `audit-scaffold`, or delete them. Keep `.claude/skills/_audit-shared/OPEN-ISSUES.md` as your app's list of open work, starting with its production to-dos, and `DECISIONS.md` beside it as its accepted trade-offs.
 7. Write the legal pages and work through the "Before launch" list in [docs/personal-data.md](docs/personal-data.md).
 
 ## License
