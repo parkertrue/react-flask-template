@@ -79,7 +79,7 @@ class TestSend:
         data = app.extensions['jobs_broker'].queues[QUEUE_NAME].queue[0]
         assert json.loads(data)['args'] == [7, 'a label']
 
-    def test_redis_down_is_a_503(self, tidy, monkeypatch):
+    def test_redis_down_is_a_503(self, tidy, queue_down):
         app, declared = tidy
 
         @app.route('/_tidy', methods=['POST'])
@@ -87,9 +87,7 @@ class TestSend:
             declared.send(7, 'a label')
             return '', 204
 
-        def refuse(message, *, delay=None):
-            raise RedisConnectionError('Connection refused')
-        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+        queue_down(app)
 
         response = app.test_client().post('/_tidy')
 

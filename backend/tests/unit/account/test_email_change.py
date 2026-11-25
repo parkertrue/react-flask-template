@@ -9,7 +9,6 @@ from unittest.mock import patch
 import pytest
 from dramatiq import Message
 from itsdangerous import TimestampSigner
-from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import select
 
 from app import db as _db
@@ -155,10 +154,8 @@ class TestRequestEmailChange:
         assert response.status_code == 401
         assert jobs() == []
 
-    def test_a_queue_that_is_down_is_a_503(self, app, client, db, sample_user, auth_headers, monkeypatch):
-        def refuse(message, *, delay=None):
-            raise RedisConnectionError('Connection refused')
-        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+    def test_a_queue_that_is_down_is_a_503(self, app, client, db, sample_user, auth_headers, queue_down):
+        queue_down()
 
         response = self.request_change(client, auth_headers)
 
@@ -286,10 +283,8 @@ class TestCompleteEmailChange:
         assert self.complete(client, token).get_json()['error']['code'] == 'LINK_INVALID'
 
     def test_a_notice_that_cannot_be_queued_still_answers_changed(
-            self, app, client, db, sample_user, monkeypatch, logged):
-        def refuse(message, *, delay=None):
-            raise RedisConnectionError('Connection refused')
-        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+            self, app, client, db, sample_user, logged, queue_down):
+        queue_down()
 
         response = self.complete(client, change_token(app, sample_user))
 

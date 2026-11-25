@@ -14,10 +14,13 @@ which nothing else the app shows is made with, and the worker runs none it canno
 a Redis password alone cannot choose a job's arguments either: the email
 change's jobs mint links that move an account (SignedMessages).
 
-Queue a job before committing when the job is the request's point. When
-the write must stand on its own, queue after committing and catch and log
-JobQueueUnavailable, as the password reset does: otherwise a Redis outage
-answers 503 with the row already saved, and the user's retry saves it again.
+Queue a job before committing when the job is the request's point. Such
+a job must not read a row the request writes: the worker reads on its own
+connection, which cannot see the row until the commit, so pass the job the
+values it needs, or queue after committing. When the write must stand on
+its own, queue after committing and catch and log JobQueueUnavailable, as
+the password reset does: otherwise a Redis outage answers 503 with the row
+already saved, and the user's retry saves it again.
 """
 import functools
 import hmac
