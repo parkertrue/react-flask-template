@@ -7,6 +7,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
+from dramatiq import Message
 from itsdangerous import TimestampSigner
 from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import select
@@ -18,6 +19,7 @@ from app.account.emails import (
     change_state, undo_state)
 from app.auth.emails import REGISTRATION_LINK
 from app.auth.models import User
+from app.utils.jobs import QUEUE_NAME
 from app.utils.links import make_link_token
 
 PASSWORD = 'TestPassword123'  # sample_user's
@@ -47,6 +49,19 @@ def current_email(db, user):
     return db.session.scalar(select(User.email).where(User.id == user.id))
 
 
+@pytest.fixture
+def owner_takes_back(app, monkeypatch):
+    """The owner changes the password, as the password-changed email advises"""
+    monkeypatch.setitem(app.config, 'APP_URL', 'https://app.test')
+    monkeypatch.setattr(account_routes, 'is_breached', lambda password: False)
+
+    def change(client, headers):
+        response = client.post('/api/account/password', headers=headers, json={
+            'current_password': PASSWORD, 'new_password': 'An entirely new passphrase'})
+        assert response.status_code == 200
+    return change
+
+
 class TestRequestEmailChange:
     """POST /api/account/email"""
 
@@ -61,7 +76,7 @@ class TestRequestEmailChange:
 
         assert response.status_code == 202
         assert response.get_json() == {'message': 'Check your inbox'}
-        assert jobs() == [('account.send_email_change_email', (sample_user.id, email))]
+        assert jobs() == [('account.send_email_change_email', (sample_user.id, email, change_state(sample_user)))]
 
     def test_changes_nothing_yet(self, client, db, sample_user, auth_headers, jobs):
         self.request_change(client, auth_headers)
@@ -71,7 +86,8 @@ class TestRequestEmailChange:
     def test_queues_the_address_as_it_is_stored(self, client, db, sample_user, auth_headers, jobs):
         self.request_change(client, auth_headers, 'A@bücher.DE')
 
-        assert jobs() == [('account.send_email_change_email', (sample_user.id, 'A@xn--bcher-kva.de'))]
+        assert jobs() == [
+            ('account.send_email_change_email', (sample_user.id, 'A@xn--bcher-kva.de', change_state(sample_user)))]
 
     def test_a_wrong_password(self, client, db, sample_user, auth_headers, jobs, security_events):
         response = self.request_change(client, auth_headers, password='not the password at all')
@@ -104,6 +120,34 @@ class TestRequestEmailChange:
         assert response.status_code == 422
         assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
         assert jobs() == []
+
+    def test_a_password_change_before_the_job_runs_ends_the_change(
+            self, app, client, db, sample_user, auth_headers, jobs, outbox, run_jobs, owner_takes_back):
+        """An intruder asks while the queue is backed up; the owner changes the
+        password first: the new address gets nothing"""
+        self.request_change(client, auth_headers)
+        owner_takes_back(client, auth_headers)
+
+        run_jobs()
+
+        # Only the owner's notice of the password change
+        assert [message['To'] for message in outbox] == ['test@example.com']
+
+    def test_a_replayed_request_sends_nothing_after_a_password_change(
+            self, app, client, db, sample_user, auth_headers, jobs, outbox, run_jobs, owner_takes_back):
+        """The message is signed, but a replay of it must not mint a link
+        that works under the new password"""
+        broker = app.extensions['jobs_broker']
+        self.request_change(client, auth_headers)
+        [asked] = [Message.decode(message) for message in broker.queues[QUEUE_NAME].queue]
+        run_jobs()
+        owner_takes_back(client, auth_headers)
+        run_jobs()
+
+        broker.enqueue(asked)
+        run_jobs()
+
+        assert [message['To'] for message in outbox] == [NEW_EMAIL, 'test@example.com']
 
     def test_requires_a_session(self, client, db, sample_user, jobs):
         response = client.post('/api/account/email', json={'email': NEW_EMAIL, 'password': PASSWORD})

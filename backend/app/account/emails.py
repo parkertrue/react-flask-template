@@ -2,13 +2,16 @@
 declares them on the blueprint), and the states its links carry.
 
 A change takes two links. The one to the new address moves the account
-there; its state names the account and hashes its current address and
-password, so it stops working once either changes (another change, a
-reset, or the undo below, which also replaces the password). Then the old address is told,
-with a link that moves the account back: its state names the account alone,
-so it still works after whoever made the change resets the password or
-changes the address again.
+there; its state names the account and hashes its address and password as
+they were when the change was asked for (the request passes it to the job),
+so it stops working once either changes (another change, a reset, or the
+undo below, which also replaces the password), and a job that runs after
+such a change, late, retried or replayed, sends nothing. Then the old
+address is told, with a link that moves the account back: its state names
+the account alone, so it still works after whoever made the change resets
+the password or changes the address again.
 """
+import hmac
 from datetime import timedelta
 
 from flask import current_app
@@ -90,20 +93,24 @@ def email_changed_message(new_email: str, link: str) -> tuple[str, str]:
         link)
 
 
-def send_email_change_email(user_id: int, new_email: str) -> None:
+def send_email_change_email(user_id: int, new_email: str, state: str) -> None:
     """Send new_email the link that moves the account there, or, if it has
     an account of its own, a note saying so: the form answers both alike,
-    so only the inbox's owner learns which it was. Nothing for an account
-    deleted since."""
+    so only the inbox's owner learns which it was. state is the account's
+    change_state when the change was asked for: nothing is sent once the
+    password or the address has changed since, nor for an account deleted
+    since."""
     if not is_normalized_email(new_email):
         raise PermanentJobFailure('Not an address the form accepts')
     user = db.session.get(User, user_id)
-    if user is None or user.email.lower() == new_email.lower():
+    if user is None or not hmac.compare_digest(change_state(user), state):
+        return
+    if user.email.lower() == new_email.lower():
         return
     if db.session.execute(select(User.id).where(User.email == new_email)).first():
         subject, body = address_taken_message(app_link('/login'))
     else:
-        token = make_link_token(EMAIL_CHANGE_LINK, new_email, change_state(user))
+        token = make_link_token(EMAIL_CHANGE_LINK, new_email, state)
         subject, body = email_change_message(app_link('/account/email/complete', token=token))
     send_email(new_email, subject, body)
 
