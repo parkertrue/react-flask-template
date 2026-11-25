@@ -52,10 +52,12 @@ async function fill(user: UserEvent, values: Values = {}) {
 }
 
 describe('CompleteRegistrationPage', () => {
-  it("shows the token's address, read-only, for password managers, and the password fields", () => {
+  it("shows the token's address in full, read-only for password managers, and the password fields", () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Finish signing up' })).toBeInTheDocument()
+    // As text, which wraps: the field cuts a long address off
+    expect(screen.getByText('user@example.com')).toBeVisible()
     expect(emailField()).toHaveValue('user@example.com')
     expect(emailField()).toHaveAttribute('readonly')
     expect(emailField()).toHaveAttribute('autocomplete', 'username')
@@ -202,6 +204,7 @@ describe('CompleteRegistrationPage', () => {
       expect(alert).toHaveFocus()
       expect(screen.getByRole('link', { name: action })).toHaveAttribute('href', href)
       expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+      expect(screen.queryByText('user@example.com')).not.toBeInTheDocument()
     })
 
     // The field's own message, focused, like a failed submit's. A guessable

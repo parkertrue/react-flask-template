@@ -104,6 +104,9 @@ export default function CompleteRegistrationPage() {
         <div className="auth-card">
           <h1 id="complete-heading">Finish signing up</h1>
 
+          {/* In full: the read-only field below cuts a long address off */}
+          {!shown && link.email && <p>For <strong>{link.email}</strong></p>}
+
           {shown ? (
             <LinkProblem {...shown} missing={problem === 'missing'} />
           ) : (
