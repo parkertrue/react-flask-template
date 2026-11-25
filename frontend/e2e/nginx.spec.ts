@@ -185,15 +185,21 @@ test.describe('nginx', () => {
     await waitForEmptyBucket('api')
   })
 
-  test('an oversized body is refused in the API\'s error shape', async ({ request }) => {
+  test('an oversized body is refused by nginx itself, in the API\'s error shape', async ({ request }) => {
+    // Named, to find this request's line in the log
+    const userAgent = `oversized-body-${Date.now()}`
     const response = await request.post('/api/auth/login', {
+      headers: { 'User-Agent': userAgent },
       data: { email: 'a@example.com', password: 'x'.repeat(20 * 1024) },
     })
 
     expect(response.status()).toBe(413)
     expect(await response.json()).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE' } })
-    // nginx answers this itself, from a location of its own
     expect(response.headers()['content-security-policy']).toBe("default-src 'none'; frame-ancestors 'none'")
+    // Flask refuses the same body with the same answer, so only the log
+    // tells them apart: nginx answered without asking the backend
+    const line = await loggedLine('nginx', l => l.includes(userAgent))
+    expect(line).toMatchObject({ status: 413, upstream_response_time: '' })
   })
 
   test('the app\'s icon is served, and /favicon.ico is not the page', async ({ request }) => {
