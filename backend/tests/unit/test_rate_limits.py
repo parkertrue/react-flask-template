@@ -1,4 +1,5 @@
 import hashlib
+import json
 import time
 from types import SimpleNamespace
 
@@ -12,7 +13,9 @@ from sqlalchemy.exc import OperationalError
 
 from app import db, limiter
 from app.auth.models import User
+from app.auth import routes as auth_routes
 from app.auth.routes import _request_email_key
+from app.utils import jobs
 from app.utils.passwords import PasswordHashingBusy
 from tests.conftest import FakeRedisService, register, reset_token, session_token
 from tests.unit.test_app_factory import build_app
@@ -188,6 +191,56 @@ def test_account_limit_keys_reveal_no_address(monkeypatch):
     for key in keys:
         assert email not in key
         assert plain_hash not in key
+
+
+@pytest.mark.parametrize('body', [
+    {'email': 'not an address'}, {'email': 123}, {'email': ''}, {}, ['not', 'an', 'object'],
+    {'email': 'job:["auth.send_registration_email",["a@example.com"],{}]'},
+])
+def test_a_body_without_a_valid_address_gets_one_fixed_key(app, body):
+    """Never a hash of what the client sent: the key is written to Redis,
+    so whoever reads Redis would read back the app's HMAC of any text"""
+    with app.test_request_context(json=body):
+        assert _request_email_key() == 'email:invalid'
+
+
+def test_no_rate_limit_key_is_a_job_signature(limited_app):
+    """A sign-up whose "email" is a job's signed payload leaves nothing made
+    from it in a Redis key name: anyone with the Redis password reads those,
+    and could queue the job with its signature"""
+    payload = json.dumps(['auth.send_registration_email', ['victim@example.com'], {}],
+                         separators=(',', ':'), sort_keys=True)
+    with limited_app.app_context():
+        signature = jobs._signature(
+            limited_app.config['JWT_SECRET_KEY'], 'auth.send_registration_email',
+            ['victim@example.com'], {})
+        # Nor would a valid address's key be one: each purpose has its own
+        assert auth_routes._email_digest(payload) != signature
+
+    limited_app.test_client().post('/api/auth/register', json={'email': payload})
+
+    # The per-IP limit alone: no key holds anything made from the body
+    assert stored_keys() == ['LIMITER/127.0.0.1/auth.register/10/1/hour']
+
+
+def stored_keys():
+    """Every key the limiter's in-memory storage holds"""
+    storage = limiter.storage
+    assert isinstance(storage, MemoryStorage)
+    return [*storage.storage, *storage.events]
+
+
+@pytest.mark.parametrize('path', ['/api/auth/register', '/api/auth/password-reset'])
+def test_requests_without_a_valid_address_use_no_address_s_budget(limited_app, path):
+    """They send nothing, and one bucket shared by all of them would soon
+    answer 429 to everyone's mistyped address"""
+    client = limited_app.test_client()
+
+    statuses = [client.post(path, json={'email': f'typo{i}'},
+                            headers={'X-Forwarded-For': f'203.0.113.{i}'}).status_code
+                for i in range(7)]
+
+    assert statuses == [422] * 7
 
 
 @pytest.mark.parametrize('body', [{'email': 123, 'password': 'x'}, ['not', 'an', 'object']])

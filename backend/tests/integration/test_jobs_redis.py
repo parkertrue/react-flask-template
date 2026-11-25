@@ -1,7 +1,9 @@
 """The job queue on real Redis: the app queues as its own user, the worker
 runs jobs as its own, each within its ACL (docker-compose.test.yml)"""
+import json
 import logging
 import os
+import re
 import threading
 
 import pytest
@@ -9,7 +11,9 @@ from dramatiq import Message, Worker
 from flask import Blueprint
 from redis.exceptions import ResponseError
 
-from app import create_app
+import app as app_module
+from app import create_app, limiter
+from app.config import IntegrationConfig
 from app.utils import jobs
 from app.utils.jobs import QUEUE_NAME, WORKER_MAINTENANCE_CHANCE, job
 from tests.conftest import close_app
@@ -73,6 +77,52 @@ def test_the_worker_runs_nothing_written_to_redis_without_the_app(apps):
     worker.join()
     worker.stop()
 
+    assert ran == []
+
+
+@pytest.fixture
+def limited_app(integration_db, integration_redis, monkeypatch):
+    """An app with rate limiting on, counting in Redis as the app's user.
+    Requested before apps, which points REDIS_URL at the worker's user.
+    init_app changes the module-level limiter, so its state is put back."""
+    saved = dict(vars(limiter))
+    config = IntegrationConfig()
+    config.RATELIMIT_ENABLED = True
+    with monkeypatch.context() as patch:
+        patch.setattr(app_module, 'get_config', lambda: config)
+        app = create_app()
+    yield app
+    close_app(app)
+    limiter.storage.storage.close()
+    vars(limiter).clear()
+    vars(limiter).update(saved)
+
+
+def test_no_rate_limit_key_signs_a_job(limited_app, apps, integration_redis):
+    """Whoever holds the app's Redis password reads the limiter's key names.
+    A sign-up whose "email" is a job's signed payload must leave nothing
+    there that the worker takes for that job's signature."""
+    app, worker_app = apps
+    payload = json.dumps(['integration_jobs.record', ['from a stranger'], {}],
+                         separators=(',', ':'), sort_keys=True)
+    for email in (payload, 'job:' + payload):
+        limited_app.test_client().post('/api/auth/register', json={'email': email})
+    names = list(integration_redis.get_client().scan_iter('LIMITS:*'))
+    # Every HMAC-sized value any key name holds, tried as the signature
+    for candidate in {hexes for name in names for hexes in re.findall('[0-9a-f]{64}', name)}:
+        app.extensions['jobs_broker'].enqueue(Message(
+            queue_name=QUEUE_NAME, actor_name='integration_jobs.record',
+            args=['from a stranger'], kwargs={}, options={'signature': candidate}))
+
+    broker = worker_app.extensions['jobs_broker']
+    worker = Worker(broker, worker_timeout=100)
+    worker.start()
+    broker.join(QUEUE_NAME)
+    worker.join()
+    worker.stop()
+
+    # The per-IP limit was counted in Redis
+    assert names != []
     assert ran == []
 
 

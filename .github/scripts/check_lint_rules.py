@@ -30,6 +30,7 @@ PLANTED = (
     (APP, 'from flask_jwt_extended import get_jwt_identity\n\nget_jwt_identity()\n', 'TID251'),
     (APP, 'import subprocess\n\nsubprocess.run([])\n', 'TID251'),
     (APP, "import os\n\nos.system('x')\n", 'TID251'),
+    (APP, "import hmac\n\nhmac.new(b'k', b'x', 'sha256')\n", 'TID251'),
     # Another server, called from a file ruff.toml does not list
     (APP, 'import smtplib\n', 'TID251'),
     (APP, 'import urllib.request\n', 'TID251'),
