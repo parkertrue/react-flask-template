@@ -419,8 +419,10 @@ may run KEYS** (user, 2026-11-09). RQ was passed over because a message names
 any importable function, so a write to Redis would run code in the worker,
 which holds `SECRET_KEY` and the database password; Celery for its weight.
 Dramatiq runs only declared actors with JSON arguments, and each message is
-signed with `SECRET_KEY` and checked first (`SignedMessages`), so a Redis
-password alone can neither run a job nor choose its arguments; a replayed
+signed and checked first (`SignedMessages`), under a key derived from
+`SECRET_KEY` for jobs alone (`utils/keys.py`), which nothing the app shows in
+Redis or the log is made with, so a Redis password alone can neither run a
+job nor choose its arguments; a replayed
 message only repeats an email the app asked for. The broker's upkeep calls
 `KEYS`, which `-@dangerous` refuses, so the worker connects as `worker` (only
 `dramatiq` and `dramatiq:*`, plus `+keys`) and the app's broker never runs
