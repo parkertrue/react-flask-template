@@ -9,7 +9,9 @@
 #   (tests/unit/test_import_rules.py), which reads only absolute ones, sees
 #   every import. TID251 bans the calls listed below, among them every way
 #   to reach another server: the files allowed to, in per-file-ignores, are
-#   the one list of the third parties the backend talks to.
+#   the one list of the third parties the backend talks to. It also bans
+#   hmac.new and its kin outside app/utils/keys.py, which gives each use of
+#   SECRET_KEY a key of its own.
 # - DTZ refuses naive datetimes: every timestamp is UTC.
 # - S102 and S307 refuse exec and eval; S608 refuses SQL built from strings.
 # - B017 refuses pytest.raises(Exception), which passes on any error at all.
@@ -39,6 +41,9 @@ ban-relative-imports = "all"
 "socket".msg = "Calls another server: add the file to per-file-ignores below, and the service to the privacy notice (docs/personal-data.md)."
 "requests".msg = "Calls another server: add the file to per-file-ignores below, and the service to the privacy notice (docs/personal-data.md)."
 "httpx".msg = "Calls another server: add the file to per-file-ignores below, and the service to the privacy notice (docs/personal-data.md)."
+"hmac.new".msg = "Use app.utils.keys.keyed, which gives each purpose its own key."
+"hmac.HMAC".msg = "Use app.utils.keys.keyed, which gives each purpose its own key."
+"hmac.digest".msg = "Use app.utils.keys.keyed, which gives each purpose its own key."
 
 # The files that call another server, each named with its service. A test that
 # stands in for one marks its import `# noqa: TID251` instead, so the
