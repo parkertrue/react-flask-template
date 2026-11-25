@@ -163,7 +163,9 @@ def request_email_change() -> ResponseReturnValue:
         return error_response(
             code='EMAIL_UNCHANGED', message='This is already your email address', status=422)
 
-    email_change_email.send(current_user.id, payload.email)
+    # The state now, not when the job runs: a password or address changed
+    # in between (the owner taking the account back) ends the change
+    email_change_email.send(current_user.id, payload.email, change_state(current_user))
     security_event('email_change_requested', user_id=current_user.id)
     return jsonify(MessageResponse(message='Check your inbox').model_dump()), 202
 
