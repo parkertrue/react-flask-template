@@ -422,16 +422,15 @@ Dramatiq runs only declared actors with JSON arguments, and each message is
 signed and checked first (`SignedMessages`), under a key derived from
 `SECRET_KEY` for jobs alone (`utils/keys.py`), which nothing the app shows in
 Redis or the log is made with, so a Redis password alone can neither run a
-job nor choose its arguments; a replayed
-message only repeats an email the app asked for, with links minted in the
-state it was asked under. The broker's upkeep calls
-`KEYS`, which `-@dangerous` refuses, so the worker connects as `worker` (only
-`dramatiq` and `dramatiq:*`, plus `+keys`) and the app's broker never runs
-the upkeep (`maintenance_chance=0`). `KEYS` reveals no more than `SCAN`,
-which both users have; it blocks Redis a few milliseconds per hundred
-thousand keys, on about one worker call in a hundred. *Revisit when:*
-Dramatiq's upkeep stops calling `KEYS` (drop `+keys`), or the keyspace
-reaches millions of keys.
+job nor choose its arguments; a replayed message only repeats an email the
+app asked for, with links minted in the state it was asked under. The
+broker's upkeep calls `KEYS`, which `-@dangerous` refuses, so the worker
+connects as `worker` (only `dramatiq` and `dramatiq:*`, plus `+keys`) and the
+app's broker never runs the upkeep (`maintenance_chance=0`). `KEYS` reveals
+no more than `SCAN`, which both users have; it blocks Redis a few
+milliseconds per hundred thousand keys, on about one worker call in a
+hundred. *Revisit when:* Dramatiq's upkeep stops calling `KEYS` (drop
+`+keys`), or the keyspace reaches millions of keys.
 
 ## Frontend
 
