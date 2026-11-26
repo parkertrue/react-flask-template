@@ -9,10 +9,11 @@ so the core imports no feature: `@job(<blueprint>)` on the function, or
 `job(auth_bp)(send_registration_email)` (auth/routes.py). Messages are JSON and
 name a declared job: a message written to Redis can only run a job the code
 declares, with JSON arguments, never an arbitrary function. Each is signed
-when queued, with a key derived from SECRET_KEY for jobs alone (utils/keys.py),
-which nothing else the app shows is made with, and the worker runs none it cannot verify, so
-a Redis password alone cannot choose a job's arguments either: the email
-change's jobs mint links that move an account (SignedMessages).
+when queued, with a key derived from SECRET_KEY for jobs alone
+(utils/keys.py), which nothing else the app shows is made with, and the
+worker runs none it cannot verify, so a Redis password alone cannot choose a
+job's arguments either: the email change's jobs mint links that move an
+account (SignedMessages).
 
 Queue a job before committing when the job is the request's point. Such
 a job must not read a row the request writes: the worker reads on its own

@@ -134,7 +134,8 @@ def main() -> None:
     # database_url() falls back to DATABASE_URL, so it is set whenever
     # app_database is
     assert database is not None and redis_ is not None
-    # Every URL names a password: read_database_url and read_redis_url refuse one without
+    # Every URL names a password: read_database_url and read_redis_url refuse
+    # one without
     secrets = [url.password for url in (database, app_database, redis_) if url and url.password]
 
     deadline = time.monotonic() + TIMEOUT_SECONDS

@@ -2,7 +2,8 @@
 
 Docker collects stdout, and a log shipper parses a JSON line without a
 pattern. Security events go through security_event, on the app.security
-logger, so they can be picked out by name. Requests are logged once, by
+logger, so they can be picked out by name; the worker, outside any request,
+logs its one (job_refused) on that logger directly. Requests are logged once, by
 nginx, whose access log is JSON too; a line logged during a request carries
 nginx's request_id, which joins it to that request's access-log line.
 Gunicorn's own lines use JsonFormatter too (gunicorn_logging.json).

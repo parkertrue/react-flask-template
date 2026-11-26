@@ -143,7 +143,7 @@ def delete_account() -> ResponseReturnValue:
     deduct_when=_wrong_password)
 @account_password_limit(
     key_func=lambda: account_key(current_user.email), deduct_when=_wrong_password)
-# The new address's inbox, in the budget sign-up and a reset share
+# The new address's inbox, in sign-up's budget (emails_to_address_limit)
 @emails_to_address_limit
 def request_email_change() -> ResponseReturnValue:
     """An email change's first step: email the new address a link that

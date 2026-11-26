@@ -135,7 +135,8 @@ def _used_link_key(token: str) -> str:
 #   KEYS[1]  the user's sorted set       KEYS[2]  the user's session hash
 #   ARGV[1]  session id                  ARGV[2]  new JTI
 #   ARGV[3]  its expiry time             ARGV[4]  now
-#   ARGV[5]  session cap                 ARGV[6]  JTI to replace, or '' for a new session
+#   ARGV[5]  session cap                 ARGV[6]  JTI to replace, or '' for a
+#                                                 new session
 #   ARGV[7]  a new session's device      ARGV[8]  when it signed in
 _RECORD_TOKEN = """
 local session

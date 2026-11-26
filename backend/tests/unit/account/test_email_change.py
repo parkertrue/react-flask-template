@@ -424,7 +424,8 @@ class TestUndoEmailChange:
         assert self.undo(client, token).status_code == 200
 
     def test_a_replaced_account(self, app, client, db, moved, fake_redis):
-        """Another account under the same id (a restored backup) is not the one the link names"""
+        """Another account under the same id (a restored backup) is not the
+        one the link names"""
         with app.app_context():
             token = make_link_token(EMAIL_UNDO_LINK, 'test@example.com', f'{moved.id}:12345')
 
