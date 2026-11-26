@@ -61,7 +61,8 @@ Ground rules when using these:
   Feature folders, one-way imports, API layer, testing. Here: `features/`
   layout and the import direction rules in CLAUDE.md came from this.
 - **TanStack Query docs**: https://tanstack.com/query/latest
-  The app's data fetching and cache (`api/queryClient.ts`, `useNotes`).
+  The app's data fetching and cache (`api/queryClient.ts`, a feature's hooks such as
+  the template's `useNotes`).
 - **Lint**
   - ESLint rules: https://eslint.org/docs/latest/rules/ (core rules and their defaults)
   - @vitest/eslint-plugin: https://github.com/vitest-dev/eslint-plugin-vitest (its `recommended` preset)
@@ -116,7 +117,7 @@ Ground rules when using these:
 - **Alembic docs**: https://alembic.sqlalchemy.org (autogenerate limits, migration hygiene)
 - **Use The Index, Luke**: https://use-the-index-luke.com
   Indexing in plain language. Its "No Offset" page explains the keyset
-  pagination the notes list uses.
+  pagination every growing list uses (CLAUDE.md, "Building a Feature").
 - **MySQL 8.4 Reference Manual**: https://dev.mysql.com/doc/refman/8.4/en/
   The Security chapter (general guidelines, account privileges, encrypted
   connections) covers TLS inside the Docker network and encryption at rest.

@@ -4,8 +4,9 @@ Every `/audit-*` check follows these rules. Read this whole file before starting
 
 ## What the audits are for
 
-This repository is a template, and every run should leave it closer to
-bulletproof. In priority order:
+This repository is the template, or an app built from it (README, "Starting
+a New App"): in an app, read "the template" as the app. Every run should
+leave it closer to bulletproof. In priority order:
 
 1. **Secure and production-grade.** Correct under failure, abuse and load.
 2. **Test-driven.** Every behavior that matters is pinned by a test that can fail.
@@ -13,10 +14,11 @@ bulletproof. In priority order:
    something is as valid a finding as adding something. A recommendation to
    add anything (a dependency, a service, a config knob, a layer) must name the
    concrete gap it closes; "best practice says so" is not enough.
-4. **Easy to scaffold.** A new app replaces the example feature and renames a
-   few things. Anything that makes that harder (example code leaking into
-   shared code, names tied to "notes" or "app", steps missing from README's
-   "Starting a New App") is a finding.
+4. **Easy to scaffold** (the template's alone: an app replaces it with its
+   own top rule, or drops it). A new app replaces the example feature and
+   renames a few things. Anything that makes that harder (example code
+   leaking into shared code, names tied to "notes" or "app", steps missing
+   from README's "Starting a New App") is a finding.
 
 ## Sources of truth
 
@@ -54,26 +56,32 @@ Audits are **read-only** with respect to the repository:
   report (below). That includes `OPEN-ISSUES.md` and
   `DECISIONS.md`: the report's *Recording plan* proposes what goes in them,
   and the main conversation records it once the user approves.
-- Do not touch `.env.prod`, or the dev (`app_dev`) and production (`app`)
-  Compose projects or their volumes. They hold the user's data.
+- **Project names.** `<dev>`, `<test>` and `<prod>` stand for the `name:` at
+  the top of `docker-compose.dev.yml`, `docker-compose.test.yml` and
+  `docker-compose.yml` (`app_dev`, `app_test` and `app` in the template);
+  read them there. The audits' production-config stack is `<prod>_audit`.
+- Do not touch `.env.prod`, or the `<dev>` and `<prod>` Compose projects or
+  their volumes. They hold the user's data.
 - Checks that need running services use one of two throwaway stacks (plus
   `/audit-infra`'s Deploy smoke run, below), never two at once. Only one check may run Docker at a time (the `/audit`
   orchestrator runs them one after another), and each tears its stack down
   when done, volumes included.
-  - The **test stack**: `docker-compose.test.yml`, project `app_test`, ports
+  - The **test stack**: `docker-compose.test.yml`, project `<test>`, ports
     3307, 6380, 1026 and 8026 (Mailpit's SMTP and API), 8080, 8443. Tear
     down with
     `docker compose --env-file .env.test -f docker-compose.test.yml --profile e2e down -v`.
   - A **production-config stack** for checks that need production behavior
     (persistent volumes, restart policies): `docker-compose.yml` with
-    `-p app_audit`, an env file written to the scratch directory from
+    `-p <prod>_audit`, an env file written to the scratch directory from
     `.env.prod.example` (keep its `COMPOSE_PROFILES` line: without it `db`
     and `redis` don't start), with fresh random secrets (`openssl rand -hex 32`),
     `SERVER_NAME=localhost` and `EDGE_SUBNET_PREFIX=10.217.9` (the default
     `10.217.0` clashes with a local production stack's edge network, and
     the test stack uses `10.217.1`), plus a scratch override file that rebinds
     nginx to `127.0.0.1` (`ports: !override ["127.0.0.1:80:80", "127.0.0.1:443:443"]`),
-    so nothing listens on the network. Never use the bare project name `app`.
+    so nothing listens on the network. Never use the bare project name
+    `<prod>`. Tear it down with the same `-p <prod>_audit` and `-f` flags
+    plus `down -v`.
     Email and the breach check, as audit-recovery proved on 2026-11-09:
     - **A mail sink the worker trusts.** Production refuses Mailpit's plain
       `smtp://` and the example's mail values, and the worker stops without
@@ -117,10 +125,6 @@ Audits are **read-only** with respect to the repository:
     stack or a local production stack. It tears itself down, images
     included; check `docker ps -a --filter name=deploy_smoke` is empty
     afterwards.
-  - Project names here (`app_test`, `app_dev`, `app_audit`) are the
-    template's defaults. In an app built from the template, read the real
-    names from each compose file's `name:` and use those instead.
-    Tear down with the same `-p app_audit` and `-f` flags plus `down -v`.
 - The audits never touch a deployed server, the maintainer's test server
   included. Never scan, SSH into, or load-test anything other than
   localhost. A step that needs a real deployment is reported under *Skipped*

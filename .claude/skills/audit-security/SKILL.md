@@ -43,9 +43,10 @@ this app and record what each one turns up:
   CLAUDE.md's `auth/` and `account/` bullets describe, not only those
   named here.
 - **Access control:** every route that touches user data requires a token
-  and scopes queries to `current_user` (try reading or paginating another
-  user's notes via the cursor, and `PUT`/`DELETE /api/notes/<id>` on another
-  user's note: both must answer 404 exactly like a missing id). Lint refuses
+  and scopes queries to `current_user` (for every owned resource, CLAUDE.md's "Building a Feature": try reading
+  or paginating another user's rows via the cursor, and `PUT`/`DELETE` on
+  another user's row by id, `/api/notes` in the template: both must answer
+  404 exactly like a missing id). Lint refuses
   `get_jwt_identity()` (ruff `TID251`). Account deletion
   (`POST /api/account/delete`): a wrong password answers 403
   `WRONG_PASSWORD` and logs `wrong_password`; it revokes every session before
@@ -195,7 +196,8 @@ describes. Nothing else.
     report only what holds up, with the request that shows it.
 - **Hand probes** the scanners can't do, on the test stack: replay a rotated
   refresh token, send a refresh without the CSRF header, read another user's
-  notes via the cursor, edit and delete another user's note by id, send a
+  rows via a list's cursor, edit and delete another user's row by id (the
+  template's notes), send a
   17 KB body, send malformed JSON, log in
   with a password that differs only by Unicode normalization, and delete an
   account with a wrong password, then with the right one (every session of
@@ -218,7 +220,7 @@ describes. Nothing else.
   revoked device's access token is refused at its next request. Grep the
   backend's, worker's and nginx's logs for addresses and tokens.
 - **`behind-proxy` probes,** once the test stack is down (both use the
-  `app_test` project): bring up the platform smoke stack
+  `<test>` project): bring up the platform smoke stack
   (`docker compose --env-file .env.test -f docker-compose.test.yml -f .github/smoke/platform.yml --profile platform up -d --build --wait`,
   nginx on `127.0.0.1:8081`, the host standing in for the load balancer;
   tear down with `--profile platform --profile e2e down -v`). A request
@@ -228,7 +230,7 @@ describes. Nothing else.
   `/api/health` with a bare-IP `Host` gets no response. The host's requests
   come from a trusted address, so judge an untrusted sender's
   `X-Forwarded-For` from the `real-ip.conf` that `nginx/server-mode.sh`
-  writes (`docker exec app_test-platform-nginx-1 cat /etc/nginx/conf.d/real-ip.conf`).
+  writes (`docker exec <test>-platform-nginx-1 cat /etc/nginx/conf.d/real-ip.conf`).
 
 Tear the test stack down. Then, **for the rate-limit probes only**, bring up
 the production-config stack (RULES.md, its mail sink included, or the

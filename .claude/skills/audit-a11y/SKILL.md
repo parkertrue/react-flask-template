@@ -44,7 +44,7 @@ Read every page, layout and form component in `frontend/src/` (`pages/`,
   transition or animation outside `prefers-reduced-motion: no-preference`.
 - Also: `lang` on `<html>`; forced-colors mode (Windows High Contrast) keeps
   focus rings, borders and states visible; `autoComplete` on every field
-  where a purpose applies; input limits (such as the note length) tell the
+  where a purpose applies; input limits (such as the notes example's length) tell the
   user rather than silently stop typing.
 
 ## 2. Check it in a browser
@@ -58,7 +58,8 @@ with Playwright from a script in the scratch directory. Setup that works:
 - Launch Chromium with `args: ['--host-resolver-rules=MAP localhost 127.0.0.1']`
   and `ignoreHTTPSErrors: true`, against `https://localhost:8443`.
 - Reach busy states by delaying API responses with `page.route(...)`; force
-  the page-level error page by returning malformed `/api/notes` data (a
+  the page-level error page by returning malformed data from a feature's list API (`/api/notes` in
+  the template) (a
   layout-level crash can't be forced in a production build: review that one
   in code); reach the expired-session state with `expireAccessToken` from
   `frontend/e2e/helpers.ts`, or by corrupting `access_token` in
@@ -101,7 +102,7 @@ Check on every page, logged out and logged in:
   they run axe on most states (form errors, busy and failed actions, a
   failed load, the error page, a session that ended, edit mode, the open
   delete dialog). Run axe (`@axe-core/playwright`, as they do) on any state
-  they miss. Check every dialog (`ConfirmDialog` deleting a note and
+  they miss. Check every dialog (`ConfirmDialog` deleting a feature's item, such as a note, and
   logging out all devices, `FormDialog` deleting the account, changing the
   email and changing the password): its initial
   focus, the focus returned after Cancel, the focus after confirming (for
