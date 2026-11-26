@@ -28,6 +28,8 @@ pass in the worktree before changing anything (baseline).
 Carry out README's **Starting a New App** steps in order, exactly as
 written, as a developer who knows only what the docs say. Create files with the
 Write tool, not shell heredocs (Git Bash mangles backslashes and backticks).
+Skip "Your own repository", which needs GitHub: the scratch worktree stands
+in for the clone. Check only that the commands it names are valid git.
 
 **Checkpoint after every step, before fixing anything:** run ruff, mypy,
 ESLint, `npm run typecheck` and both unit suites, and record the failure counts. Then fix what the step left

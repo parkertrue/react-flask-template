@@ -201,6 +201,18 @@ A feature's background jobs plug in through its own blueprint, as its data expor
 
 CI's Scaffold job deletes the examples and edits exactly these files (`.github/scripts/remove_examples.py`), renames the app (step 5), then runs lint and the unit suites, so shared code can't come to depend on an example or the template's name. Changing a wiring point means changing the script with it.
 
+**Your own repository:** create an empty repository for the app on GitHub (no README, license or `.gitignore`, which would conflict with the first push), then clone the template, keeping its history, and push it there:
+
+```bash
+git clone https://github.com/parkertrue/react-flask-template.git <your-app>
+cd <your-app>
+git remote rename origin template
+git remote add origin <your new repository's URL>
+git push -u origin main
+```
+
+The template stays a remote, so its later fixes merge in like any branch ([Taking Template Fixes](#taking-template-fixes)). GitHub's "Use this template" button makes a copy with no shared history, which can only take them by hand: use it only for a copy you will never update. Then set up the repository as [Continuous Integration](#continuous-integration) says: Dependabot alerts and security updates, and the required status checks.
+
 **Before you start:** decide what the app does, who uses it and its first feature, and add an issue to `.claude/skills/_audit-shared/OPEN-ISSUES.md` for each piece of work that comes out of it. The steps below replace notes with that first feature.
 
 **Steps:**
@@ -225,6 +237,26 @@ CI's Scaffold job deletes the examples and edits exactly these files (`.github/s
 5. Name the app, without using anyone else's trademark, in three places: `APP_NAME` in `frontend/src/appInfo.ts`, the `<title>` in `frontend/index.html`, and `APP_NAME` in `backend/app/config.py`, which the backend introduces itself by (a test checks that the three match, and that no other code or test writes the name). Describe it in `APP_TAGLINE` beside the name. Put the name in the sender of the emails the app sends: `EMAIL_FROM` in `.env.dev` and `.env.test`, and in your `.env.prod`. Replace the placeholder icon, `frontend/public/favicon.svg`.
 6. Rewrite this README, `docs/` and `CLAUDE.md` for your app, and choose its license: replace `LICENSE` and the `license` field in `frontend/package.json`, then run `npm install` in `frontend/` so `package-lock.json` matches (the template is MIT-0, so your app owes it no notice). Delete `.claude/skills/audit-scaffold/`, which acts out these steps on the template, and remove it from `/audit`'s `periodic` tier and Docker order (`.claude/skills/audit/SKILL.md`); keep the other audits in `.claude/skills/` and update their references to notes, to `audit-scaffold` and to the Scaffold job, or delete them. Keep `.claude/skills/_audit-shared/OPEN-ISSUES.md` as your app's list of open work, starting with its production to-dos, and `DECISIONS.md` beside it as its accepted trade-offs.
 7. Write the legal pages and work through the "Before launch" list in [docs/personal-data.md](docs/personal-data.md).
+
+### Taking Template Fixes
+
+The template keeps changing after you copy it, security fixes included. Check what is new about once a month, and merge soon any commit whose message starts with `fix:`:
+
+```bash
+git fetch template
+git log --oneline main..template/main   # what changed since your last merge
+git switch -c template-update
+git merge template/main
+```
+
+Git finds the last template commit you have by itself. Conflicts come only where your app changed what the template changed too:
+
+- **A file you deleted** (the notes example, the API-status demo, `remove_examples.py`, `audit-scaffold`): `git rm` it.
+- **A file you rewrote** (this README, `docs/`, `CLAUDE.md`, the audit skills): read what the template changed, `git log -p HEAD..template/main -- <file>`, and carry over what applies to your app.
+- **The lock files** (`backend/requirements*.txt`, `frontend/package-lock.json`): keep yours (`git checkout --ours <file>`), then regenerate them, with `backend/lock_deps.sh` or `npm install` in `frontend/`, since they are never edited by hand.
+- **A migration from the template:** its `down_revision` may name one your app deleted (`0002_notes`). Give it your next `--rev-id` number, in its file name and `revision`, set its `down_revision` to your newest migration, then run `./run_tests.sh integration`.
+
+Then regenerate the API's types (`python export_schemas.py` from `backend/`, `npm run api-types` from `frontend/`), run lint and both unit suites, and open a pull request, so CI runs everything before the merge reaches `main`.
 
 ## License
 
