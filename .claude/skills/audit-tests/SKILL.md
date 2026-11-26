@@ -77,8 +77,7 @@ tests. Check that they still pass, then look for what they can't see:
   hand-built `dramatiq.Message` or `LogRecord`, `fake_redis`): each needs
   at least one test against the library's real behavior (a local socket,
   a real `Worker`, Mailpit, real Redis), or the fake can encode the same
-  wrong assumption as the code. That is how the worker logged addresses
-  while its test passed (11-09, INFRA-1).
+  wrong assumption as the code.
 
 **Mutation spot check:** pick at least five places where a bug would hurt
 most (auth checks, token rotation, rate-limit keys, input validation, error
@@ -112,7 +111,7 @@ two steps (the same 202 for any address and the two emails; the link's page
 with the terms checkbox; `TERMS_OUTDATED`, `LINK_EXPIRED`, `LINK_INVALID`,
 `LINK_USED`, a used link's 409, `PASSWORD_GUESSABLE`, `PASSWORD_BREACHED`,
 the breach check failing open; the per-address limits), a job's retry and
-permanent failure, login, logout, logout-all, clear-cookies, refresh, the 7-day idle timeout
+permanent failure, a message with no signature or a wrong one refused (`job_refused`), login, logout, logout-all, clear-cookies, refresh, the 7-day idle timeout
 and the 30-day cap across refreshes, the account page and
 `GET /api/account`, the data export, account deletion (wrong password, cancel, confirm, then
 the login page), the legal pages signed in and out, notes create, paginate,

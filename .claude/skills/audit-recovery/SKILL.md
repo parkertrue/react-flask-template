@@ -100,7 +100,8 @@ Tear the stack down (`down -v`) when finished, even if a drill failed.
 - **Compromised host:** if an attacker gets a shell in each container (nginx,
   backend, worker, db, redis) or on the host, what can they reach and what
   must be rotated? Is the rotation procedure documented (SECRET_KEY
-  invalidates all tokens and unused sign-up links; the DB passwords and both
+  invalidates all tokens, every emailed link not yet used, and every queued
+  job, which the worker then refuses as `job_refused`; the DB passwords and both
   Redis users'; the SMTP credentials, which only the worker holds; TLS key)? Is there a way to revoke every
   session at once?
 - **Operator documentation:** do README and `docs/deployment.md` tell an operator how to restart,

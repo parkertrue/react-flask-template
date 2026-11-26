@@ -90,8 +90,8 @@ the hour passes. The cap is what bounds distributed password guessing, so it
 stays. Recovery has the same weakness, for a day: a password reset's own
 per-address budget (3 an hour, 6 a day, from any address) bounds the mail one
 inbox can be sent, so a stranger who spends it leaves the owner's reset at
-429 until the day's window ends (sign-up and email changes no longer spend
-it, SEC-12). *Revisit when:* users report lockouts, or the app holds accounts
+429 until the day's window ends (sign-up and email changes have a budget
+of their own). *Revisit when:* users report lockouts, or the app holds accounts
 worth targeting (then a CAPTCHA or an emailed unlock link instead of the hard
 cap, and a CAPTCHA once an address's reset budget runs low).
 
@@ -179,7 +179,7 @@ once for `RECONNECT_INTERVAL_SECONDS` (5 s), then one call probes again. The
 probe pays the 1 s lookup of the stopped container's name twice (the
 client's one retry, kept so a connection Redis dropped is replaced unseen),
 and a rate-limited route adds Flask-Limiter's own probe. Measured: a login on
-the probe answers 503 in about 4 s at worst, a signed-in request 200 in 2 s;
+the probe answers 503 in about 4 s at worst, a signed-in request 200 in up to 3 s;
 the rest of the window is as fast as with Redis up. A no-retry probe client
 would save about 1 s for more breaker code. *Revisit when:* a readiness check
 or alert exists for Redis, or users see these delays outside an outage.
