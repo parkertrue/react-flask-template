@@ -36,8 +36,8 @@ as RULES.md.
     legal text can't live in a template, so the fix is a placeholder (a route,
     a page, a config value) plus a step in README's "Starting a New App" that
     tells the developer what to fill in, and why.
-- **Rate by what's true today, then say what would raise it.** Notes are
-  private; the app sends transactional email only and calls one
+- **Rate by what's true today, then say what would raise it.** User content
+  (the template's notes) is private to its author; the app sends transactional email only and calls one
   outside API (Pwned Passwords, 5 characters of a hash); there is no
   payment or analytics yet. A risk that only arrives with such a feature is
   **low** with its trigger named in the Fix. Open issues in OPEN-ISSUES.md
@@ -89,7 +89,7 @@ as RULES.md.
 ## 2. privacy
 
 - **Data inventory first.** List every piece of personal data the app and
-  its infrastructure collect or derive: account fields, note content, IP
+  its infrastructure collect or derive: account fields, every feature's rows (the template's notes), IP
   addresses and user agents (nginx access logs, rate-limit keys, app logs),
   tokens and their claims, Redis keys, MySQL rows, backups (when they exist),
   browser storage (`localStorage`, cookies), sessions and anything derived
@@ -152,7 +152,8 @@ as RULES.md.
 
 ## 4. content: user-generated content
 
-Notes are private to their author today. Rate against that, and name what
+Rate against who can see users' content today (the template's notes are
+private to their author), and name what
 changes when content becomes visible to others (sharing, public profiles,
 comments).
 

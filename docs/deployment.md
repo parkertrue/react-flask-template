@@ -248,14 +248,14 @@ Each managed service is a processor of your users' data: see [Personal Data and 
 * The Redis URL must start with `rediss://`. ElastiCache's certificates chain to Amazon's public roots, which the image's bundle holds, so it needs nothing more; for another CA, add `?ssl_ca_certs=<path>`.
 * Options that could switch either check off (`ssl_check_hostname`, `ssl_verify_cert`, `ssl_verify_identity` and `ssl_disabled` in the database URL; `ssl_cert_reqs` and `ssl_check_hostname` in the Redis URL) are refused.
 
-**Two database users.** Create them as the provider's admin user, as the MySQL image and `db/init/01-app-user.sh` do for the bundled MySQL:
+**Two database users.** Create them as the provider's admin user, as the MySQL image and `db/init/01-app-user.sh` do for the bundled MySQL, with your `.env.prod`'s `DB_NAME`, `DB_USER` and `DB_MIGRATION_USER` in place of the brackets:
 
 ```sql
-CREATE DATABASE appdb;
-CREATE USER 'app_migrate'@'%' IDENTIFIED BY '<migration password>' REQUIRE SSL;
-GRANT ALL PRIVILEGES ON `appdb`.* TO 'app_migrate'@'%';
-CREATE USER 'app'@'%' IDENTIFIED BY '<app password>' REQUIRE SSL;
-GRANT SELECT, INSERT, UPDATE, DELETE ON `appdb`.* TO 'app'@'%';
+CREATE DATABASE <DB_NAME>;
+CREATE USER '<DB_MIGRATION_USER>'@'%' IDENTIFIED BY '<migration password>' REQUIRE SSL;
+GRANT ALL PRIVILEGES ON `<DB_NAME>`.* TO '<DB_MIGRATION_USER>'@'%';
+CREATE USER '<DB_USER>'@'%' IDENTIFIED BY '<app password>' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE ON `<DB_NAME>`.* TO '<DB_USER>'@'%';
 ```
 
 The database name may hold only letters, digits and `_`, and `_` is a wildcard in `GRANT`: write `app\_db` for `app_db`, since the start check refuses the unescaped form, which covers other databases too. On start-up in production, the backend and `migrate` read the grants of `DATABASE_URL`'s user and refuse to start if it holds anything beyond `SELECT`, `INSERT`, `UPDATE` and `DELETE` on its database (`USAGE` on `*.*`, MySQL's name for none, is fine): no schema rights, no rights on every database or on any other one (MySQL's own grant tables, another app's), no role and no `WITH GRANT OPTION`. There is no opt-out: a provider that offers a single database user is not supported. The admin user stays with you; neither container ever gets it.
@@ -486,7 +486,7 @@ Any restore, a managed database's snapshot included, brings back the accounts de
   * Docker keeps a separate store under them, without the images or the database volume. Take a dump ([Backups and Restoring](#backups-and-restoring)), stop the stack with `down`, not `stop`, turn them on and restart Docker, deploy, then restore the dump. A stopped stack's networks stay on the host, and the host then routes the `edge` subnet to the old, empty bridge instead of the new one: the site times out. Switching back works the same way.
 * Docker Bench for Security warns about choices the stack makes on purpose: the `db` and `redis` images start as root (their entrypoints then run MySQL and Redis as their own users), nginx keeps `DAC_READ_SEARCH` (to read the key whoever owns it) and publishes the privileged ports 80 and 443 on every IPv4 address, health checks live in the compose file rather than the images, and Docker Content Trust is off (the images are built on the server).
 * An installer may leave the root volume much smaller than the disk. Check free space before the first deploy: builds and images take several GB.
-* A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_app-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (`<project>` is `name:` in `docker-compose.yml`, `app` in the template; never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
+* A `docker compose up -d` that fails can wait about a minute and a quarter (the health checks' retries) before it reports anything. Let it finish: one stopped partway through replacing a container can leave the old one renamed `<id>_<project>-backend-1`, and the next `up` then fails with a name conflict while the API answers 504. Remove the backend's containers, which hold no data, and start it again (`<project>` is `name:` in `docker-compose.yml`; never do this to `db` or `redis`; add `--env-file .env.deploy` on a server that deploys with `deploy.sh`):
 
   ```bash
   docker ps -aq --filter label=com.docker.compose.project=<project> --filter label=com.docker.compose.service=backend | xargs -r docker rm -f

@@ -114,9 +114,9 @@ the breach check failing open; the per-address limits), a job's retry and
 permanent failure, a message with no signature or a wrong one refused (`job_refused`), login, logout, logout-all, clear-cookies, refresh, the 7-day idle timeout
 and the 30-day cap across refreshes, the account page and
 `GET /api/account`, the data export, account deletion (wrong password, cancel, confirm, then
-the login page), the legal pages signed in and out, notes create, paginate,
-edit, and delete (confirm and cancel), the notes cap, another user's note as
-a 404, the protected route redirect, the 404 and error pages.
+the login page), the legal pages signed in and out, each feature's journeys (the template's
+notes: create, paginate, edit, and delete, confirm and cancel), its per-user
+cap, another user's row as a 404, the protected route redirect, the 404 and error pages.
 
 For each behavior, name the test that pins it, at the right level:
 - **unit** for logic and route behavior,
