@@ -48,15 +48,17 @@ cause. Then grep for leftovers (`notes?`, `Note`, `health`, excluding
 
 **The stand-in feature:** in step 2, take the "rename it" route and turn
 notes into a `bookmarks` resource (`url` and `title`, owned by a user,
-cursor-paginated list, create), following the notes slice's pattern as
-CLAUDE.md describes it (model, schema, routes, service, hook, page, unit
+cursor-paginated list, create), following CLAUDE.md's "Building a
+Feature" (model, schema, routes, service, hook, page, unit
 tests, and its E2E spec, ported and linted), with a job of its own
 (`@job(bookmarks_bp)`, queued on create, sending an email), tested with
 the `jobs` and `outbox` fixtures. After each schema change, run
 `export_schemas.py` and `npm run api-types` as README says; expect E2E's
 Tab-stop counts to change with the navbar. Alternate runs may take the
 "delete it" route instead, building `bookmarks` from scratch beside the
-deleted example; say which route the report covers. Keep it minimal. The point is to discover what the pattern
+deleted example and reading only "Building a Feature", never the deleted
+code: each thing it fails to tell you is a finding. Say which route the
+report covers. Keep it minimal. The point is to discover what the pattern
 makes hard, not to write a good feature. In step 4, generate its migration as
 the step says, using the test stack's `db` per RULES.md. Start that stack from
 the worktree after step 1's rename and note its project name: teardown must

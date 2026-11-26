@@ -119,7 +119,7 @@ that carries no secret may use a query string.
 
 **The data export is one synchronous JSON response, with no password asked
 for** (user, 2026-11-08). `GET /api/account/export` reads every registered
-feature's rows in one request. Every feature caps a user's rows (notes: about
+feature's rows in one request. Every feature caps a user's rows (the notes example: about
 300 KB at most), which bounds the response; a background export would add
 file storage, its cleanup and an emailed download link for no gain. A stolen
 session can already read every row through the other routes, so a password
@@ -449,7 +449,7 @@ server rendering.**
   forms (tried on `LoginPage`, 2026-11-07), but saved three lines, split
   validation (in `onSubmit`, to focus the first invalid field) from
   submitting, and left the last error showing during a retry. Fields stay in
-  state for live error clearing and the note counter.
+  state for live error clearing and a character counter.
 - *Server rendering* (Next.js, React Router framework mode) would put a Node
   server where nginx serves static files, and move sign-in to cookie
   sessions. Public pages that need search indexing would take React
@@ -496,9 +496,10 @@ browser's toolbar before wrapping back. Both are how `showModal()` behaves in
 every browser; overriding them means hand-written focus trapping and click
 handling, which CLAUDE.md's prefer-the-built-in rule argues against.
 
-**A pasted note is cut to its limit without a message.** The note input uses
-the native `maxLength`, so pasting more than 256 characters keeps the first
-256, and the counter reading "0 characters remaining" is the only sign. An
+**Pasted text is cut to a field's limit without a message.** A limited text
+field uses the native `maxLength` (the notes example's, 256 characters), so
+pasting more keeps the first 256, and the counter reading "0 characters
+remaining" is the only sign. An
 over-limit error instead means dropping `maxLength` and checking on submit,
 for every limited field. *Revisit when:* users report losing pasted text, or
 a field's limit is one people often reach.
