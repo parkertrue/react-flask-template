@@ -22,7 +22,7 @@ import { hours } from '@/utils/time'
 import { APP_NAME } from '@/appInfo'
 import { ACCOUNT_QUERY_KEY } from './accountQuery'
 import type { LoginState } from './LoginPage'
-import SessionList from './SessionList'
+import SessionsList from './SessionsList'
 
 // The export's file name starts with the app's name
 const EXPORT_FILE_PREFIX = slugify(APP_NAME)
@@ -371,7 +371,7 @@ export default function AccountPage() {
       <section aria-labelledby="sessions-heading">
         <h2 id="sessions-heading">Sessions</h2>
         <p>Where this account is signed in. Log out a device you don't recognise, then change your password.</p>
-        <SessionList fallbackFocus={() => logoutAllButton.current?.focus()} />
+        <SessionsList fallbackFocus={() => logoutAllButton.current?.focus()} />
         <p>Or log out everywhere this account is signed in, including this browser.</p>
         {error && <div className="error-message" role="alert">{error}</div>}
         <button

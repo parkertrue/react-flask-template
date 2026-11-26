@@ -34,7 +34,7 @@ from app.utils.links import LinkClaims
 from app.utils.errors import error_response, service_unavailable
 from app.utils.exports import export_user_data
 from app.utils.log import security_event
-from app.utils.redis_service import get_redis_service
+from app.utils.redis_service import Session, get_redis_service
 from app.utils.schemas import MessageResponse
 
 account_bp = Blueprint('account', __name__, url_prefix='/api/account')
@@ -69,11 +69,7 @@ def export_account() -> ResponseReturnValue:
     body = DataExportResponse(
         exported_at=datetime.now(timezone.utc),
         account=AccountExport.model_validate(current_user),
-        sessions=[
-            SessionExport(
-                device=session['device'], signed_in_at=_utc(session['signed_in_at']),
-                last_active_at=_utc(session['last_active_at']))
-            for session in sessions],
+        sessions=[SessionExport(**_session_fields(session)) for session in sessions],
         data=export_user_data(current_user.id),
     )
     security_event('data_exported', user_id=current_user.id)
@@ -336,6 +332,16 @@ def _utc(timestamp: int) -> datetime:
     return datetime.fromtimestamp(timestamp, timezone.utc)
 
 
+def _session_fields(session: Session) -> dict[str, Any]:
+    """What a session says about the user (SessionExport's fields), for the
+    export and the account page alike"""
+    return {
+        'device': session['device'],
+        'signed_in_at': _utc(session['signed_in_at']),
+        'last_active_at': _utc(session['last_active_at']),
+    }
+
+
 @account_bp.route('/sessions', methods=['GET'])
 @jwt_required()
 def list_sessions() -> ResponseReturnValue:
@@ -348,11 +354,8 @@ def list_sessions() -> ResponseReturnValue:
         return service_unavailable()
     current = get_jwt().get('sid')
     body = SessionsResponse(sessions=[
-        SessionResponse(
-            id=session['id'], device=session['device'],
-            signed_in_at=_utc(session['signed_in_at']),
-            last_active_at=_utc(session['last_active_at']),
-            current=session['id'] == current)
+        SessionResponse(id=session['id'], current=session['id'] == current,
+                        **_session_fields(session))
         for session in sessions])
     return jsonify(body.model_dump()), 200
 

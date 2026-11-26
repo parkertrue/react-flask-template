@@ -419,7 +419,7 @@
       "type": "object"
     },
     "SessionExport": {
-      "description": "A session in an export: what it says about the user, without the ids\nthat name it to the app",
+      "description": "A session in an export: what it says about the user, without the ids\nthat name it to the app. SessionResponse adds them, so a field added here\nreaches both the export and the account page.",
       "properties": {
         "device": {
           "type": "string"
@@ -459,10 +459,10 @@
         }
       },
       "required": [
-        "id",
         "device",
         "signed_in_at",
         "last_active_at",
+        "id",
         "current"
       ],
       "title": "SessionResponse",
