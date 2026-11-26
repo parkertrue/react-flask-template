@@ -60,7 +60,8 @@ def register(client, email, password='TestPassword123', terms_version=TERMS_VERS
 
 @pytest.fixture(scope='session')
 def app():
-    """The unit app: UnitTestConfig, so in-memory SQLite whatever DATABASE_URL says, no Redis and no rate limiting."""
+    """The unit app: UnitTestConfig, so in-memory SQLite whatever
+    DATABASE_URL says, no Redis and no rate limiting."""
     os.environ['APP_ENV'] = 'unit'
 
     app = create_app()

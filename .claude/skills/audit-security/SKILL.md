@@ -62,10 +62,13 @@ this app and record what each one turns up:
   - Enumeration through register's answer, its timing and the two emails;
     inbox flooding (10 links an hour per IP, 3 an hour and 6 a day per
     address).
-  - `utils/jobs.py`: a message names only a declared job, its arguments are
-    re-validated inside the job, what a holder of the `app` or `worker`
-    Redis password can queue; `_MessageIdOnly` against what Dramatiq
-    really logs.
+  - `utils/jobs.py`: every message signed when queued (`Job.send`, under
+    the job key `utils/keys.py` derives from `SECRET_KEY`) and checked first
+    (`SignedMessages`: one unsigned or wrongly signed is dropped, not
+    retried, and logged as `job_refused`), a message names only a declared
+    job, its arguments are re-validated inside the job, what a holder of the
+    `app` or `worker` Redis password can queue; `_MessageIdOnly` against
+    what Dramatiq really logs.
   - The password reset: a one-hour link whose state is `password_state`,
     so any password change spends it; the conditional `UPDATE` (of two
     racing requests, the second is `LINK_USED`); every session ended first
@@ -202,9 +205,12 @@ describes. Nothing else.
   with one character changed, as another purpose's token, and expired
   (mint both with the test stack's `SECRET_KEY` from `.env.test`); open one
   whose fragment carries an `email=` besides its token (the page must show
-  the token's). Queue, as the `app` Redis user, a message for an undeclared
-  actor and one for the sign-up job with a list of recipients: neither may
-  send. Password reset: use a link twice, after a password change, and two
+  the token's). Queue, as the `app` Redis user, an unsigned message and one
+  signed with another key: both are dropped and logged as `job_refused`, by
+  message id alone. Then, signed as `Job.send` signs (the job key derived
+  from the test stack's `SECRET_KEY`, `utils/keys.py`), one for an
+  undeclared actor and one for the sign-up job with a list of recipients:
+  neither may send. Password reset: use a link twice, after a password change, and two
   at once (one must be `LINK_USED`); every older access token is refused
   afterwards. Email change: complete one, then use its undo link after
   changing the password as the new owner; complete a change to an address
@@ -230,8 +236,11 @@ worker refuses to start): the test stack runs `IntegrationConfig`, which
 turns Flask's limits off and trusts no proxy. Besides login's below, probe
 every limit CLAUDE.md's `auth/` bullet lists (the routes and their
 budgets, read from the decorators in `auth/routes.py` and
-`account/routes.py`), the per-address email budget shared by register, the
-password reset and the email change's new address included. Check each
+`account/routes.py`), the per-address email budgets included: register's,
+which the email change's new address shares (`emails_to_address_limit`), and
+the password reset's own, with the same figures (`password_reset_emails_limit`),
+so a reset still gets its 202 once sign-up has spent its address's budget.
+Check each
 login limit
 (`backend/app/auth/routes.py`): 5 failures a minute for one account from one
 address answer 429, while the same account still logs in from a second

@@ -19,7 +19,7 @@ Ground rules when using these:
 - **OWASP Cheat Sheet Series**: https://cheatsheetseries.owasp.org
   The most useful single source for this app. The sheets that map onto it:
   - JSON Web Token for Java (the JWT pitfalls apply to any language): access/refresh tokens, revocation
-  - Session Management, Authentication, Password Storage, Forgot Password (for future account features)
+  - Session Management, Authentication, Password Storage, Forgot Password (the password reset)
   - REST Security, Input Validation, Mass Assignment, Error Handling, Logging
   - HTTP Headers, Content Security Policy, Cross-Site Request Forgery, XSS Prevention
   - Docker Security, NodeJS/npm Security, Secrets Management, Denial of Service
@@ -193,7 +193,9 @@ Ground rules when using these:
 - **Linux server hardening**: CIS Ubuntu Benchmark (above); Fail2ban docs
   (https://github.com/fail2ban/fail2ban); `ufw` in the Ubuntu Server docs
 - **Cloudflare docs**: https://developers.cloudflare.com, "Restoring original
-  visitor IPs" (a CDN hop means updating TRUSTED_PROXY_COUNT and nginx real_ip)
+  visitor IPs" (a CDN in front of nginx means adding its ranges to
+  `NGINX_TRUSTED_PROXIES`; `TRUSTED_PROXY_COUNT` stays 1, `docs/deployment.md`,
+  "The client's address")
 - **Prometheus / Grafana**: https://prometheus.io/docs/practices/
 - **Backups**: the 3-2-1 rule (3 copies, 2 media, 1 off-site); MySQL manual's
   Backup and Recovery chapter; Redis persistence docs (`/audit-recovery`)

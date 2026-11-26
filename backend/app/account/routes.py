@@ -34,7 +34,7 @@ from app.utils.links import LinkClaims
 from app.utils.errors import error_response, service_unavailable
 from app.utils.exports import export_user_data
 from app.utils.log import security_event
-from app.utils.redis_service import get_redis_service
+from app.utils.redis_service import Session, get_redis_service
 from app.utils.schemas import MessageResponse
 
 account_bp = Blueprint('account', __name__, url_prefix='/api/account')
@@ -69,11 +69,7 @@ def export_account() -> ResponseReturnValue:
     body = DataExportResponse(
         exported_at=datetime.now(timezone.utc),
         account=AccountExport.model_validate(current_user),
-        sessions=[
-            SessionExport(
-                device=session['device'], signed_in_at=_utc(session['signed_in_at']),
-                last_active_at=_utc(session['last_active_at']))
-            for session in sessions],
+        sessions=[SessionExport(**_session_fields(session)) for session in sessions],
         data=export_user_data(current_user.id),
     )
     security_event('data_exported', user_id=current_user.id)
@@ -143,7 +139,7 @@ def delete_account() -> ResponseReturnValue:
     deduct_when=_wrong_password)
 @account_password_limit(
     key_func=lambda: account_key(current_user.email), deduct_when=_wrong_password)
-# The new address's inbox, in the budget sign-up and a reset share
+# The new address's inbox, in sign-up's budget (emails_to_address_limit)
 @emails_to_address_limit
 def request_email_change() -> ResponseReturnValue:
     """An email change's first step: email the new address a link that
@@ -163,7 +159,9 @@ def request_email_change() -> ResponseReturnValue:
         return error_response(
             code='EMAIL_UNCHANGED', message='This is already your email address', status=422)
 
-    email_change_email.send(current_user.id, payload.email)
+    # The state now, not when the job runs: a password or address changed
+    # in between (the owner taking the account back) ends the change
+    email_change_email.send(current_user.id, payload.email, change_state(current_user))
     security_event('email_change_requested', user_id=current_user.id)
     return jsonify(MessageResponse(message='Check your inbox').model_dump()), 202
 
@@ -334,6 +332,16 @@ def _utc(timestamp: int) -> datetime:
     return datetime.fromtimestamp(timestamp, timezone.utc)
 
 
+def _session_fields(session: Session) -> dict[str, Any]:
+    """What a session says about the user (SessionExport's fields), for the
+    export and the account page alike"""
+    return {
+        'device': session['device'],
+        'signed_in_at': _utc(session['signed_in_at']),
+        'last_active_at': _utc(session['last_active_at']),
+    }
+
+
 @account_bp.route('/sessions', methods=['GET'])
 @jwt_required()
 def list_sessions() -> ResponseReturnValue:
@@ -346,11 +354,8 @@ def list_sessions() -> ResponseReturnValue:
         return service_unavailable()
     current = get_jwt().get('sid')
     body = SessionsResponse(sessions=[
-        SessionResponse(
-            id=session['id'], device=session['device'],
-            signed_in_at=_utc(session['signed_in_at']),
-            last_active_at=_utc(session['last_active_at']),
-            current=session['id'] == current)
+        SessionResponse(id=session['id'], current=session['id'] == current,
+                        **_session_fields(session))
         for session in sessions])
     return jsonify(body.model_dump()), 200
 

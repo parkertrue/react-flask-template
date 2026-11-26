@@ -1,4 +1,3 @@
-import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -43,6 +42,7 @@ from app.utils.breached import is_breached
 from app.utils.devices import device_name
 from app.utils.errors import ErrorResponse, error_response, service_unavailable
 from app.utils.jobs import JobQueueUnavailable, job
+from app.utils.keys import keyed
 from app.utils.links import LinkClaims, LinkExpired, LinkInvalid, read_link_token
 from app.utils.log import security_event
 from app.utils.passwords import DUMMY_PASSWORD_HASH, hash_password, verify_password
@@ -62,12 +62,32 @@ password_changed_email = job(auth_bp)(send_password_changed_email)
 def _email_digest(email: str) -> str:
     """Names one account without holding its address.
 
-    Lowercased like MySQL's case-insensitive match on users.email, and hashed
-    with SECRET_KEY: a plain hash would let anyone who reads Redis or the log
-    confirm a guessed address.
+    Lowercased like MySQL's case-insensitive match on users.email, and an
+    HMAC under the account key (utils/keys.py): a plain hash would let anyone
+    who reads Redis or the log confirm a guessed address. Rate-limit keys
+    show it in Redis, so its key signs nothing else.
     """
-    secret = current_app.config['JWT_SECRET_KEY'].encode()
-    return hmac.new(secret, email.lower().encode(), hashlib.sha256).hexdigest()
+    return keyed(current_app.config['JWT_SECRET_KEY'], 'account', email.lower()).hex()
+
+
+def _request_email() -> str | None:
+    """The request body's email, normalized as the schema stores it, or None
+    when it holds no valid address (the request itself will answer 422)"""
+    body = request.get_json(silent=True)
+    email = body.get('email') if isinstance(body, dict) else None
+    if not isinstance(email, str):
+        return None
+    try:
+        return normalize_email(email)
+    except ValueError:
+        return None
+
+
+def _no_valid_email() -> bool:
+    """A request whose body names no valid address uses no address's budget:
+    it sends no email, and a bucket shared by every such request would soon
+    answer 429 to anyone's mistyped address"""
+    return _request_email() is None
 
 
 def _request_email_key() -> str:
@@ -77,18 +97,12 @@ def _request_email_key() -> str:
     A per-IP limit alone either locks out everyone behind a shared address or,
     set loosely, lets one attacker guess an account's password (or flood an
     inbox) from many. The email is normalized as the schema stores it, so
-    every spelling of one address shares a bucket.
+    every spelling of one address shares a bucket. A body without a valid
+    address gets one fixed key, never a hash of what it holds: the key is
+    written to Redis, and no client may choose what the app's HMAC is made of.
     """
-    body = request.get_json(silent=True)
-    email = body.get('email') if isinstance(body, dict) else None
-    if not isinstance(email, str):
-        email = ''
-    try:
-        email = normalize_email(email)
-    except ValueError:
-        # The request itself will answer 422; any key will do
-        email = email.strip()
-    return account_key(email)
+    email = _request_email()
+    return 'email:invalid' if email is None else account_key(email)
 
 
 def account_key(email: str) -> str:
@@ -114,12 +128,14 @@ def account_password_limit(
 # them or not. The 429 tells nothing: it comes as soon for an address with an
 # account as for one without.
 emails_to_address_limit = limiter.shared_limit(
-    '3 per hour;6 per day', scope='emails-to-address', key_func=_request_email_key)
+    '3 per hour;6 per day', scope='emails-to-address', key_func=_request_email_key,
+    exempt_when=_no_valid_email)
 
 # A password reset's emails to one address, in a budget of their own, so a
 # stranger's sign-up requests cannot use up the owner's way back in (a
 # stranger's resets still can: DECISIONS.md, "A distributed lockout")
-password_reset_emails_limit = limiter.limit('3 per hour;6 per day', key_func=_request_email_key)
+password_reset_emails_limit = limiter.limit(
+    '3 per hour;6 per day', key_func=_request_email_key, exempt_when=_no_valid_email)
 
 
 def _login_email_and_ip_key() -> str:

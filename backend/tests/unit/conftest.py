@@ -1,8 +1,10 @@
 import json
+# A stand-in for the mail server replaces smtplib's clients (outbox)
 import smtplib  # noqa: TID251
 
 import pytest
 from dramatiq import Message, Worker
+from redis import ConnectionError as RedisConnectionError
 
 from app.config import MailServer
 from app.utils import passwords
@@ -134,6 +136,17 @@ def run_jobs(app):
         finally:
             worker.stop()
     return run
+
+
+@pytest.fixture
+def queue_down(app, monkeypatch):
+    """Make queueing fail as a Redis outage does: queue_down(), or
+    queue_down(other_app). A job's send then raises JobQueueUnavailable."""
+    def down(on=None):
+        def refuse(message, *, delay=None):
+            raise RedisConnectionError('Connection refused')
+        monkeypatch.setattr((on or app).extensions['jobs_broker'], 'enqueue', refuse)
+    return down
 
 
 @pytest.fixture

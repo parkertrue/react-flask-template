@@ -24,7 +24,9 @@ class AccountExport(BaseModel):
 
 class SessionExport(BaseModel):
     """A session in an export: what it says about the user, without the ids
-    that name it to the app"""
+    that name it to the app. SessionResponse adds them, so a field added here
+    reaches both the export and the account page."""
+    # A name for the device, from its User-Agent (app/utils/devices.py)
     device: str
     signed_in_at: UtcDatetime
     last_active_at: UtcDatetime
@@ -78,13 +80,9 @@ class PasswordChangeRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
 
-class SessionResponse(BaseModel):
+class SessionResponse(SessionExport):
     """One of the account's live sessions: a sign-in on some device"""
     id: str
-    # A name for the device, from its User-Agent (app/utils/devices.py)
-    device: str
-    signed_in_at: UtcDatetime
-    last_active_at: UtcDatetime
     # The session of the request's own token
     current: bool
 

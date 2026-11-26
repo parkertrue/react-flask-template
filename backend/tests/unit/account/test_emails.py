@@ -30,9 +30,16 @@ def token(message):
     return parse_qs(link(message).fragment)['token'][0]
 
 
+# What the owner may change before the job runs
+CHANGES = {
+    'password': lambda user: user.set_password('An entirely new passphrase'),
+    'address': lambda user: setattr(user, 'email', 'moved@example.com'),
+}
+
+
 class TestEmailChangeEmail:
     def test_a_free_address_gets_the_link(self, app, db, sample_user, outbox):
-        send_email_change_email(sample_user.id, 'new@example.com')
+        send_email_change_email(sample_user.id, 'new@example.com', change_state(sample_user))
 
         message, = outbox
         assert (message['To'], message['Subject']) == ('new@example.com', 'Confirm your new Some App email')
@@ -45,7 +52,7 @@ class TestEmailChangeEmail:
     def test_says_how_long_the_link_works(self, app, db, sample_user, outbox, monkeypatch):
         monkeypatch.setattr(account_emails, 'EMAIL_CHANGE_LINK_HOURS', 36)
 
-        send_email_change_email(sample_user.id, 'new@example.com')
+        send_email_change_email(sample_user.id, 'new@example.com', change_state(sample_user))
 
         message, = outbox
         assert 'open this link within 36 hours:' in message.get_content()
@@ -55,7 +62,7 @@ class TestEmailChangeEmail:
 
     def test_an_address_with_an_account_is_told_so_and_gets_no_token(
             self, app, db, sample_user, second_user, outbox):
-        send_email_change_email(sample_user.id, 'other@example.com')
+        send_email_change_email(sample_user.id, 'other@example.com', change_state(sample_user))
 
         message, = outbox
         assert (message['To'], message['Subject']) == ('other@example.com', 'You already have a Some App account')
@@ -63,23 +70,41 @@ class TestEmailChangeEmail:
 
     @pytest.mark.parametrize('email', ['test@example.com', 'TEST@example.com'])
     def test_nothing_for_the_account_s_own_address(self, app, db, sample_user, outbox, email):
-        send_email_change_email(sample_user.id, email)
+        send_email_change_email(sample_user.id, email, change_state(sample_user))
 
         assert outbox == []
 
     def test_nothing_for_an_account_deleted_since(self, app, db, outbox):
-        send_email_change_email(12345, 'new@example.com')
+        send_email_change_email(12345, 'new@example.com', '12345:a state')
 
         assert outbox == []
 
-    @pytest.mark.parametrize('send', [send_email_change_email, send_email_changed_email],
+    @pytest.mark.parametrize('change', ['password', 'address'])
+    @pytest.mark.parametrize('email', ['new@example.com', 'other@example.com'],
+                             ids=['a free address', "another account's"])
+    def test_nothing_once_the_password_or_address_changed_since_the_request(
+            self, app, db, sample_user, second_user, outbox, change, email):
+        """A late, retried or replayed job must not outlive the owner taking
+        the account back"""
+        asked = change_state(sample_user)
+        CHANGES[change](sample_user)
+        db.session.commit()
+
+        send_email_change_email(sample_user.id, email, asked)
+
+        assert outbox == []
+
+    @pytest.mark.parametrize('send', [
+        lambda user, email: send_email_change_email(user.id, email, change_state(user)),
+        lambda user, email: send_email_changed_email(user.id, email),
+    ],
                              ids=['the link', 'the notice'])
     @pytest.mark.parametrize('email', [
         'victim@example.com, attacker@example.com', 'Victim <attacker@example.com>', 'Victim@Example.COM',
     ], ids=['a list', 'a display name', 'not normalized'])
     def test_sends_nothing_to_what_the_form_would_refuse(self, app, db, sample_user, outbox, send, email):
         with pytest.raises(PermanentJobFailure):
-            send(sample_user.id, email)
+            send(sample_user, email)
 
         assert outbox == []
 

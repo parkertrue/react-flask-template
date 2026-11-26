@@ -79,6 +79,9 @@ export default function CompletePasswordResetPage() {
         <div className="auth-card">
           <h1 id="reset-heading">Choose a new password</h1>
 
+          {/* In full: the read-only field below cuts a long address off */}
+          {!problem && link.email && <p>For <strong>{link.email}</strong></p>}
+
           {problem ? (
             <LinkProblem
               message={PROBLEMS[problem]}
