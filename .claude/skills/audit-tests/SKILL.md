@@ -51,7 +51,7 @@ router, fixtures), `frontend/playwright.config.ts`, `frontend/e2e/helpers.ts`.
   the coverage of each security-critical module: every module under
   `backend/app/auth/`, `backend/app/account/` and `backend/app/utils/`, and
   `frontend/src/api/`, `src/auth/`, every `src/pages/Complete*Page.tsx`,
-  `UndoEmailChangePage.tsx` and `SessionList.tsx` (by glob, so a new one is
+  `UndoEmailChangePage.tsx` and `SessionsList.tsx` (by glob, so a new one is
   never missed). If any is
   well below the global figure, the guard is a per-path threshold.
 - Flakiness: fixed sleeps, polling without a deadline, selectors tied to
