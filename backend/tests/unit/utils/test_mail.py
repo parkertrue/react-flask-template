@@ -1,4 +1,5 @@
 """Sending email, through the in-memory mail server (outbox, in conftest.py)"""
+# A stand-in for the mail server replaces smtplib's clients
 import smtplib  # noqa: TID251
 import ssl
 

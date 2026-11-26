@@ -4,7 +4,7 @@ import { getErrorMessage } from '@/api/errors'
 import { useAuth } from '@/auth/useAuth'
 import { fetchNotes, createNote, updateNote, deleteNote, type Note, type NotesResponse } from './notesService'
 
-const NOTES = ['notes']
+const NOTES_QUERY_KEY = ['notes']
 
 // The loaded pages, and the cursor each was fetched with
 type NotesData = InfiniteData<NotesResponse, number | undefined>
@@ -26,7 +26,7 @@ export function useNotes() {
   // Pages of notes, newest first. Each page's next_cursor fetches the next;
   // it is null on the last page, which ends the list.
   const query = useInfiniteQuery({
-    queryKey: NOTES,
+    queryKey: NOTES_QUERY_KEY,
     queryFn: ({ pageParam }) => fetchNotes(pageParam),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: lastPage => lastPage.next_cursor,
@@ -61,7 +61,7 @@ export function useNotes() {
       const newNote = await createNote(content)
       // Newest first. The cursor points below the oldest loaded note, so the
       // new one never turns up again on a later page.
-      queryClient.setQueryData<NotesData>(NOTES, updatePages((notes, index) =>
+      queryClient.setQueryData<NotesData>(NOTES_QUERY_KEY, updatePages((notes, index) =>
         index === 0 ? [newNote, ...notes] : notes))
       setError(null)
       setStatus('Note added')
@@ -80,7 +80,7 @@ export function useNotes() {
     setStatus('')
     try {
       const updated = await updateNote(id, content)
-      queryClient.setQueryData<NotesData>(NOTES, updatePages(notes =>
+      queryClient.setQueryData<NotesData>(NOTES_QUERY_KEY, updatePages(notes =>
         notes.map(note => note.id === id ? updated : note)))
       setStatus('Note saved')
     } catch (err) {
@@ -94,7 +94,7 @@ export function useNotes() {
     setStatus('')
     try {
       await deleteNote(id)
-      queryClient.setQueryData<NotesData>(NOTES, updatePages(notes =>
+      queryClient.setQueryData<NotesData>(NOTES_QUERY_KEY, updatePages(notes =>
         notes.filter(note => note.id !== id)))
       setStatus('Note deleted')
     } catch (err) {

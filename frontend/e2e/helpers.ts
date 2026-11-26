@@ -337,11 +337,26 @@ const overflowWith = (page: Page, css: string) => page.evaluate(css => {
 }, css)
 
 /**
+ * The values of visible read-only fields that are cut off and appear in no
+ * text of the page: a field cannot wrap, so a long address in one must be
+ * shown in full somewhere else
+ */
+const cutOffReadOnlyValues = (page: Page) => page.evaluate(() => {
+  const text = document.body.innerText
+  return [...document.querySelectorAll<HTMLInputElement>('input[readonly]')]
+    .filter(input => input.checkVisibility() && input.scrollWidth > input.clientWidth)
+    .map(input => input.value)
+    .filter(value => !text.includes(value))
+})
+
+/**
  * Nothing scrolls sideways, on the page or in an open dialog: WCAG 1.4.10
  * and 1.4.12 at 320px wide (400% zoom), as it is and with the text-spacing
- * overrides, and 1.4.4 with text at 200% at the page's own width.
+ * overrides, and 1.4.4 with text at 200% at the page's own width. And no
+ * read-only field hides the end of a value the page shows nowhere else.
  */
 export async function expectReflow(page: Page) {
+  expect(await cutOffReadOnlyValues(page), 'read-only values cut off and shown nowhere else').toEqual([])
   expect(await overflowWith(page, 'html { font-size: 200% !important; }'),
     'sideways scroll with text at 200%').toBeLessThanOrEqual(0)
 

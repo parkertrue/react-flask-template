@@ -4,7 +4,7 @@
 
 /* One row per signed-in device: its name and times, and its button, which
    wraps under them on a narrow screen */
-.session-list {
+.sessions-list {
   list-style: none;
   padding: 0;
   margin: 1rem 0;

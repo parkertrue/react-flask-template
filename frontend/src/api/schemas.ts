@@ -70,7 +70,8 @@ export interface DataExportResponse {
 }
 /**
  * A session in an export: what it says about the user, without the ids
- * that name it to the app
+ * that name it to the app. SessionResponse adds them, so a field added here
+ * reaches both the export and the account page.
  */
 export interface SessionExport {
   device: string;

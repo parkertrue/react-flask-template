@@ -26,8 +26,11 @@ real users' data. `docs/deployment.md` has the detail of each.
 - **Certificates that renew themselves (medium).** "Real Domain (Let's
   Encrypt)" uses Certbot's standalone method: renewal stops nginx and is
   done by hand, and its steps edit tracked files, so on a server that
-  deploys with `deploy.sh` every later deploy refuses the dirty clone. Set
-  up renewal without downtime that keeps the clone clean, for example
+  deploys with `deploy.sh` every later deploy refuses the dirty clone.
+  Step 4 also edits `nginx/servers/tls.conf.template`, which the test stack
+  and CI's Nginx config job render too, so committing that edit to keep the
+  clone clean would break E2E: the fix must keep the template's certificate
+  paths. Set up renewal without downtime that keeps the clone clean, for example
   Certbot's DNS-01 challenge with your DNS host's plugin and a deploy hook
   that copies the certificate into `nginx/certs/` and reloads nginx. Use
   Let's Encrypt's staging server while trying it. This waits for a real

@@ -4,14 +4,14 @@ import { revokeSession, listSessions, type Sessions } from '@/auth/authService'
 import type { SessionResponse } from '@/api/schemas'
 import { errorResponse, getErrorMessage } from '@/api/errors'
 
-const SESSIONS_KEY = ['sessions']
+const SESSIONS_QUERY_KEY = ['sessions']
 
 // A time a session did something, in the reader's own zone and words
 function when(iso: string) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-interface SessionListProps {
+interface SessionsListProps {
   // Where focus goes when the last button it could move to is gone
   fallbackFocus: () => void
 }
@@ -19,24 +19,24 @@ interface SessionListProps {
 // The account's live sessions, each named by its device, with "Log out" on
 // every one but this browser's (ASVS 7.5.2). Logging a device out can be
 // undone by logging in again, so it does not ask first.
-export default function SessionList({ fallbackFocus }: SessionListProps) {
+export default function SessionsList({ fallbackFocus }: SessionsListProps) {
   const queryClient = useQueryClient()
   const timesId = useId()
   // Refetched when the window regains focus: another device may have
   // signed in or out meanwhile
   const { data, error: loadError } = useQuery({
-    queryKey: SESSIONS_KEY, queryFn: listSessions, refetchOnWindowFocus: true,
+    queryKey: SESSIONS_QUERY_KEY, queryFn: listSessions, refetchOnWindowFocus: true,
   })
-  const [ending, setEnding] = useState<string | null>(null)
+  const [revoking, setRevoking] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Which device was logged out, on the persistent status line
   const [status, setStatus] = useState('')
   const buttons = useRef(new Map<string, HTMLButtonElement>())
 
   // shown: the list as rendered, which the click was made on
-  const handleEnd = async ({ id, device }: SessionResponse, shown: Sessions) => {
-    if (ending) return
-    setEnding(id)
+  const handleRevoke = async ({ id, device }: SessionResponse, shown: Sessions) => {
+    if (revoking) return
+    setRevoking(id)
     setError(null)
     setStatus('')
     try {
@@ -47,7 +47,7 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
       if (errorResponse(err)?.status === 404) {
         setStatus(`${device} was already logged out.`)
       } else {
-        setEnding(null)
+        setRevoking(null)
         setError(getErrorMessage(err))
         return
       }
@@ -56,10 +56,10 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
     const others = shown.sessions.filter(session => !session.current)
     const index = others.findIndex(session => session.id === id)
     const next = others[index + 1] ?? others[index - 1]
-    queryClient.setQueryData<Sessions>(SESSIONS_KEY, {
+    queryClient.setQueryData<Sessions>(SESSIONS_QUERY_KEY, {
       sessions: shown.sessions.filter(session => session.id !== id),
     })
-    setEnding(null)
+    setRevoking(null)
     const button = next && buttons.current.get(next.id)
     if (button) button.focus()
     else fallbackFocus()
@@ -70,7 +70,7 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
       {loadError && <div className="error-message" role="alert">{getErrorMessage(loadError)}</div>}
       {!data && !loadError && <p>Loading sessions...</p>}
       {data && (
-        <ul className="session-list" aria-label="Signed-in devices">
+        <ul className="sessions-list" aria-label="Signed-in devices">
           {data.sessions.map(session => (
             <li key={session.id} className="session-item">
               <div>
@@ -89,14 +89,14 @@ export default function SessionList({ fallbackFocus }: SessionListProps) {
                     if (button) buttons.current.set(session.id, button)
                     else buttons.current.delete(session.id)
                   }}
-                  onClick={() => void handleEnd(session, data)}
-                  aria-disabled={ending !== null}
-                  aria-label={`${ending === session.id ? 'Logging out' : 'Log out'} ${session.device}`}
+                  onClick={() => void handleRevoke(session, data)}
+                  aria-disabled={revoking !== null}
+                  aria-label={`${revoking === session.id ? 'Logging out' : 'Log out'} ${session.device}`}
                   // Its times tell apart two devices of the same name
                   aria-describedby={`${timesId}-${session.id}`}
                   className="btn btn-secondary"
                 >
-                  {ending === session.id ? 'Logging out...' : 'Log out'}
+                  {revoking === session.id ? 'Logging out...' : 'Log out'}
                 </button>
               )}
             </li>

@@ -30,6 +30,7 @@ PLANTED = (
     (APP, 'from flask_jwt_extended import get_jwt_identity\n\nget_jwt_identity()\n', 'TID251'),
     (APP, 'import subprocess\n\nsubprocess.run([])\n', 'TID251'),
     (APP, "import os\n\nos.system('x')\n", 'TID251'),
+    (APP, "import hmac\n\nhmac.new(b'k', b'x', 'sha256')\n", 'TID251'),
     # Another server, called from a file ruff.toml does not list
     (APP, 'import smtplib\n', 'TID251'),
     (APP, 'import urllib.request\n', 'TID251'),
@@ -41,6 +42,8 @@ PLANTED = (
     (APP, '# x = 1\n', 'ERA001'),
     (APP, '# TODO: x\n', 'FIX002'),
     (APP, '# FIXME: x\n', 'FIX001'),
+    # A comment line that runs on past its neighbours
+    (APP, '# ' + 'word ' * 20 + '\n', 'W505'),
     # Naive datetimes, code from strings, hedged tests
     (APP, 'from datetime import datetime\n\ndatetime.now()\n', 'DTZ005'),
     (APP, "exec('x')\n", 'S102'),

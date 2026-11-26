@@ -1,12 +1,11 @@
 import base64
-import hashlib
-import hmac
 from datetime import datetime, timezone
 
 from flask import current_app
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import Model, db
+from app.utils.keys import keyed
 from app.utils.passwords import hash_password, verify_password
 
 # The schemas validate against this, so an over-long email is a 422, not a
@@ -21,13 +20,12 @@ TERMS_VERSION = 1
 
 
 def keyed_hash(text: str) -> str:
-    """An HMAC-SHA256 of text keyed with SECRET_KEY, for state an emailed
-    link or a token carries: keyed, since a link's token can be read, and a
-    plain hash of a hash could be cracked offline. Base64url, not hex: a
+    """An HMAC-SHA256 of text under the link-state key (utils/keys.py), for
+    state an emailed link or a token carries: keyed, since a link's token can
+    be read, and a plain hash of a hash could be cracked offline. Base64url, not hex: a
     token holding hex compresses, and the link's page reads no address from
     a compressed one."""
-    secret = current_app.config['JWT_SECRET_KEY'].encode()
-    digest = hmac.new(secret, text.encode(), hashlib.sha256).digest()
+    digest = keyed(current_app.config['JWT_SECRET_KEY'], 'link-state', text)
     return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
 
 

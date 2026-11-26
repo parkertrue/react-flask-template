@@ -43,10 +43,12 @@ async function fill(user: UserEvent, values: Values = {}) {
 }
 
 describe('CompletePasswordResetPage', () => {
-  it("shows the token's address, read-only, for password managers, and the new password's fields", () => {
+  it("shows the token's address in full, read-only for password managers, and the new password's fields", () => {
     renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Choose a new password' })).toBeInTheDocument()
+    // As text, which wraps: the field cuts a long address off
+    expect(screen.getByText('user@example.com')).toBeVisible()
     expect(emailField()).toHaveValue('user@example.com')
     expect(emailField()).toHaveAttribute('readonly')
     expect(emailField()).toHaveAttribute('autocomplete', 'username')
@@ -148,6 +150,7 @@ describe('CompletePasswordResetPage', () => {
       expect(alert).toHaveFocus()
       expect(screen.getByRole('link', { name: 'Ask for a new link' })).toHaveAttribute('href', '/password-reset')
       expect(screen.queryByLabelText('New password')).not.toBeInTheDocument()
+      expect(screen.queryByText('user@example.com')).not.toBeInTheDocument()
     })
 
     // A guessable one reaches the server when the page could not read the

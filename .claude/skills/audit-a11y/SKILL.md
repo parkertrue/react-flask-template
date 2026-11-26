@@ -108,7 +108,7 @@ Check on every page, logged out and logged in:
   logging out all devices, the busy button, then the home page; for the
   account, the login page's `h1`, with the message that the account is
   gone), and, for
-  `FormDialog`, a failed submit's message inside the dialog. `SessionList`:
+  `FormDialog`, a failed submit's message inside the dialog. `SessionsList`:
   after "Log out" on a device, focus moves to the next device's button or
   "Log out all devices".
 - **Accessibility tree:** take `page.locator('body').ariaSnapshot()` for
