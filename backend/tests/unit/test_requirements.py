@@ -19,7 +19,8 @@ SOURCES = ['app', 'migrations', '*.py']
 
 
 def _name(requirement):
-    """A distribution's name in one spelling: 'Flask_SQLAlchemy' -> 'flask-sqlalchemy'"""
+    """A distribution's name in one spelling: 'Flask_SQLAlchemy' ->
+    'flask-sqlalchemy'"""
     return re.sub(r'[-_.]+', '-', requirement).lower()
 
 
@@ -29,7 +30,8 @@ def _listed(requirements_in):
 
 
 def _imported(root):
-    """Every top-level module the code under root imports, standard library and app aside"""
+    """Every top-level module the code under root imports, standard library
+    and app aside"""
     files = {file for pattern in SOURCES
              for found in root.glob(pattern)
              for file in ([found] if found.is_file() else found.rglob('*.py'))}

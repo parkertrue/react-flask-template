@@ -38,7 +38,8 @@ def check(name, ok, detail=''):
 
 
 def request(method, path, host=SERVER_NAME, proto='https', body=None, headers=None):
-    """One request as the balancer forwards it: (status, headers, body), status None if dropped"""
+    """One request as the balancer forwards it: (status, headers, body),
+    status None if dropped"""
     conn = http.client.HTTPConnection('127.0.0.1', PORT, timeout=10)
     sent = {'Host': host, 'X-Forwarded-Proto': proto, 'X-Forwarded-For': FORWARDED_FOR,
             **(headers or {})}

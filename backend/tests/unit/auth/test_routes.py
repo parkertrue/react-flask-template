@@ -643,7 +643,8 @@ class TestRefreshEndpoint:
         assert account.status_code == 200
 
     def test_refresh_rotates_csrf_token(self, client, sample_user, fake_redis):
-        """Each refresh token carries its own CSRF value; clients must store the new one"""
+        """Each refresh token carries its own CSRF value; clients must store
+        the new one"""
         csrf = login(client)
 
         response = client.post('/api/auth/refresh', headers=csrf)

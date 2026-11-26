@@ -1,4 +1,5 @@
 import json
+# A stand-in for the mail server replaces smtplib's clients (outbox)
 import smtplib  # noqa: TID251
 
 import pytest

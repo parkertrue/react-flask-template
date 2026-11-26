@@ -3,6 +3,7 @@ read through its API (MAILPIT_API_URL)"""
 import json
 import os
 from urllib.parse import quote
+# Mailpit's API, the test stack's mail server
 from urllib.request import Request, urlopen  # noqa: TID251
 
 

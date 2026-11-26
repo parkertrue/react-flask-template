@@ -42,6 +42,8 @@ PLANTED = (
     (APP, '# x = 1\n', 'ERA001'),
     (APP, '# TODO: x\n', 'FIX002'),
     (APP, '# FIXME: x\n', 'FIX001'),
+    # A comment line that runs on past its neighbours
+    (APP, '# ' + 'word ' * 20 + '\n', 'W505'),
     # Naive datetimes, code from strings, hedged tests
     (APP, 'from datetime import datetime\n\ndatetime.now()\n', 'DTZ005'),
     (APP, "exec('x')\n", 'S102'),
