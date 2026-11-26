@@ -1,5 +1,8 @@
-import pytest
+import re
 from datetime import timedelta
+from pathlib import Path
+
+import pytest
 
 from redis.connection import parse_url
 from sqlalchemy.engine import make_url
@@ -952,3 +955,12 @@ class TestProductionTls:
         monkeypatch.setenv('REDIS_URL', self.EXTERNAL_REDIS)
 
         assert DevelopmentConfig().SQLALCHEMY_DATABASE_URI.host == 'mydb.example.com'
+
+
+def test_nginx_caps_request_bodies_as_flask_does():
+    """Two layers, one cap: a higher one in nginx lets bodies Flask refuses
+    reach gunicorn, and a lower one refuses what the app accepts"""
+    conf = Path(__file__).resolve().parents[3] / 'nginx' / 'app_server.conf'
+    [size] = re.findall(r'^client_max_body_size (\d+)k;$', conf.read_text(), re.MULTILINE)
+
+    assert int(size) * 1024 == Config().MAX_CONTENT_LENGTH

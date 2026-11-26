@@ -105,8 +105,11 @@ Audits are **read-only** with respect to the repository:
       the app's name (`PASSWORD_GUESSABLE`). Sign-up allows 10 links an hour
       per IP, 3 an hour and 6 a day per address, and 10 completions an hour
       per IP: between batches, delete the `LIMITS:*regist*` keys as the
-      app's Redis user (SCAN, since it may not run KEYS); `*register*`
-      alone misses `auth.complete_registration`.
+      app's Redis user (SCAN, since it may not run KEYS; `*register*`
+      alone misses `auth.complete_registration`), and give each account a
+      fresh address: the per-address budget, shared with the email change,
+      is keyed by its scope, `emails-to-address`, which that pattern does
+      not match.
   - **Deploy smoke** (`python .github/scripts/smoke_deploy.py`,
     `/audit-infra`'s deploy layer only): its own clone and project
     `deploy_smoke`, subnet `10.217.8`, nginx on ports 80 and 443 of
@@ -164,9 +167,10 @@ Audits are **read-only** with respect to the repository:
 - Backend tools: `source backend/.venv/Scripts/activate` (or `.venv/bin/activate`
   on Linux/macOS). Frontend: `npm` in `frontend/`.
 - CI runs on pushes to `main` and on pull requests: ruff (the backend and
-  `.github/scripts`), ESLint, both unit suites with coverage, the same
-  again after `remove_examples.py` (the Scaffold job), compose validation,
-  zizmor, ShellCheck, a license, required-checks, toolchain-version,
+  `.github/scripts`), ESLint, mypy and tsc (each with a planted case per
+  rule), both unit suites with coverage, the same again after
+  `remove_examples.py` (the Scaffold job), compose validation, the db init
+  script check, zizmor, ShellCheck, a license, required-checks, toolchain-version,
   documented-build and whitespace check, hadolint and gixy-ng.
   Integration, E2E, Platform smoke and Deploy smoke run on `main`, on pull
   requests, and daily. Check the

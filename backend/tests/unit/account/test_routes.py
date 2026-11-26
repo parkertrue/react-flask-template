@@ -8,7 +8,7 @@ from app.auth.models import User
 from app.utils.exports import registered_exports
 from tests.conftest import register
 from tests.unit.account.test_sessions import Device
-from tests.unit.utils.test_devices import FIREFOX_WINDOWS
+from tests.unit.utils.test_devices import EDGE_MAC, FIREFOX_WINDOWS
 
 
 def test_returns_the_signed_in_users_account(client, sample_user, auth_headers):
@@ -69,16 +69,27 @@ class TestExportAccount:
         with app.app_context():
             assert body['data'] == {name: [] for name in registered_exports()}
 
-    def test_holds_the_sessions_without_their_ids(self, app, sample_user, fake_redis):
-        fake_redis.clock = lambda: 1_800_000_000
-        device = Device(app, FIREFOX_WINDOWS)
+    def test_holds_every_session_without_their_ids(self, app, sample_user, fake_redis):
+        """Every device, most recently active first, as the account page
+        lists them"""
+        now = [1_800_000_000]
+        fake_redis.clock = lambda: now[0]
+        laptop = Device(app, FIREFOX_WINDOWS)
+        now[0] += 60
+        desktop = Device(app, EDGE_MAC)
+        now[0] += 60
+        laptop.refresh()
 
-        response = device.client.get('/api/account/export', headers=device.headers)
+        response = desktop.client.get('/api/account/export', headers=desktop.headers)
 
-        signed_in = datetime.fromtimestamp(1_800_000_000, timezone.utc).isoformat()
+        def at(seconds):
+            return datetime.fromtimestamp(1_800_000_000 + seconds, timezone.utc).isoformat()
         assert response.get_json()['sessions'] == [
-            {'device': 'Firefox on Windows', 'signed_in_at': signed_in, 'last_active_at': signed_in}]
-        assert device.session_id not in response.get_data(as_text=True)
+            {'device': 'Firefox on Windows', 'signed_in_at': at(0), 'last_active_at': at(120)},
+            {'device': 'Edge on macOS', 'signed_in_at': at(60), 'last_active_at': at(60)},
+        ]
+        text = response.get_data(as_text=True)
+        assert [id for id in (laptop.session_id, desktop.session_id) if id in text] == []
 
     def test_answers_503_while_redis_is_down(
             self, client, sample_user, auth_headers, no_redis, security_events):

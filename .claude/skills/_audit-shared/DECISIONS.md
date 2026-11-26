@@ -90,8 +90,8 @@ the hour passes. The cap is what bounds distributed password guessing, so it
 stays. Recovery has the same weakness, for a day: a password reset's own
 per-address budget (3 an hour, 6 a day, from any address) bounds the mail one
 inbox can be sent, so a stranger who spends it leaves the owner's reset at
-429 until the day's window ends (sign-up and email changes no longer spend
-it, SEC-12). *Revisit when:* users report lockouts, or the app holds accounts
+429 until the day's window ends (sign-up and email changes have a budget
+of their own). *Revisit when:* users report lockouts, or the app holds accounts
 worth targeting (then a CAPTCHA or an emailed unlock link instead of the hard
 cap, and a CAPTCHA once an address's reset budget runs low).
 
@@ -179,7 +179,7 @@ once for `RECONNECT_INTERVAL_SECONDS` (5 s), then one call probes again. The
 probe pays the 1 s lookup of the stopped container's name twice (the
 client's one retry, kept so a connection Redis dropped is replaced unseen),
 and a rate-limited route adds Flask-Limiter's own probe. Measured: a login on
-the probe answers 503 in about 4 s at worst, a signed-in request 200 in 2 s;
+the probe answers 503 in about 4 s at worst, a signed-in request 200 in up to 3 s;
 the rest of the window is as fast as with Redis up. A no-retry probe client
 would save about 1 s for more breaker code. *Revisit when:* a readiness check
 or alert exists for Redis, or users see these delays outside an outage.
@@ -419,9 +419,12 @@ may run KEYS** (user, 2026-11-09). RQ was passed over because a message names
 any importable function, so a write to Redis would run code in the worker,
 which holds `SECRET_KEY` and the database password; Celery for its weight.
 Dramatiq runs only declared actors with JSON arguments, and each message is
-signed with `SECRET_KEY` and checked first (`SignedMessages`), so a Redis
-password alone can neither run a job nor choose its arguments; a replayed
-message only repeats an email the app asked for. The broker's upkeep calls
+signed and checked first (`SignedMessages`), under a key derived from
+`SECRET_KEY` for jobs alone (`utils/keys.py`), which nothing the app shows in
+Redis or the log is made with, so a Redis password alone can neither run a
+job nor choose its arguments; a replayed
+message only repeats an email the app asked for, with links minted in the
+state it was asked under. The broker's upkeep calls
 `KEYS`, which `-@dangerous` refuses, so the worker connects as `worker` (only
 `dramatiq` and `dramatiq:*`, plus `+keys`) and the app's broker never runs
 the upkeep (`maintenance_chance=0`). `KEYS` reveals no more than `SCAN`,

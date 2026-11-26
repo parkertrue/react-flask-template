@@ -9,17 +9,21 @@ so the core imports no feature: `@job(<blueprint>)` on the function, or
 `job(auth_bp)(send_registration_email)` (auth/routes.py). Messages are JSON and
 name a declared job: a message written to Redis can only run a job the code
 declares, with JSON arguments, never an arbitrary function. Each is signed
-with SECRET_KEY when queued, and the worker runs none it cannot verify, so
-a Redis password alone cannot choose a job's arguments either: the email
-change's jobs mint links that move an account (SignedMessages).
+when queued, with a key derived from SECRET_KEY for jobs alone
+(utils/keys.py), which nothing else the app shows is made with, and the
+worker runs none it cannot verify, so a Redis password alone cannot choose a
+job's arguments either: the email change's jobs mint links that move an
+account (SignedMessages).
 
-Queue a job before committing when the job is the request's point. When
-the write must stand on its own, queue after committing and catch and log
-JobQueueUnavailable, as the password reset does: otherwise a Redis outage
-answers 503 with the row already saved, and the user's retry saves it again.
+Queue a job before committing when the job is the request's point. Such
+a job must not read a row the request writes: the worker reads on its own
+connection, which cannot see the row until the commit, so pass the job the
+values it needs, or queue after committing. When the write must stand on
+its own, queue after committing and catch and log JobQueueUnavailable, as
+the password reset does: otherwise a Redis outage answers 503 with the row
+already saved, and the user's retry saves it again.
 """
 import functools
-import hashlib
 import hmac
 import json
 import logging
@@ -45,6 +49,7 @@ from redis import ConnectionError as RedisConnectionError
 from redis import Redis, RedisError
 from redis import TimeoutError as RedisTimeoutError
 
+from app.utils.keys import keyed
 from app.utils.log import JsonFormatter
 from app.utils.redis_service import (
     REDIS_CLIENT_OPTIONS, mark_redis_unreachable, redis_unreachable)
@@ -101,11 +106,11 @@ def _millis(delta: timedelta) -> int:
 
 def _signature(secret: str, actor_name: str, args: Any, kwargs: Any) -> str:
     """What a message naming this job with these arguments is signed with:
-    an HMAC keyed with SECRET_KEY, over the arguments as JSON (a message's
-    own form), so neither the job nor any argument can be swapped"""
+    an HMAC under the job key, over the arguments as JSON (a message's own
+    form), so neither the job nor any argument can be swapped"""
     payload = json.dumps([actor_name, list(args), dict(kwargs or {})],
                          separators=(',', ':'), sort_keys=True)
-    return hmac.new(secret.encode(), b'job:' + payload.encode(), hashlib.sha256).hexdigest()
+    return keyed(secret, 'job', payload).hex()
 
 
 class SignedMessages(Middleware):

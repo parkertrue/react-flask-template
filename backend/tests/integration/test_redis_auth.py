@@ -2,8 +2,10 @@ import json
 import threading
 import time
 
+import pytest
 from flask_jwt_extended import decode_token
 
+from app.utils.log import JsonFormatter
 from app.utils.redis_service import MAX_SESSIONS_PER_USER
 
 
@@ -83,6 +85,31 @@ class TestRedisTokenStorage:
         assert integration_redis.revoke_session(integration_user.id, first) is False
         assert _ids(integration_redis, integration_user.id) == [second]
 
+
+    @pytest.mark.parametrize('end', [
+        lambda client, redis_service, user_id, session_id: client.post('/api/auth/logout'),
+        lambda client, redis_service, user_id, session_id: redis_service.revoke_session(user_id, session_id),
+    ], ids=['logout', 'from another device'])
+    def test_an_ended_session_s_access_token_is_refused(
+            self, integration_client, integration_user, integration_redis, caplog, end):
+        """The check reads the real store, not a fake: one that failed open
+        (any Redis error lets the token through) would keep it working. Another
+        device stays signed in, so the account's keys are still there."""
+        assert _login(integration_client.application.test_client()).status_code == 200
+        access = _login(integration_client).get_json()['access_token']
+        headers = {'Authorization': f'Bearer {access}'}
+        before = integration_client.get('/api/account', headers=headers)
+        with integration_client.application.app_context():
+            session_id = decode_token(access)['sid']
+
+        end(integration_client, integration_redis, integration_user.id, session_id)
+        after = integration_client.get('/api/account', headers=headers)
+
+        assert before.status_code == 200
+        assert (after.status_code, after.get_json()['error']['code']) == (401, 'AUTH_INVALID_TOKEN')
+        refusals = [json.loads(JsonFormatter().format(record)) for record in caplog.records
+                    if record.getMessage() == 'token_invalid']
+        assert [line['reason'] for line in refusals] == ['Session ended']
 
 class TestSessionBounds:
     """A user's sessions stay bounded however often they log in"""

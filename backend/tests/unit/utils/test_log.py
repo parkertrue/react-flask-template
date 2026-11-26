@@ -121,10 +121,12 @@ def test_gunicorns_own_lines_are_json_lines(monkeypatch, capsys):
 
 
 def logged_events():
-    """Every event name a security_event call in the app passes"""
+    """Every event name the app logs by name: those a security_event call
+    passes, and the worker's, logged on its logger directly (job_refused)"""
     sources = (BACKEND / 'app').rglob('*.py')
+    pattern = r"(?:security_event|\blog\.\w+)\(\s*'(\w+)'"
     return sorted({name for source in sources
-                   for name in re.findall(r"security_event\(\s*'(\w+)'", source.read_text(encoding='utf-8'))})
+                   for name in re.findall(pattern, source.read_text(encoding='utf-8'))})
 
 
 @pytest.mark.parametrize('doc', ['docs/deployment.md', 'CLAUDE.md'])

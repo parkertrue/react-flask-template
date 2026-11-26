@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
-import SessionList from '../SessionList'
+import SessionsList from '../SessionsList'
 import { revokeSession, listSessions } from '@/auth/authService'
 import { errorBody, httpError, sessions } from '@/test/fixtures'
 import { renderRoutes, signIn } from '@/test/router'
@@ -11,7 +11,7 @@ const fallbackFocus = vi.fn<() => void>()
 
 function renderList() {
   signIn('user@example.com')
-  return renderRoutes([{ path: '/account', element: <SessionList fallbackFocus={fallbackFocus} /> }], '/account')
+  return renderRoutes([{ path: '/account', element: <SessionsList fallbackFocus={fallbackFocus} /> }], '/account')
 }
 
 // Three devices: two others, then this browser
@@ -43,7 +43,7 @@ const items = () => within(list()).getAllByRole('listitem')
 const logOut = (device: string) => screen.getByRole('button', { name: `Log out ${device}` })
 const status = () => screen.getByRole('status')
 
-describe('SessionList', () => {
+describe('SessionsList', () => {
   it('lists each device with when it signed in and was last active, marking this one', async () => {
     vi.mocked(listSessions).mockResolvedValue(sessions())
     renderList()

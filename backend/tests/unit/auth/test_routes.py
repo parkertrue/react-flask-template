@@ -8,7 +8,6 @@ import jwt
 import pytest
 from flask_jwt_extended import create_refresh_token, decode_token
 from itsdangerous import TimestampSigner, URLSafeTimedSerializer
-from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import select, func, update
 from sqlalchemy.exc import OperationalError
 
@@ -69,10 +68,8 @@ class TestRequestRegistration:
         assert response.get_json()['error']['code'] == 'BAD_REQUEST'
         assert jobs() == []
 
-    def test_a_queue_that_is_down_is_a_503(self, app, client, db, monkeypatch):
-        def refuse(message, *, delay=None):
-            raise RedisConnectionError('Connection refused')
-        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+    def test_a_queue_that_is_down_is_a_503(self, app, client, db, queue_down):
+        queue_down()
 
         response = client.post('/api/auth/register', json={'email': 'new@example.com'})
 
@@ -646,7 +643,8 @@ class TestRefreshEndpoint:
         assert account.status_code == 200
 
     def test_refresh_rotates_csrf_token(self, client, sample_user, fake_redis):
-        """Each refresh token carries its own CSRF value; clients must store the new one"""
+        """Each refresh token carries its own CSRF value; clients must store
+        the new one"""
         csrf = login(client)
 
         response = client.post('/api/auth/refresh', headers=csrf)
@@ -1486,10 +1484,8 @@ class TestRequestPasswordReset:
         assert response.get_json()['error']['code'] == 'VALIDATION_ERROR'
         assert jobs() == []
 
-    def test_a_queue_that_is_down_is_a_503(self, app, client, db, monkeypatch):
-        def refuse(message, *, delay=None):
-            raise RedisConnectionError('Connection refused')
-        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+    def test_a_queue_that_is_down_is_a_503(self, app, client, db, queue_down):
+        queue_down()
 
         response = client.post('/api/auth/password-reset', json={'email': 'test@example.com'})
 
@@ -1676,12 +1672,10 @@ class TestCompletePasswordReset:
         assert self.complete(client, token).status_code == 503
 
     def test_a_notice_that_cannot_be_queued_still_answers_changed(
-            self, app, client, db, sample_user, fake_redis, monkeypatch, logged):
+            self, app, client, db, sample_user, fake_redis, logged, queue_down):
         """The password is changed and the link spent: a 503 would send the
         user back to it"""
-        def refuse(message, *, delay=None):
-            raise RedisConnectionError('Connection refused')
-        monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+        queue_down()
 
         response = self.complete(client, self.token(client))
 
