@@ -4,7 +4,6 @@ import json
 
 import pytest
 from flask_jwt_extended import decode_token
-from redis import ConnectionError as RedisConnectionError
 from sqlalchemy import update
 
 from app.account import routes as account_routes
@@ -149,10 +148,8 @@ def test_of_two_changes_racing_the_second_changes_nothing(client, db, sample_use
     assert jobs() == []
 
 
-def test_an_email_that_cannot_be_queued_still_logs_in(app, client, db, sample_user, session, monkeypatch, logged):
-    def refuse(message, *, delay=None):
-        raise RedisConnectionError('Connection refused')
-    monkeypatch.setattr(app.extensions['jobs_broker'], 'enqueue', refuse)
+def test_an_email_that_cannot_be_queued_still_logs_in(app, client, db, sample_user, session, logged, queue_down):
+    queue_down()
 
     response = change(client, session)
 
