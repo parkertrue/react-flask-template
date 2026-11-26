@@ -45,7 +45,7 @@ dramatiq==2.2.1
     # via
     #   -c requirements.txt
     #   -r requirements.in
-email-validator==2.3.0
+email-validator==2.4.0
     # via
     #   -c requirements.txt
     #   -r requirements.in
@@ -167,7 +167,7 @@ redis==8.1.0
     #   -r requirements.in
 ruff==0.17.5
     # via -r requirements-dev.in
-sqlalchemy==2.1.8
+sqlalchemy==2.1.9
     # via
     #   -c requirements.txt
     #   -r requirements.in
